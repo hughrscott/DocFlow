@@ -118,7 +118,15 @@ export default function App() {
                   <td>{d.status}</td>
                   <td>{d.total_pages}</td>
                   <td>
-                    <button onClick={async () => setSelectedDoc(await getDocument(d.id))}>Details</button>
+                    <button onClick={async () => {
+                      try {
+                        const detail = await getDocument(d.id)
+                        if (!detail.pages) detail.pages = []
+                        setSelectedDoc(detail)
+                      } catch (e: any) {
+                        show(e?.message ?? 'Failed to load document', 'error')
+                      }
+                    }}>Details</button>
                   </td>
                 </tr>
               ))}
@@ -206,6 +214,8 @@ function PageActions({ page, onUpdated }: { page: any, onUpdated: () => Promise<
       await reanalyzePage(page.page_id, dpi)
       show(`Re-analyzed page ${page.page_number}`, 'success')
       await onUpdated()
+    } catch (e: any) {
+      show(e?.message ?? 'Re-analyze failed', 'error')
     } finally {
       setBusy(false)
     }
@@ -219,6 +229,8 @@ function PageActions({ page, onUpdated }: { page: any, onUpdated: () => Promise<
       await correctPage(page.page_id, folder, filename)
       show(`Moved page ${page.page_number}`, 'success')
       await onUpdated()
+    } catch (e: any) {
+      show(e?.message ?? 'Correction failed', 'error')
     } finally {
       setBusy(false)
     }
@@ -249,6 +261,8 @@ function DocActions({ docId, onUpdated }: { docId: string; onUpdated: () => Prom
         await onUpdated()
         await new Promise((r)=> setTimeout(r, 500))
       }
+    } catch (e: any) {
+      show(e?.message ?? 'Document re-analyze failed', 'error')
     } finally {
       setBusy(false)
     }
