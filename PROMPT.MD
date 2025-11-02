@@ -39,8 +39,7 @@ Notes
 ---
 
 Context Snapshot (as of v0.1.0)
-- MVP endpoints working: upload (with analyze/dpi), get document by id, correction, health, list documents, settings (get/post).
+- MVP endpoints working: upload (with analyze/dpi/background), get document by id, correction, health, list documents, settings (get/post).
 - Optional AI analysis via Ollama or Claude; fast path with analyze=false.
 - PDF splitting and file organization working; learning engine records decisions/corrections.
 - Next focus: background processing for large PDFs, logging, basic auth, simple frontend.
-

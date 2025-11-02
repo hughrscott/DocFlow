@@ -22,6 +22,7 @@ A complete, production-ready **foundation** for an intelligent AI-powered docume
 
 ✅ **API Layer** (MVP)
 - Upload endpoint with `analyze` and `dpi` params
+- Background processing support via `background=true`
 - Get document by ID
 - Correction endpoint
 - Health endpoint and list documents endpoint

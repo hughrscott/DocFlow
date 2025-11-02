@@ -6,8 +6,7 @@ Provides endpoints to upload PDFs, split into pages, attempt AI analysis
 into the documents directory. Persists documents, pages, and decisions.
 """
 
-from fastapi import APIRouter, UploadFile, File, Depends, HTTPException
-from fastapi import BackgroundTasks
+from fastapi import APIRouter, UploadFile, File, Depends, HTTPException, BackgroundTasks
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
@@ -18,7 +17,7 @@ import uuid
 import logging
 
 from config.settings import settings
-from database.database import get_db
+from database.database import get_db, SessionLocal
 from database.models import Document, Page
 from sqlalchemy.orm import Session
 
@@ -74,6 +73,8 @@ async def upload_document(
     file: UploadFile = File(...),
     analyze: bool = True,
     dpi: int = 150,
+    background: bool = False,
+    background_tasks: BackgroundTasks = None,
     db: Session = Depends(get_db)
 ):
     """
@@ -124,6 +125,30 @@ async def upload_document(
     db.commit()
 
     results: List[PageResult] = []
+
+    # Background processing path
+    if background:
+        temp_pdf_path = str(Path(settings.uploads_temp_dir) / f"{document_id}_upload.pdf")
+        with open(temp_pdf_path, "wb") as f:
+            f.write(data)
+
+        # Schedule background processing
+        if background_tasks is not None:
+            background_tasks.add_task(
+                _process_document_background,
+                document_id=document_id,
+                temp_pdf_path=temp_pdf_path,
+                analyze=analyze,
+                dpi=dpi,
+            )
+
+        logger.info(f"Scheduled background processing for document {document_id}")
+        return UploadResponse(
+            document_id=document_id,
+            original_filename=doc.original_filename,
+            total_pages=page_count,
+            results=[],
+        )
 
     # Split into single-page PDFs
     try:
@@ -231,6 +256,159 @@ async def upload_document(
         total_pages=page_count,
         results=results,
     )
+
+
+def _cleanup_file(path: str) -> None:
+    try:
+        Path(path).unlink(missing_ok=True)
+    except Exception:
+        pass
+
+
+def _process_document_background(
+    document_id: str,
+    temp_pdf_path: str,
+    analyze: bool,
+    dpi: int,
+) -> None:
+    """Background task to process a document end-to-end."""
+    db: Session = SessionLocal()
+    try:
+        with open(temp_pdf_path, "rb") as f:
+            data = f.read()
+
+        pdf = PDFProcessor(temp_dir=settings.uploads_temp_dir)
+        folder_router = FolderRouter(settings.documents_dir)
+        file_manager = FileManager(settings.documents_dir)
+
+        analyzer = None
+        if analyze:
+            try:
+                llm_manager = LLMManager(settings.llm_config_path)
+                analyzer = DocumentAnalyzer(llm_manager, confidence_threshold=settings.min_confidence_threshold)
+            except Exception as e:
+                logger.warning(f"BG: LLMManager unavailable: {e}")
+
+        # Split
+        pages = []
+        try:
+            pages = __import__('asyncio').get_event_loop().run_until_complete(pdf.split_pdf(data))
+        except RuntimeError:
+            # If no running loop in BG context, use new loop
+            import asyncio
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            pages = loop.run_until_complete(pdf.split_pdf(data))
+
+        learning = LearningEngine(db)
+        
+        # Process
+        for idx, page_pdf_bytes in enumerate(pages, start=1):
+            image_bytes = None
+            if analyze:
+                try:
+                    import asyncio
+                    try:
+                        image_bytes = asyncio.get_event_loop().run_until_complete(
+                            pdf.pdf_page_to_image(page_pdf_bytes, dpi=dpi)
+                        )
+                    except RuntimeError:
+                        loop = asyncio.new_event_loop()
+                        asyncio.set_event_loop(loop)
+                        image_bytes = loop.run_until_complete(
+                            pdf.pdf_page_to_image(page_pdf_bytes, dpi=dpi)
+                        )
+                except Exception as e:
+                    logger.warning(f"BG: Page {idx} image conversion failed: {e}")
+
+            if analyzer and image_bytes:
+                try:
+                    import asyncio
+                    try:
+                        analysis = asyncio.get_event_loop().run_until_complete(
+                            analyzer.analyze_page(image_bytes, page_number=idx)
+                        )
+                    except RuntimeError:
+                        loop = asyncio.new_event_loop()
+                        asyncio.set_event_loop(loop)
+                        analysis = loop.run_until_complete(
+                            analyzer.analyze_page(image_bytes, page_number=idx)
+                        )
+                except Exception as e:
+                    logger.warning(f"BG: Analysis failed page {idx}: {e}")
+                    analysis = {
+                        "success": False,
+                        "document_type": "unknown",
+                        "institution": None,
+                        "date": None,
+                        "confidence_score": 0.0,
+                        "extracted_metadata": {},
+                        "provider_used": None,
+                        "model_used": None,
+                    }
+            else:
+                analysis = {
+                    "success": False,
+                    "document_type": "unknown",
+                    "institution": None,
+                    "date": None,
+                    "confidence_score": 0.0,
+                    "extracted_metadata": {},
+                    "provider_used": None,
+                    "model_used": None,
+                }
+
+            folder_path, _ = folder_router.propose_folder(analysis, create_if_missing=True)
+            filename = folder_router.generate_filename(analysis, page_number=idx, extension="pdf")
+
+            temp_page_path = str(Path(settings.uploads_temp_dir) / f"{document_id}_bg_page_{idx}.pdf")
+            with open(temp_page_path, "wb") as f:
+                f.write(page_pdf_bytes)
+
+            org_result = file_manager.organize_document(temp_page_path, folder_path, filename, move=True)
+
+            page_row = Page(
+                document_id=document_id,
+                page_number=idx,
+                document_type=analysis.get("document_type", "unknown"),
+                institution=analysis.get("institution"),
+                confidence_score=analysis.get("confidence_score", 0.0),
+                extracted_metadata=analysis.get("extracted_metadata", {}),
+                assigned_folder=folder_path,
+                output_filename=filename,
+                processing_status="completed" if org_result.get("success") else "failed",
+                processing_error=None if org_result.get("success") else org_result.get("message"),
+                llm_provider_used=analysis.get("provider_used") or "",
+                llm_model_used=analysis.get("model_used") or "",
+            )
+            db.add(page_row)
+            db.commit()
+
+            learning.record_decision(
+                page_id=page_row.id,
+                proposed_folder=folder_path,
+                proposed_filename=filename,
+                proposed_confidence=analysis.get("confidence_score", 0.0),
+            )
+
+        # Mark document complete
+        doc = db.query(Document).filter(Document.id == document_id).first()
+        if doc:
+            doc.status = "completed"
+            db.commit()
+
+    except Exception as e:
+        try:
+            doc = db.query(Document).filter(Document.id == document_id).first()
+            if doc:
+                doc.status = "failed"
+                doc.error_message = str(e)
+                db.commit()
+        except Exception:
+            pass
+    finally:
+        _cleanup_file(temp_pdf_path)
+        db.close()
 
 
 @router.get("/{document_id}", response_model=DocumentDetails)

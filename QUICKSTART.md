@@ -72,11 +72,11 @@ python -c "from llm.llm_manager import LLMManager; print('✓ Setup successful')
 ```
 
 ### 4. **MVP Upload Test**
-Use Swagger: `http://127.0.0.1:8000/docs` → `POST /api/v1/documents/upload` → set `analyze=false` → upload a PDF.
+Use Swagger: `http://127.0.0.1:8000/docs` → `POST /api/v1/documents/upload` → set `analyze=false` (fast) or `background=true` (async) → upload a PDF.
 
 Or curl:
 ```bash
-curl -F file=@test_document.pdf 'http://127.0.0.1:8000/api/v1/documents/upload?analyze=false&dpi=120'
+curl -F file=@test_document.pdf 'http://127.0.0.1:8000/api/v1/documents/upload?analyze=false&dpi=120&background=true'
 ```
 Then fetch details:
 ```bash

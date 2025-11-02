@@ -41,12 +41,11 @@
 
 ### 2. Utilities (Medium Priority)
 
-### 3. Frontend (Medium Priority - can use basic version initially)
-
 **utils/logging_config.py**
-- Setup structured logging
-- Log to file and console
-- Includes timing and performance metrics
+- ✅ Structured console logging configured and wired
+- Next: add request IDs and timing middleware
+
+### 3. Frontend (Medium Priority - can use basic version initially)
 
 **utils/security.py**
 - Password hashing functions
@@ -105,8 +104,8 @@ python -c "from database.database import init_db; init_db()"
 # 5. Start backend
 uvicorn main:app --reload
 
-# 6. Test upload (fast path without AI)
-curl -F file=@test_document.pdf 'http://127.0.0.1:8000/api/v1/documents/upload?analyze=false&dpi=120'
+# 6. Test upload (fast path without AI, background)
+curl -F file=@test_document.pdf 'http://127.0.0.1:8000/api/v1/documents/upload?analyze=false&dpi=120&background=true'
 
 # 7. Enable analysis (optional)
 # - brew install poppler
