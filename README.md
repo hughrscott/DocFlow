@@ -153,6 +153,7 @@ UI features (MVP)
 - Upload a PDF with analyze/background/dpi options
 - View recent documents (filename, uploaded time, status, pages)
 - View document details including per-page results (type, institution, date, confidence, folder/filename, provider/model, status)
+- View and edit LLM settings (providers and base URL) with Basic auth for saving
 
 ## Configuration
 

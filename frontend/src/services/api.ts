@@ -28,3 +28,23 @@ export async function getDocument(id: string) {
   return res.json()
 }
 
+export async function getSettings() {
+  const res = await fetch(`${API_BASE}/api/v1/settings`)
+  if (!res.ok) throw new Error('Settings fetch failed')
+  return res.json()
+}
+
+export async function updateSettings(payload: any, basicAuth?: { username: string; password: string }) {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+  if (basicAuth) {
+    const token = btoa(`${basicAuth.username}:${basicAuth.password}`)
+    headers['Authorization'] = `Basic ${token}`
+  }
+  const res = await fetch(`${API_BASE}/api/v1/settings`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(payload),
+  })
+  if (!res.ok) throw new Error(`Settings update failed: ${res.status}`)
+  return res.json()
+}

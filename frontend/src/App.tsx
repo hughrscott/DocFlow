@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { uploadDocument, listDocuments, getDocument } from './services/api'
 import UploadArea from './components/UploadArea'
+import SettingsView from './components/SettingsView'
 
 type DocBrief = {
   id: string
@@ -121,6 +122,11 @@ export default function App() {
             </tbody>
           </table>
         )}
+      </section>
+
+      <section>
+        <h2>Settings</h2>
+        <SettingsView />
       </section>
 
       {selectedDoc && (
