@@ -42,6 +42,8 @@ class PageResult(BaseModel):
     confidence_score: float
     folder: str
     filename: str
+    proposed_folder: Optional[str] = None
+    proposed_filename: Optional[str] = None
     provider_used: Optional[str] = None
     model_used: Optional[str] = None
     success: bool = True
@@ -438,6 +440,13 @@ async def get_document(document_id: str, db: Session = Depends(get_db)):
             break
     page_results: List[PageResult] = []
     for p in pages:
+        # Fetch latest decision, if any
+        latest_decision = (
+            db.query(ProcessingDecision)
+            .filter(ProcessingDecision.page_id == p.id)
+            .order_by(ProcessingDecision.timestamp.desc())
+            .first()
+        )
         page_results.append(
             PageResult(
                 page_id=p.id,
@@ -448,16 +457,13 @@ async def get_document(document_id: str, db: Session = Depends(get_db)):
                 confidence_score=p.confidence_score,
                 folder=p.assigned_folder,
                 filename=p.output_filename,
+                proposed_folder=(latest_decision.proposed_folder if latest_decision else None),
+                proposed_filename=(latest_decision.proposed_filename if latest_decision else None),
                 provider_used=p.llm_provider_used or None,
                 model_used=p.llm_model_used or None,
                 success=(p.processing_status == "completed"),
                 error=p.processing_error,
-                decision_id=(
-                    db.query(ProcessingDecision)
-                    .filter(ProcessingDecision.page_id == p.id)
-                    .order_by(ProcessingDecision.timestamp.desc())
-                    .first()
-                ).id if db.query(ProcessingDecision).filter(ProcessingDecision.page_id == p.id).first() else None,
+                decision_id=(latest_decision.id if latest_decision else None),
             )
         )
 
@@ -540,6 +546,8 @@ async def reanalyze_page(page_id: str, dpi: int = 150, db: Session = Depends(get
             confidence_score=page.confidence_score,
             folder=new_folder,
             filename=new_filename,
+            proposed_folder=new_folder,
+            proposed_filename=new_filename,
             provider_used=page.llm_provider_used or None,
             model_used=page.llm_model_used or None,
             success=True,

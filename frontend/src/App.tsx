@@ -19,10 +19,13 @@ type PageResult = {
   confidence_score: number
   folder: string
   filename: string
+  proposed_folder?: string | null
+  proposed_filename?: string | null
   provider_used?: string | null
   model_used?: string | null
   success: boolean
   error?: string | null
+  page_id?: string | null
 }
 
 type DocDetail = {
@@ -151,8 +154,10 @@ export default function App() {
                 <th>Institution</th>
                 <th>Date</th>
                 <th>Conf.</th>
-                <th>Folder</th>
-                <th>Filename</th>
+                <th>Current Folder</th>
+                <th>Current Filename</th>
+                <th>Proposed Folder</th>
+                <th>Proposed Filename</th>
                 <th>Provider</th>
                 <th>Model</th>
                 <th>Status</th>
@@ -169,6 +174,8 @@ export default function App() {
                   <td>{(p.confidence_score ?? 0).toFixed(2)}</td>
                   <td>{p.folder}</td>
                   <td>{p.filename}</td>
+                  <td>{p.proposed_folder || ''}</td>
+                  <td>{p.proposed_filename || ''}</td>
                   <td>{p.provider_used || ''}</td>
                   <td>{p.model_used || ''}</td>
                   <td>{p.success ? 'ok' : (p.error ? `err: ${p.error}` : 'pending')}</td>
@@ -219,6 +226,7 @@ function PageActions({ page, onUpdated }: { page: any, onUpdated: () => Promise<
     <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
       <button onClick={doReanalyze} disabled={busy || !page.page_id}>Re‑analyze</button>
       <label style={{ color: '#a8b2d1' }}>DPI <input type="number" min={72} max={300} value={dpi} onChange={(e)=> setDpi(parseInt(e.target.value||'120',10))} style={{ width: 70 }} /></label>
+      <button onClick={()=> { if (page.proposed_folder) setFolder(page.proposed_folder); if (page.proposed_filename) setFilename(page.proposed_filename); }} disabled={busy || (!page.proposed_folder && !page.proposed_filename)}>Use Proposed</button>
       <label style={{ color: '#a8b2d1' }}>Folder <input type="text" value={folder} onChange={(e)=> setFolder(e.target.value)} style={{ width: 200 }} /></label>
       <label style={{ color: '#a8b2d1' }}>Filename <input type="text" value={filename} onChange={(e)=> setFilename(e.target.value)} style={{ width: 220 }} /></label>
       <button onClick={doCorrect} disabled={busy || !page.page_id}>Correct</button>
