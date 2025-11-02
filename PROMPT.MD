@@ -23,14 +23,16 @@ Read These Files (in order)
 8) llm/llm_manager.py, llm/ollama_provider.py, llm/claude_provider.py
 9) config/settings.py, config/llm_config.yaml
 10) database/models.py, database/database.py
-11) requirements.txt, .gitignore
+11) frontend/src/App.tsx, frontend/src/components/UploadArea.tsx,
+    frontend/src/components/SettingsView.tsx, frontend/src/services/api.ts
+12) requirements.txt, .gitignore
 
 What to Deliver (no code changes yet)
 1) One‑paragraph summary of the repo and current MVP status.
-2) List the implemented API endpoints with brief purpose and key params.
-3) How to run and test quickly (Swagger and curl) with both analyze=false and analyze=true.
-4) Known limitations and current behavior; note Poppler/Ollama/Claude setup caveats.
-5) Prioritized next steps (3–6) with short rationale (e.g., background tasks, logging, auth, UI).
+2) List the implemented API endpoints with brief purpose and key params (include upload, list, health, settings, document/page reanalyze, page correct).
+3) How to run and test quickly (Swagger and curl) with both analyze=false and analyze=true; include background=true for uploads and document reanalyze.
+4) Known limitations and current behavior; note Poppler/Ollama/Claude setup caveats; clarify that reanalyze records proposals but does not auto-move files.
+5) Prioritized next steps (3–6) with short rationale (e.g., one‑click "move to proposed", visual progress, JSON logging everywhere, more tests, frontend polish).
 
 Notes
 - Do not run installs or modify code in this step — just read and report.
@@ -39,7 +41,16 @@ Notes
 ---
 
 Context Snapshot (as of v0.1.0)
-- MVP endpoints working: upload (with analyze/dpi/background), get document by id, correction, health, list documents, settings (get/post).
-- Optional AI analysis via Ollama or Claude; fast path with analyze=false.
-- PDF splitting and file organization working; learning engine records decisions/corrections.
-- Next focus: background processing for large PDFs, logging, basic auth, simple frontend.
+- Backend MVP:
+  - Upload endpoint with analyze/dpi/background; background tasks for uploads and document reanalyze.
+  - Document details with progress (pages_done/total), last_error, and per‑page provider/model.
+  - Per‑page latest decision proposals (proposed_folder/filename) surfaced alongside current location.
+  - Reanalyze endpoints: document‑level and page‑level; page correction endpoint to move files and learn.
+  - Health, list documents, settings (GET/POST with Basic auth) endpoints.
+- Frontend MVP (Vite + React):
+  - Upload UI with analyze/background/dpi; recent documents; details with per‑page results and actions.
+  - Settings view to read/update providers (Basic auth for save).
+  - Toast notifications and basic error handling.
+- Logging & tests:
+  - Request ID + timing middleware; LOG_FORMAT=json toggle available.
+  - Pytest suite passing (unit + integration upload fast path); deprecations silenced/handled.
