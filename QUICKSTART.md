@@ -83,6 +83,15 @@ Then fetch details:
 curl http://127.0.0.1:8000/api/v1/documents/<document_id>
 ```
 
+### 5. **Health and Listing**
+```bash
+# Health
+curl http://127.0.0.1:8000/api/v1/health
+
+# List recent documents
+curl 'http://127.0.0.1:8000/api/v1/documents?page=1&page_size=10'
+```
+
 ## What's Next
 
 ### Priority 1: API polish

@@ -24,7 +24,8 @@ A complete, production-ready **foundation** for an intelligent AI-powered docume
 - Upload endpoint with `analyze` and `dpi` params
 - Get document by ID
 - Correction endpoint
-⏳ Status + Settings endpoints (next)
+- Health endpoint and list documents endpoint
+- Settings API (read/update config)
 
 ⏳ **Frontend** (0% - Can Generate)
 - React web interface with TypeScript

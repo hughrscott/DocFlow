@@ -13,6 +13,8 @@ from contextlib import asynccontextmanager
 
 # Import routers
 from api.upload import router as upload_router
+from api.status import router as status_router
+from api.settings import router as settings_router
 
 # Configure logging
 logging.basicConfig(
@@ -53,6 +55,8 @@ app.add_middleware(
 
 # Include routers
 app.include_router(upload_router)
+app.include_router(status_router)
+app.include_router(settings_router)
 
 
 @app.get("/")

@@ -253,9 +253,13 @@ All done automatically!
 
 - `GET /` — API info
 - `GET /api/v1/status` — API status
+- `GET /api/v1/health` — Healthcheck (DB + providers)
+- `GET /api/v1/documents` — List recent documents (page, page_size)
 - `POST /api/v1/documents/upload` — Upload PDF; query params: `analyze` (bool, default true), `dpi` (int)
 - `GET /api/v1/documents/{document_id}` — Get document + page results
 - `POST /api/v1/documents/decisions/correct` — Record a routing correction
+- `GET /api/v1/settings` — Read LLM settings (YAML)
+- `POST /api/v1/settings` — Update provider selection/config
 
 ## Learning System
 

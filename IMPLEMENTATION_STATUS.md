@@ -32,12 +32,12 @@
 ### 1. API Routes (High Priority)
 
 **api/status.py**
-- Endpoint: `GET /api/v1/health` (healthcheck)
-- Endpoint: `GET /api/v1/documents` (list recent)
+- ✅ Endpoint: `GET /api/v1/health` (healthcheck)
+- ✅ Endpoint: `GET /api/v1/documents` (list recent)
 
 **api/settings.py**
-- Endpoint: `GET /api/v1/settings` (current LLM configuration)
-- Endpoint: `POST /api/v1/settings` (update providers)
+- ✅ Endpoint: `GET /api/v1/settings` (current LLM configuration)
+- ✅ Endpoint: `POST /api/v1/settings` (update providers)
 
 ### 2. Utilities (Medium Priority)
 
