@@ -5,7 +5,7 @@ Loads configuration from environment variables and config files.
 Uses Pydantic for validation and type safety.
 """
 
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import List, Optional
 import os
 
@@ -64,9 +64,8 @@ class Settings(BaseSettings):
     learning_enabled: bool = os.getenv("LEARNING_ENABLED", "true").lower() == "true"
     min_confidence_threshold: float = float(os.getenv("MIN_CONFIDENCE_THRESHOLD", "0.7"))
     
-    class Config:
-        env_file = ".env"
-        case_sensitive = False
+    # Pydantic v2 configuration
+    model_config = SettingsConfigDict(env_file=".env", case_sensitive=False)
 
 
 # Global settings instance

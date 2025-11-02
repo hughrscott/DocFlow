@@ -313,6 +313,11 @@ sqlite3 docflow.db
   
 Tip: for quick tests without AI, set `analyze=false` on the upload endpoint.
 
+### Test warnings
+- SQLAlchemy deprecation about `declarative_base()`: addressed by importing from `sqlalchemy.orm`.
+- Pydantic v2 deprecation about class-based Config: replaced with `model_config`.
+- PyPDF2 deprecation: third‑party library emits a warning; tests filter it via `pytest.ini`. Optionally migrate to `pypdf` in the future.
+
 ### Authentication
 - Settings update endpoint requires Basic auth when `AUTH_ENABLED=true`.
 - Default credentials (change in `.env`): `DEFAULT_USERNAME=admin`, `DEFAULT_PASSWORD=changeme`.

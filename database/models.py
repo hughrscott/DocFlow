@@ -6,7 +6,7 @@ folder mappings, and learning data.
 """
 
 from sqlalchemy import Column, String, Integer, DateTime, Float, JSON, Boolean, ForeignKey
-from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import declarative_base
 from datetime import datetime
 import uuid
 
