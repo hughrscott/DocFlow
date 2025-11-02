@@ -66,3 +66,11 @@ export async function correctPage(pageId: string, folder: string, filename: stri
   if (!res.ok) throw new Error('Correction failed')
   return res.json()
 }
+
+export async function reanalyzeDocument(documentId: string, dpi = 150, background = true) {
+  const res = await fetch(`${API_BASE}/api/v1/documents/${documentId}/reanalyze?dpi=${dpi}&background=${background}`, {
+    method: 'POST',
+  })
+  if (!res.ok) throw new Error('Document reanalyze failed')
+  return res.json()
+}

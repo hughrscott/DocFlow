@@ -596,6 +596,155 @@ async def correct_page(page_id: str, req: PageCorrectionRequest, db: Session = D
     return {"success": True, "message": "Page corrected", "destination": dest}
 
 
+class ReanalyzeDocumentResponse(BaseModel):
+    document_id: str
+    status: str
+    pages_updated: int = 0
+    background: bool = False
+
+
+@router.post("/{document_id}/reanalyze", response_model=ReanalyzeDocumentResponse)
+async def reanalyze_document(
+    document_id: str,
+    dpi: int = 150,
+    background: bool = True,
+    background_tasks: BackgroundTasks = None,
+    db: Session = Depends(get_db),
+):
+    """Re-run AI analysis for all pages of a document."""
+    doc = db.query(Document).filter(Document.id == document_id).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    # Mark as processing
+    doc.status = "processing"
+    doc.error_message = None
+    db.commit()
+
+    if background and background_tasks is not None:
+        background_tasks.add_task(_reanalyze_document_background, document_id=document_id, dpi=dpi)
+        return ReanalyzeDocumentResponse(document_id=document_id, status="scheduled", pages_updated=0, background=True)
+
+    # Foreground reanalysis
+    pages = db.query(Page).filter(Page.document_id == document_id).order_by(Page.page_number.asc()).all()
+    updated = 0
+    errors = []
+    try:
+        llm_manager = LLMManager(settings.llm_config_path)
+        analyzer = DocumentAnalyzer(llm_manager, confidence_threshold=settings.min_confidence_threshold)
+        router = FolderRouter(settings.documents_dir)
+        pdf = PDFProcessor(temp_dir=settings.uploads_temp_dir)
+        learning = LearningEngine(db)
+
+        for p in pages:
+            pdf_path = router.full_path_for_document(p.assigned_folder, p.output_filename)
+            if not Path(pdf_path).exists():
+                errors.append(f"missing:{p.page_number}")
+                continue
+            with open(pdf_path, 'rb') as f:
+                page_pdf = f.read()
+            try:
+                image_bytes = await pdf.pdf_page_to_image(page_pdf, dpi=dpi)
+                analysis = await analyzer.analyze_page(image_bytes, page_number=p.page_number)
+                p.document_type = analysis.get("document_type", p.document_type)
+                p.institution = analysis.get("institution")
+                p.confidence_score = analysis.get("confidence_score", 0.0)
+                p.extracted_metadata = analysis.get("extracted_metadata", {})
+                p.llm_provider_used = analysis.get("provider_used") or ""
+                p.llm_model_used = analysis.get("model_used") or ""
+                db.commit()
+                # Record decision suggestion (no move)
+                new_folder, _ = router.propose_folder(analysis, create_if_missing=False)
+                new_filename = router.generate_filename(analysis, page_number=p.page_number, extension="pdf")
+                learning.record_decision(
+                    page_id=p.id,
+                    proposed_folder=new_folder,
+                    proposed_filename=new_filename,
+                    proposed_confidence=p.confidence_score,
+                    user_corrected=False,
+                )
+                updated += 1
+            except Exception as e:
+                errors.append(f"err:{p.page_number}")
+                continue
+        doc.status = "completed"
+        doc.error_message = None if not errors else ",".join(errors)
+        db.commit()
+        return ReanalyzeDocumentResponse(document_id=document_id, status=doc.status, pages_updated=updated, background=False)
+    except Exception as e:
+        doc.status = "failed"
+        doc.error_message = str(e)
+        db.commit()
+        raise HTTPException(status_code=500, detail=f"Reanalysis failed: {e}")
+
+
+def _reanalyze_document_background(document_id: str, dpi: int = 150) -> None:
+    db: Session = SessionLocal()
+    try:
+        doc = db.query(Document).filter(Document.id == document_id).first()
+        if not doc:
+            return
+        router = FolderRouter(settings.documents_dir)
+        pdf = PDFProcessor(temp_dir=settings.uploads_temp_dir)
+        learning = LearningEngine(db)
+        try:
+            llm_manager = LLMManager(settings.llm_config_path)
+            import asyncio
+            analyzer = DocumentAnalyzer(llm_manager, confidence_threshold=settings.min_confidence_threshold)
+        except Exception:
+            doc.status = "failed"
+            doc.error_message = "No available LLM provider"
+            db.commit()
+            return
+        pages = db.query(Page).filter(Page.document_id == document_id).order_by(Page.page_number.asc()).all()
+        updated = 0
+        for p in pages:
+            pdf_path = router.full_path_for_document(p.assigned_folder, p.output_filename)
+            if not Path(pdf_path).exists():
+                continue
+            with open(pdf_path, 'rb') as f:
+                page_pdf = f.read()
+            # Convert and analyze with own loop if needed
+            try:
+                try:
+                    image_bytes = asyncio.get_event_loop().run_until_complete(pdf.pdf_page_to_image(page_pdf, dpi=dpi))
+                except RuntimeError:
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    image_bytes = loop.run_until_complete(pdf.pdf_page_to_image(page_pdf, dpi=dpi))
+                try:
+                    result = asyncio.get_event_loop().run_until_complete(analyzer.analyze_page(image_bytes, page_number=p.page_number))
+                except RuntimeError:
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    result = loop.run_until_complete(analyzer.analyze_page(image_bytes, page_number=p.page_number))
+                p.document_type = result.get("document_type", p.document_type)
+                p.institution = result.get("institution")
+                p.confidence_score = result.get("confidence_score", 0.0)
+                p.extracted_metadata = result.get("extracted_metadata", {})
+                p.llm_provider_used = result.get("provider_used") or ""
+                p.llm_model_used = result.get("model_used") or ""
+                db.commit()
+                # Record decision proposal
+                new_folder, _ = router.propose_folder(result, create_if_missing=False)
+                new_filename = router.generate_filename(result, page_number=p.page_number, extension="pdf")
+                learning.record_decision(
+                    page_id=p.id,
+                    proposed_folder=new_folder,
+                    proposed_filename=new_filename,
+                    proposed_confidence=p.confidence_score,
+                    user_corrected=False,
+                )
+                updated += 1
+            except Exception:
+                continue
+        doc.status = "completed"
+        doc.error_message = None
+        db.commit()
+    finally:
+        db.close()
+
+
 class CorrectionRequest(BaseModel):
     decision_id: str
     actual_folder: str

@@ -268,6 +268,9 @@ All done automatically!
 - `POST /api/v1/documents/upload` — Upload PDF; query params: `analyze` (bool, default true), `dpi` (int), `background` (bool, default false)
 - `GET /api/v1/documents/{document_id}` — Get document + page results
   - Includes `pages_done`, `total_pages`, and latest `last_error` if any
+- `POST /api/v1/documents/{document_id}/reanalyze` — Re-run AI analysis for all pages (query: `dpi`, `background`)
+- `POST /api/v1/documents/pages/{page_id}/reanalyze` — Re-run AI analysis for a single page (query: `dpi`)
+- `POST /api/v1/documents/pages/{page_id}/correct` — Apply a per-page correction (folder/filename)
 - `POST /api/v1/documents/decisions/correct` — Record a routing correction
 - `GET /api/v1/settings` — Read LLM settings (YAML)
 - `POST /api/v1/settings` — Update provider selection/config (Basic auth when `AUTH_ENABLED=true`)

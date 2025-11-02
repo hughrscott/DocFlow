@@ -132,6 +132,7 @@ export default function App() {
       {selectedDoc && (
         <section>
           <h2>Document Details</h2>
+          <DocActions docId={selectedDoc.document_id} onUpdated={async ()=> setSelectedDoc(await getDocument(selectedDoc.document_id))} />
           <div className="card">
             <div><b>ID:</b> {selectedDoc.document_id}</div>
             <div><b>Status:</b> {selectedDoc.status}</div>
@@ -221,6 +222,30 @@ function PageActions({ page, onUpdated }: { page: any, onUpdated: () => Promise<
       <label style={{ color: '#a8b2d1' }}>Folder <input type="text" value={folder} onChange={(e)=> setFolder(e.target.value)} style={{ width: 200 }} /></label>
       <label style={{ color: '#a8b2d1' }}>Filename <input type="text" value={filename} onChange={(e)=> setFilename(e.target.value)} style={{ width: 220 }} /></label>
       <button onClick={doCorrect} disabled={busy || !page.page_id}>Correct</button>
+    </div>
+  )
+}
+function DocActions({ docId, onUpdated }: { docId: string; onUpdated: () => Promise<void> }) {
+  const [dpi, setDpi] = useState(120)
+  const [busy, setBusy] = useState(false)
+  async function doReanalyzeAll() {
+    setBusy(true)
+    try {
+      const { reanalyzeDocument } = await import('./services/api')
+      await reanalyzeDocument(docId, dpi, true)
+      // background; poll a few times
+      for (let i = 0; i < 12; i++) {
+        await onUpdated()
+        await new Promise((r)=> setTimeout(r, 500))
+      }
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <div className="controls">
+      <button onClick={doReanalyzeAll} disabled={busy}>Re‑analyze All (background)</button>
+      <label style={{ color: '#a8b2d1' }}>DPI <input type="number" min={72} max={300} value={dpi} onChange={(e)=> setDpi(parseInt(e.target.value||'120',10))} style={{ width: 70 }} /></label>
     </div>
   )
 }
