@@ -5,13 +5,14 @@ Allows reading and updating LLM configuration at runtime by modifying
 config/llm_config.yaml. Minimal validation to keep it safe.
 """
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from typing import Optional, Dict, Any
 import yaml
 import os
 
 from config.settings import settings
+from utils.security import require_basic_auth
 
 router = APIRouter(prefix="/api/v1/settings", tags=["settings"]) 
 
@@ -47,7 +48,7 @@ async def get_settings():
 
 
 @router.post("")
-async def update_settings(payload: UpdateSettingsRequest):
+async def update_settings(payload: UpdateSettingsRequest, _: bool = Depends(require_basic_auth)):
     """Update a subset of LLM settings safely and persist to file."""
     cfg = _load_yaml(settings.llm_config_path)
 
@@ -73,4 +74,3 @@ async def update_settings(payload: UpdateSettingsRequest):
         return {"success": True, "message": "Settings updated", "settings": cfg}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to write settings: {e}")
-

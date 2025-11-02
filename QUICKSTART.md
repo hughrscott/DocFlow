@@ -90,6 +90,14 @@ curl http://127.0.0.1:8000/api/v1/health
 
 # List recent documents
 curl 'http://127.0.0.1:8000/api/v1/documents?page=1&page_size=10'
+
+# Settings (read)
+curl http://127.0.0.1:8000/api/v1/settings
+
+# Settings (update; requires Basic auth when AUTH_ENABLED=true)
+curl -u admin:changeme -X POST http://127.0.0.1:8000/api/v1/settings \
+  -H 'Content-Type: application/json' \
+  -d '{"vision_provider":"ollama"}'
 ```
 
 ## What's Next

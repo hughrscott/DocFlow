@@ -259,7 +259,7 @@ All done automatically!
 - `GET /api/v1/documents/{document_id}` — Get document + page results
 - `POST /api/v1/documents/decisions/correct` — Record a routing correction
 - `GET /api/v1/settings` — Read LLM settings (YAML)
-- `POST /api/v1/settings` — Update provider selection/config
+- `POST /api/v1/settings` — Update provider selection/config (Basic auth when `AUTH_ENABLED=true`)
 
 ## Learning System
 
@@ -312,6 +312,14 @@ sqlite3 docflow.db
 - On Ubuntu: `apt-get install poppler-utils`
   
 Tip: for quick tests without AI, set `analyze=false` on the upload endpoint.
+
+### Authentication
+- Settings update endpoint requires Basic auth when `AUTH_ENABLED=true`.
+- Default credentials (change in `.env`): `DEFAULT_USERNAME=admin`, `DEFAULT_PASSWORD=changeme`.
+
+### Observability
+- Each response includes `X-Request-ID` and `X-Response-Time-ms` headers.
+- Logs include per-request line with request id (rid), method, path, and duration.
 
 ### Database errors
 - Delete `docflow.db` to reset database

@@ -11,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
 from utils.logging_config import setup_logging
+from utils.middleware import request_id_and_timing_middleware
 
 # Import routers
 from api.upload import router as upload_router
@@ -50,6 +51,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Request ID and timing
+app.middleware("http")(request_id_and_timing_middleware)
 
 # Include routers
 app.include_router(upload_router)
