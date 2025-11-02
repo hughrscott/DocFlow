@@ -52,6 +52,14 @@ async def update_settings(payload: UpdateSettingsRequest, _: bool = Depends(requ
     """Update a subset of LLM settings safely and persist to file."""
     cfg = _load_yaml(settings.llm_config_path)
 
+    # Basic validation / allowlist
+    valid_providers = {"claude", "ollama", "openai"}
+
+    if payload.vision_provider and payload.vision_provider not in valid_providers:
+        raise HTTPException(status_code=400, detail="Invalid vision_provider")
+    if payload.text_provider and payload.text_provider not in valid_providers:
+        raise HTTPException(status_code=400, detail="Invalid text_provider")
+
     if payload.vision_provider:
         cfg.setdefault("llm", {})["vision_provider"] = payload.vision_provider
     if payload.text_provider:
@@ -67,6 +75,8 @@ async def update_settings(payload: UpdateSettingsRequest, _: bool = Depends(requ
             prov_cfg.setdefault("ollama", {})["base_url"] = payload.providers.ollama_base_url
         if payload.providers.claude_api_key:
             # write-through env replacement pattern
+            if len(payload.providers.claude_api_key) < 10:
+                raise HTTPException(status_code=400, detail="claude_api_key seems invalid")
             prov_cfg.setdefault("claude", {})["api_key"] = payload.providers.claude_api_key
 
     try:

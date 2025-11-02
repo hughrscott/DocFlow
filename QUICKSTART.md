@@ -82,6 +82,7 @@ Then fetch details:
 ```bash
 curl http://127.0.0.1:8000/api/v1/documents/<document_id>
 ```
+# Response includes progress fields: `pages_done`, `total_pages`, `last_error`.
 
 ### 5. **Health and Listing**
 ```bash

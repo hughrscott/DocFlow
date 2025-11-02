@@ -60,6 +60,8 @@ class DocumentDetails(BaseModel):
     status: str
     total_pages: int
     error_message: Optional[str] = None
+    pages_done: int
+    last_error: Optional[str] = None
     pages: List[PageResult]
 
 
@@ -203,6 +205,11 @@ async def upload_document(
             filename=filename,
             move=True,
         )
+        if not org_result.get("success"):
+            try:
+                Path(temp_page_path).unlink(missing_ok=True)
+            except Exception:
+                pass
 
         # Persist Page row
         page_row = Page(
@@ -366,6 +373,8 @@ def _process_document_background(
                 f.write(page_pdf_bytes)
 
             org_result = file_manager.organize_document(temp_page_path, folder_path, filename, move=True)
+            if not org_result.get("success"):
+                _cleanup_file(temp_page_path)
 
             page_row = Page(
                 document_id=document_id,
@@ -419,6 +428,12 @@ async def get_document(document_id: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Document not found")
 
     pages = db.query(Page).filter(Page.document_id == document_id).order_by(Page.page_number.asc()).all()
+    pages_done = len(pages)
+    last_error = None
+    for p in reversed(pages):
+        if p.processing_error:
+            last_error = p.processing_error
+            break
     page_results: List[PageResult] = []
     for p in pages:
         page_results.append(
@@ -443,6 +458,8 @@ async def get_document(document_id: str, db: Session = Depends(get_db)):
         status=doc.status,
         total_pages=doc.total_pages,
         error_message=doc.error_message,
+        pages_done=pages_done,
+        last_error=last_error,
         pages=page_results,
     )
 

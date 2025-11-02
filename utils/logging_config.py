@@ -7,10 +7,23 @@ Sets a consistent formatter and log level across the app, including uvicorn.
 import logging
 import logging.config
 import os
+import json
+
+
+class JsonFormatter(logging.Formatter):
+    def format(self, record: logging.LogRecord) -> str:
+        data = {
+            "timestamp": self.formatTime(record, datefmt="%Y-%m-%dT%H:%M:%S%z"),
+            "level": record.levelname,
+            "logger": record.name,
+            "message": record.getMessage(),
+        }
+        return json.dumps(data)
 
 
 def setup_logging(level: str = None) -> None:
     level = (level or os.getenv("LOG_LEVEL", "INFO")).upper()
+    fmt = os.getenv("LOG_FORMAT", "text").lower()
 
     config = {
         "version": 1,
@@ -26,7 +39,7 @@ def setup_logging(level: str = None) -> None:
         "handlers": {
             "console": {
                 "class": "logging.StreamHandler",
-                "formatter": "standard",
+                "formatter": "json" if fmt == "json" else "standard",
                 "level": level,
             },
         },
@@ -38,5 +51,7 @@ def setup_logging(level: str = None) -> None:
         },
     }
 
-    logging.config.dictConfig(config)
+    if fmt == "json":
+        config["formatters"]["json"] = {"()": JsonFormatter}
 
+    logging.config.dictConfig(config)
