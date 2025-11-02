@@ -128,6 +128,8 @@ curl http://127.0.0.1:8000/api/v1/documents/<document_id>
 
 ### Frontend Setup
 
+This repo includes a minimal React + Vite frontend scaffold under `frontend/`.
+
 1. **Navigate to frontend directory:**
 ```bash
 cd frontend
@@ -140,10 +142,12 @@ npm install
 
 3. **Start development server:**
 ```bash
-npm start
+npm run dev
 ```
 
-Frontend will be available at `http://localhost:3000`
+- Frontend runs at `http://localhost:5173` (Vite dev server)
+- API proxy is configured for `/api` to `http://localhost:8000` (no CORS needed)
+- Optionally set `VITE_API_BASE` in `frontend/.env` to override API base URL
 
 ## Configuration
 

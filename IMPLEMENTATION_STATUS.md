@@ -47,32 +47,12 @@
 
 ### 3. Frontend (Medium Priority - can use basic version initially)
 
-**utils/security.py**
-- Password hashing functions
-- JWT token creation/validation
-- CORS configuration
+✅ Minimal React + Vite scaffold added under `frontend/`:
+- `package.json`, `vite.config.ts`, `tsconfig.json`, `index.html`
+- `src/App.tsx`, `src/main.tsx`, `src/components/UploadArea.tsx`
+- `src/services/api.ts`, `src/styles.css`
 
 ### 4. Tests (Medium Priority)
-
-**frontend/package.json**
-- React dependencies
-- Build configuration
-
-**frontend/src/App.tsx**
-- Main React component
-- Routing setup
-
-**frontend/src/components/UploadArea.tsx**
-- Drag-and-drop upload interface
-
-**frontend/src/components/FileList.tsx**
-- Display uploaded files and status
-
-**frontend/src/components/Dashboard.tsx**
-- Overall progress dashboard
-
-**frontend/src/services/api.ts**
-- API client for backend communication
 
 ### 5. Developer Experience (Nice to have)
 - Add `.http` examples for endpoints
