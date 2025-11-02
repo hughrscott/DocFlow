@@ -12,7 +12,7 @@ from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
 
 # Import routers
-# from api.upload import router as upload_router
+from api.upload import router as upload_router
 
 # Configure logging
 logging.basicConfig(
@@ -52,7 +52,7 @@ app.add_middleware(
 )
 
 # Include routers
-# app.include_router(upload_router)
+app.include_router(upload_router)
 
 
 @app.get("/")

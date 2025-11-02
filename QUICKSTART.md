@@ -2,7 +2,7 @@
 
 ## What's Been Created
 
-You now have a **production-ready architecture** for DocFlow with the foundation in place:
+You now have a working MVP backend with the foundation in place:
 
 ### ✅ Foundation Complete
 - Full LLM provider abstraction (Claude + Ollama + extensible)
@@ -10,6 +10,7 @@ You now have a **production-ready architecture** for DocFlow with the foundation
 - PDF processing pipeline
 - Configuration management
 - Multi-environment support
+- FastAPI app with upload + fetch endpoints
 
 ### 📁 Project Structure
 ```
@@ -70,24 +71,30 @@ python -c "from database.database import init_db; init_db()"
 python -c "from llm.llm_manager import LLMManager; print('✓ Setup successful')"
 ```
 
+### 4. **MVP Upload Test**
+Use Swagger: `http://127.0.0.1:8000/docs` → `POST /api/v1/documents/upload` → set `analyze=false` → upload a PDF.
+
+Or curl:
+```bash
+curl -F file=@test_document.pdf 'http://127.0.0.1:8000/api/v1/documents/upload?analyze=false&dpi=120'
+```
+Then fetch details:
+```bash
+curl http://127.0.0.1:8000/api/v1/documents/<document_id>
+```
+
 ## What's Next
 
-### Priority 1: Core Services (I can generate immediately)
-These files are most critical for functionality:
-1. `services/document_analyzer.py` - AI analysis logic
-2. `services/folder_router.py` - Intelligent routing
-3. `main.py` - FastAPI app entry point
-4. `api/upload.py` - Upload endpoint
+### Priority 1: API polish
+1. `api/status.py`: `GET /api/v1/health`, `GET /api/v1/documents` (list recent)
+2. `api/settings.py`: runtime provider config (get/update)
 
-### Priority 2: Complete Services
-5. `services/file_manager.py` - File operations
-6. `services/learning_engine.py` - Improvement over time
-7. `api/status.py` - Status endpoint
-8. `utils/logging_config.py` - Logging setup
+### Priority 2: Ops & DX
+3. `utils/logging_config.py`: structured logging
+4. Basic auth + CORS tightening
 
-### Priority 3: Frontend (Can be basic initially)
-9. Simple React components for upload
-10. File list and status display
+### Priority 3: Frontend (basic)
+5. Simple upload UI + list/review
 
 ## Implementation Path
 

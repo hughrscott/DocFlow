@@ -57,6 +57,8 @@ Thumbs.db
 *.sqlite3
 *.db
 docflow.db
+uploads_temp/
+documents/
 
 # Logs
 *.log
@@ -67,4 +69,3 @@ logs/
 *.bak
 *.tmp
 ~$*
-

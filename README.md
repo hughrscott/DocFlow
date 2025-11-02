@@ -113,6 +113,19 @@ uvicorn main:app --reload
 
 Backend will be available at `http://localhost:8000`
 
+8. **Test the upload API (MVP):**
+- Swagger UI: open `http://localhost:8000/docs`, use `POST /api/v1/documents/upload`
+  - Set `analyze=false` for a quick test (skips AI)
+  - Upload `test_document.pdf`
+- Or curl:
+```
+curl -F file=@test_document.pdf 'http://127.0.0.1:8000/api/v1/documents/upload?analyze=false&dpi=120'
+```
+Then fetch details:
+```
+curl http://127.0.0.1:8000/api/v1/documents/<document_id>
+```
+
 ### Frontend Setup
 
 1. **Navigate to frontend directory:**
@@ -171,6 +184,11 @@ providers:
     base_url: "http://localhost:11434"
     vision_model: "llava:latest"
     text_model: "mistral:latest"
+```
+
+Run an analyzed upload once Poppler and Ollama are ready:
+```
+curl -F file=@test_document.pdf 'http://127.0.0.1:8000/api/v1/documents/upload?analyze=true&dpi=120'
 ```
 
 **Option 3: Use Both with Fallback**
@@ -233,34 +251,11 @@ All done automatically!
 
 ## API Endpoints
 
-### Upload Documents
-```bash
-POST /api/upload
-Content-Type: multipart/form-data
-
-File: document.pdf
-```
-
-### Get Processing Status
-```bash
-GET /api/status/{document_id}
-```
-
-### Get LLM Configuration
-```bash
-GET /api/settings
-```
-
-### Update LLM Configuration
-```bash
-POST /api/settings
-Content-Type: application/json
-
-{
-  "vision_provider": "claude",
-  "text_provider": "ollama"
-}
-```
+- `GET /` — API info
+- `GET /api/v1/status` — API status
+- `POST /api/v1/documents/upload` — Upload PDF; query params: `analyze` (bool, default true), `dpi` (int)
+- `GET /api/v1/documents/{document_id}` — Get document + page results
+- `POST /api/v1/documents/decisions/correct` — Record a routing correction
 
 ## Learning System
 
@@ -311,6 +306,8 @@ sqlite3 docflow.db
 - Ensure `pdf2image` and `poppler` are installed
 - On macOS: `brew install poppler`
 - On Ubuntu: `apt-get install poppler-utils`
+  
+Tip: for quick tests without AI, set `analyze=false` on the upload endpoint.
 
 ### Database errors
 - Delete `docflow.db` to reset database
@@ -339,9 +336,8 @@ docflow/
 │   ├── learning_engine.py
 │   └── file_manager.py
 ├── api/                   # FastAPI routes
-│   ├── upload.py
-│   ├── status.py
-│   └── settings.py
+│   ├── upload.py          # MVP: upload, correction, get-by-id
+│   └── __init__.py
 ├── utils/                 # Utility functions
 │   ├── logging_config.py
 │   └── security.py
@@ -416,11 +412,16 @@ Contributions are welcome! Please:
 
 ## Changelog
 
-### v1.0.0 (Initial Release)
-- Core document analysis and routing
-- Multi-LLM provider support
-- Learning system implementation
-- Web interface for uploads
+### v0.1.0 (MVP Backend)
+- FastAPI app running with status route
+- Upload flow: split PDF into pages and organize files
+- Optional analysis via Ollama/Claude (`analyze` + `dpi` params)
+- Document fetch and correction endpoints
+
+### v1.0.0 (Planned)
+- Refined analysis and routing
+- Learning system metrics and UI
+- Web interface for uploads and review
 - Security and authentication
 
 ---
