@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { uploadDocument, listDocuments, getDocument } from './services/api'
 import UploadArea from './components/UploadArea'
 import SettingsView from './components/SettingsView'
+import { useToast } from './components/Toast'
 
 type DocBrief = {
   id: string
@@ -41,7 +42,7 @@ export default function App() {
   const [docs, setDocs] = useState<DocBrief[]>([])
   const [loading, setLoading] = useState(false)
   const [selectedDoc, setSelectedDoc] = useState<DocDetail | null>(null)
-  const [message, setMessage] = useState<string | null>(null)
+  const { show } = useToast()
 
   async function refresh() {
     setLoading(true)
@@ -49,7 +50,7 @@ export default function App() {
       const res = await listDocuments(1, 10)
       setDocs(res.items)
     } catch (e: any) {
-      setMessage(e?.message ?? 'Failed to load documents')
+      show(e?.message ?? 'Failed to load documents', 'error')
     } finally {
       setLoading(false)
     }
@@ -60,10 +61,9 @@ export default function App() {
   }, [])
 
   async function handleUpload(file: File, opts: { analyze: boolean; background: boolean; dpi: number }) {
-    setMessage(null)
     try {
       const out = await uploadDocument(file, opts)
-      setMessage(`Uploaded: ${out.document_id}`)
+      show(`Uploaded: ${out.document_id}`, 'success')
       // If background, poll a couple of times
       if (opts.background) {
         for (let i = 0; i < 10; i++) {
@@ -78,7 +78,7 @@ export default function App() {
       }
       await refresh()
     } catch (e: any) {
-      setMessage(e?.message ?? 'Upload failed')
+      show(e?.message ?? 'Upload failed', 'error')
     }
   }
 
@@ -92,7 +92,7 @@ export default function App() {
       <section>
         <h2>Upload</h2>
         <UploadArea onUpload={handleUpload} />
-        {message && <div className="message">{message}</div>}
+        
       </section>
 
       <section>
@@ -204,6 +204,7 @@ function PageActions({ page, onUpdated }: { page: any, onUpdated: () => Promise<
     try {
       const { reanalyzePage } = await import('./services/api')
       await reanalyzePage(page.page_id, dpi)
+      show(`Re-analyzed page ${page.page_number}`, 'success')
       await onUpdated()
     } finally {
       setBusy(false)
@@ -216,6 +217,7 @@ function PageActions({ page, onUpdated }: { page: any, onUpdated: () => Promise<
     try {
       const { correctPage } = await import('./services/api')
       await correctPage(page.page_id, folder, filename)
+      show(`Moved page ${page.page_number}`, 'success')
       await onUpdated()
     } finally {
       setBusy(false)
@@ -241,6 +243,7 @@ function DocActions({ docId, onUpdated }: { docId: string; onUpdated: () => Prom
     try {
       const { reanalyzeDocument } = await import('./services/api')
       await reanalyzeDocument(docId, dpi, true)
+      show('Re-analysis scheduled', 'info')
       // background; poll a few times
       for (let i = 0; i < 12; i++) {
         await onUpdated()
@@ -254,6 +257,8 @@ function DocActions({ docId, onUpdated }: { docId: string; onUpdated: () => Prom
     <div className="controls">
       <button onClick={doReanalyzeAll} disabled={busy}>Re‑analyze All (background)</button>
       <label style={{ color: '#a8b2d1' }}>DPI <input type="number" min={72} max={300} value={dpi} onChange={(e)=> setDpi(parseInt(e.target.value||'120',10))} style={{ width: 70 }} /></label>
+  const { show } = useToast()
     </div>
   )
+  const { show } = useToast()
 }
