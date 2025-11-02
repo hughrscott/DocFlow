@@ -149,6 +149,11 @@ npm run dev
 - API proxy is configured for `/api` to `http://localhost:8000` (no CORS needed)
 - Optionally set `VITE_API_BASE` in `frontend/.env` to override API base URL
 
+UI features (MVP)
+- Upload a PDF with analyze/background/dpi options
+- View recent documents (filename, uploaded time, status, pages)
+- View document details including per-page results (type, institution, date, confidence, folder/filename, provider/model, status)
+
 ## Configuration
 
 ### LLM Provider Configuration

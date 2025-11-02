@@ -10,12 +10,27 @@ type DocBrief = {
   status: string
 }
 
+type PageResult = {
+  page_number: number
+  document_type: string
+  institution?: string | null
+  date?: string | null
+  confidence_score: number
+  folder: string
+  filename: string
+  provider_used?: string | null
+  model_used?: string | null
+  success: boolean
+  error?: string | null
+}
+
 type DocDetail = {
   document_id: string
   status: string
   total_pages: number
   pages_done: number
   last_error?: string | null
+  pages: PageResult[]
 }
 
 export default function App() {
@@ -49,25 +64,13 @@ export default function App() {
       if (opts.background) {
         for (let i = 0; i < 10; i++) {
           const d = await getDocument(out.document_id)
-          setSelectedDoc({
-            document_id: d.document_id,
-            status: d.status,
-            total_pages: d.total_pages,
-            pages_done: d.pages_done,
-            last_error: d.last_error,
-          })
+          setSelectedDoc(d)
           if (d.status === 'completed' || d.status === 'failed') break
           await new Promise((r) => setTimeout(r, 500))
         }
       } else {
         const d = await getDocument(out.document_id)
-        setSelectedDoc({
-          document_id: d.document_id,
-          status: d.status,
-          total_pages: d.total_pages,
-          pages_done: d.pages_done,
-          last_error: d.last_error,
-        })
+        setSelectedDoc(d)
       }
       await refresh()
     } catch (e: any) {
@@ -131,9 +134,42 @@ export default function App() {
             </div>
             {selectedDoc.last_error && <div className="error">Last error: {selectedDoc.last_error}</div>}
           </div>
+
+          <h3>Pages</h3>
+          <table className="table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Type</th>
+                <th>Institution</th>
+                <th>Date</th>
+                <th>Conf.</th>
+                <th>Folder</th>
+                <th>Filename</th>
+                <th>Provider</th>
+                <th>Model</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {selectedDoc.pages?.map((p) => (
+                <tr key={p.page_number}>
+                  <td>{p.page_number}</td>
+                  <td>{p.document_type || 'unknown'}</td>
+                  <td>{p.institution || ''}</td>
+                  <td>{p.date || ''}</td>
+                  <td>{(p.confidence_score ?? 0).toFixed(2)}</td>
+                  <td>{p.folder}</td>
+                  <td>{p.filename}</td>
+                  <td>{p.provider_used || ''}</td>
+                  <td>{p.model_used || ''}</td>
+                  <td>{p.success ? 'ok' : (p.error ? `err: ${p.error}` : 'pending')}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </section>
       )}
     </div>
   )
 }
-
