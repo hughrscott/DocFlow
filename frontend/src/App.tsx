@@ -155,11 +155,12 @@ export default function App() {
                 <th>Provider</th>
                 <th>Model</th>
                 <th>Status</th>
+                <th>Actions</th>
               </tr>
             </thead>
             <tbody>
               {selectedDoc.pages?.map((p) => (
-                <tr key={p.page_number}>
+                <tr key={p.page_id || p.page_number}>
                   <td>{p.page_number}</td>
                   <td>{p.document_type || 'unknown'}</td>
                   <td>{p.institution || ''}</td>
@@ -170,12 +171,56 @@ export default function App() {
                   <td>{p.provider_used || ''}</td>
                   <td>{p.model_used || ''}</td>
                   <td>{p.success ? 'ok' : (p.error ? `err: ${p.error}` : 'pending')}</td>
+                  <td>
+                    <PageActions page={p} onUpdated={async ()=> setSelectedDoc(await getDocument(selectedDoc.document_id))} />
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </section>
       )}
+    </div>
+  )
+}
+
+function PageActions({ page, onUpdated }: { page: any, onUpdated: () => Promise<void> }) {
+  const [dpi, setDpi] = useState(120)
+  const [folder, setFolder] = useState(page.folder)
+  const [filename, setFilename] = useState(page.filename)
+  const [busy, setBusy] = useState(false)
+
+  async function doReanalyze() {
+    if (!page.page_id) return
+    setBusy(true)
+    try {
+      const { reanalyzePage } = await import('./services/api')
+      await reanalyzePage(page.page_id, dpi)
+      await onUpdated()
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function doCorrect() {
+    if (!page.page_id) return
+    setBusy(true)
+    try {
+      const { correctPage } = await import('./services/api')
+      await correctPage(page.page_id, folder, filename)
+      await onUpdated()
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+      <button onClick={doReanalyze} disabled={busy || !page.page_id}>Re‑analyze</button>
+      <label style={{ color: '#a8b2d1' }}>DPI <input type="number" min={72} max={300} value={dpi} onChange={(e)=> setDpi(parseInt(e.target.value||'120',10))} style={{ width: 70 }} /></label>
+      <label style={{ color: '#a8b2d1' }}>Folder <input type="text" value={folder} onChange={(e)=> setFolder(e.target.value)} style={{ width: 200 }} /></label>
+      <label style={{ color: '#a8b2d1' }}>Filename <input type="text" value={filename} onChange={(e)=> setFilename(e.target.value)} style={{ width: 220 }} /></label>
+      <button onClick={doCorrect} disabled={busy || !page.page_id}>Correct</button>
     </div>
   )
 }

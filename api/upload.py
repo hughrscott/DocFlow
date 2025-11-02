@@ -18,7 +18,7 @@ import logging
 
 from config.settings import settings
 from database.database import get_db, SessionLocal
-from database.models import Document, Page
+from database.models import Document, Page, ProcessingDecision
 from sqlalchemy.orm import Session
 
 from services.pdf_processor import PDFProcessor
@@ -34,6 +34,7 @@ router = APIRouter(prefix="/api/v1/documents", tags=["documents"])
 
 
 class PageResult(BaseModel):
+    page_id: Optional[str] = None
     page_number: int
     document_type: str
     institution: Optional[str] = None
@@ -45,6 +46,7 @@ class PageResult(BaseModel):
     model_used: Optional[str] = None
     success: bool = True
     error: Optional[str] = None
+    decision_id: Optional[str] = None
 
 
 class UploadResponse(BaseModel):
@@ -438,6 +440,7 @@ async def get_document(document_id: str, db: Session = Depends(get_db)):
     for p in pages:
         page_results.append(
             PageResult(
+                page_id=p.id,
                 page_number=p.page_number,
                 document_type=p.document_type,
                 institution=p.institution,
@@ -449,6 +452,12 @@ async def get_document(document_id: str, db: Session = Depends(get_db)):
                 model_used=p.llm_model_used or None,
                 success=(p.processing_status == "completed"),
                 error=p.processing_error,
+                decision_id=(
+                    db.query(ProcessingDecision)
+                    .filter(ProcessingDecision.page_id == p.id)
+                    .order_by(ProcessingDecision.timestamp.desc())
+                    .first()
+                ).id if db.query(ProcessingDecision).filter(ProcessingDecision.page_id == p.id).first() else None,
             )
         )
 
@@ -462,6 +471,129 @@ async def get_document(document_id: str, db: Session = Depends(get_db)):
         last_error=last_error,
         pages=page_results,
     )
+
+
+class ReanalyzeResponse(BaseModel):
+    page: PageResult
+
+
+@router.post("/pages/{page_id}/reanalyze", response_model=ReanalyzeResponse)
+async def reanalyze_page(page_id: str, dpi: int = 150, db: Session = Depends(get_db)):
+    """Re-run AI analysis for a single page from its stored PDF."""
+    page = db.query(Page).filter(Page.id == page_id).first()
+    if not page:
+        raise HTTPException(status_code=404, detail="Page not found")
+
+    # Locate PDF file on disk
+    router = FolderRouter(settings.documents_dir)
+    pdf_path = router.full_path_for_document(page.assigned_folder, page.output_filename)
+    if not Path(pdf_path).exists():
+        raise HTTPException(status_code=404, detail="Stored page PDF not found on disk")
+
+    # Convert to image and analyze
+    pdf = PDFProcessor(temp_dir=settings.uploads_temp_dir)
+    try:
+        with open(pdf_path, 'rb') as f:
+            pdf_bytes = f.read()
+        image_bytes = await pdf.pdf_page_to_image(pdf_bytes, dpi=dpi)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to convert PDF to image: {e}")
+
+    try:
+        llm_manager = LLMManager(settings.llm_config_path)
+        analyzer = DocumentAnalyzer(llm_manager, confidence_threshold=settings.min_confidence_threshold)
+        analysis = await analyzer.analyze_page(image_bytes, page_number=page.page_number)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Analysis failed: {e}")
+
+    # Update page with new analysis
+    page.document_type = analysis.get("document_type", page.document_type)
+    page.institution = analysis.get("institution")
+    page.confidence_score = analysis.get("confidence_score", 0.0)
+    page.extracted_metadata = analysis.get("extracted_metadata", {})
+    page.llm_provider_used = analysis.get("provider_used") or ""
+    page.llm_model_used = analysis.get("model_used") or ""
+    db.commit()
+
+    # Record new decision proposal
+    folder_router = FolderRouter(settings.documents_dir)
+    new_folder, _ = folder_router.propose_folder(analysis, create_if_missing=False)
+    new_filename = folder_router.generate_filename(analysis, page_number=page.page_number, extension="pdf")
+    learning = LearningEngine(db)
+    learning.record_decision(
+        page_id=page.id,
+        proposed_folder=new_folder,
+        proposed_filename=new_filename,
+        proposed_confidence=page.confidence_score,
+        user_corrected=False,
+    )
+
+    # Prepare response
+    decision = db.query(ProcessingDecision).filter(ProcessingDecision.page_id == page.id).order_by(ProcessingDecision.timestamp.desc()).first()
+    return ReanalyzeResponse(
+        page=PageResult(
+            page_id=page.id,
+            page_number=page.page_number,
+            document_type=page.document_type,
+            institution=page.institution,
+            date=(page.extracted_metadata or {}).get("date"),
+            confidence_score=page.confidence_score,
+            folder=new_folder,
+            filename=new_filename,
+            provider_used=page.llm_provider_used or None,
+            model_used=page.llm_model_used or None,
+            success=True,
+            error=None,
+            decision_id=decision.id if decision else None,
+        )
+    )
+
+
+class PageCorrectionRequest(BaseModel):
+    folder: str
+    filename: str
+
+
+@router.post("/pages/{page_id}/correct")
+async def correct_page(page_id: str, req: PageCorrectionRequest, db: Session = Depends(get_db)):
+    """Apply a correction for a page by moving the file and updating learning."""
+    page = db.query(Page).filter(Page.id == page_id).first()
+    if not page:
+        raise HTTPException(status_code=404, detail="Page not found")
+
+    folder_router = FolderRouter(settings.documents_dir)
+    file_manager = FileManager(settings.documents_dir)
+    # Current path
+    current_path = folder_router.full_path_for_document(page.assigned_folder, page.output_filename)
+    # Move to corrected path
+    success, dest, msg = file_manager.move_file(current_path, req.folder, req.filename)
+    if not success:
+        raise HTTPException(status_code=400, detail=msg)
+
+    # Update page
+    page.assigned_folder = req.folder
+    page.output_filename = req.filename
+    page.processing_status = "completed"
+    db.commit()
+
+    # Find latest decision for this page
+    decision = db.query(ProcessingDecision).filter(ProcessingDecision.page_id == page.id).order_by(ProcessingDecision.timestamp.desc()).first()
+    learning = LearningEngine(db)
+    if decision:
+        learning.record_correction(decision_id=decision.id, actual_folder=req.folder, actual_filename=req.filename)
+    else:
+        # Create a decision to learn from
+        learning.record_decision(
+            page_id=page.id,
+            proposed_folder=req.folder,
+            proposed_filename=req.filename,
+            proposed_confidence=page.confidence_score,
+            actual_folder=req.folder,
+            actual_filename=req.filename,
+            user_corrected=True,
+        )
+
+    return {"success": True, "message": "Page corrected", "destination": dest}
 
 
 class CorrectionRequest(BaseModel):

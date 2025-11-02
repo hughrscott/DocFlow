@@ -48,3 +48,21 @@ export async function updateSettings(payload: any, basicAuth?: { username: strin
   if (!res.ok) throw new Error(`Settings update failed: ${res.status}`)
   return res.json()
 }
+
+export async function reanalyzePage(pageId: string, dpi = 150) {
+  const res = await fetch(`${API_BASE}/api/v1/documents/pages/${pageId}/reanalyze?dpi=${dpi}`, {
+    method: 'POST',
+  })
+  if (!res.ok) throw new Error('Reanalyze failed')
+  return res.json()
+}
+
+export async function correctPage(pageId: string, folder: string, filename: string) {
+  const res = await fetch(`${API_BASE}/api/v1/documents/pages/${pageId}/correct`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ folder, filename }),
+  })
+  if (!res.ok) throw new Error('Correction failed')
+  return res.json()
+}
