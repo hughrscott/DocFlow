@@ -75,6 +75,67 @@ def _ensure_dirs() -> None:
     Path(settings.documents_dir).mkdir(parents=True, exist_ok=True)
 
 
+def _safe_get(d: Dict[str, Any], path: List[str]) -> Any:
+    cur = d
+    for key in path:
+        if not isinstance(cur, dict) or key not in cur:
+            return None
+        cur = cur[key]
+    return cur
+
+
+def _is_continuation(prev_meta: Optional[Dict[str, Any]], curr_meta: Dict[str, Any]) -> bool:
+    """Heuristic: whether current page likely continues previous.
+
+    Signals considered: explicit continuation flag, matching header/footer signatures,
+    font overlap, matching identifiers, compatible page markers.
+    """
+    if not prev_meta or not isinstance(prev_meta, dict) or not isinstance(curr_meta, dict):
+        # if curr says explicit continuation, allow
+        explicit = _safe_get(curr_meta, ["is_continuation_of_previous", "value"]) or False
+        return bool(explicit)
+
+    score = 0
+    # Explicit
+    if _safe_get(curr_meta, ["is_continuation_of_previous", "value"]):
+        score += 2
+
+    # Header/Footer signatures
+    prev_head = _safe_get(prev_meta, ["layout_fingerprints", "header_signature"])
+    curr_head = _safe_get(curr_meta, ["layout_fingerprints", "header_signature"])
+    prev_foot = _safe_get(prev_meta, ["layout_fingerprints", "footer_signature"])
+    curr_foot = _safe_get(curr_meta, ["layout_fingerprints", "footer_signature"])
+    if prev_head and curr_head and prev_head == curr_head:
+        score += 1
+    if prev_foot and curr_foot and prev_foot == curr_foot:
+        score += 1
+
+    # Fonts overlap
+    prev_fonts = set(_safe_get(prev_meta, ["layout_fingerprints", "fonts"]) or [])
+    curr_fonts = set(_safe_get(curr_meta, ["layout_fingerprints", "fonts"]) or [])
+    if prev_fonts and curr_fonts:
+        inter = len(prev_fonts.intersection(curr_fonts))
+        denom = max(len(prev_fonts), 1)
+        if inter / denom >= 0.5:
+            score += 1
+
+    # Identifiers match
+    for key in ("account_last4", "policy", "invoice", "statement_id", "case_number"):
+        prev_id = _safe_get(prev_meta, ["identifiers", key])
+        curr_id = _safe_get(curr_meta, ["identifiers", key])
+        if prev_id and curr_id and prev_id == curr_id:
+            score += 1
+            break
+
+    # Page markers (simple check)
+    prev_total = _safe_get(prev_meta, ["page_markers", "total_pages_text"]) or ""
+    curr_total = _safe_get(curr_meta, ["page_markers", "total_pages_text"]) or ""
+    if prev_total and curr_total and prev_total == curr_total:
+        score += 1
+
+    return score >= 2
+
+
 @router.post("/upload", response_model=UploadResponse)
 async def upload_document(
     file: UploadFile = File(...),
@@ -169,6 +230,10 @@ async def upload_document(
     # Process each page synchronously for MVP
     learning = LearningEngine(db)
 
+    prev_meta: Optional[Dict[str, Any]] = None
+    current_seq_idx = 1
+    current_seq = f"seq-{current_seq_idx}"
+
     for idx, page_pdf_bytes in enumerate(pages, start=1):
         # Try to convert to image for AI; if fails, skip AI
         image_bytes: Optional[bytes] = None
@@ -194,6 +259,22 @@ async def upload_document(
                 "provider_used": None,
                 "model_used": None,
             }
+
+        # Assign sequence id in extracted metadata
+        meta = analysis.get("extracted_metadata", {}) or {}
+        if not isinstance(meta, dict):
+            meta = {}
+        if _is_continuation(prev_meta, meta):
+            # same sequence
+            pass
+        else:
+            # new sequence
+            if idx != 1:
+                current_seq_idx += 1
+                current_seq = f"seq-{current_seq_idx}"
+        meta["sequence_id"] = current_seq
+        analysis["extracted_metadata"] = meta
+        prev_meta = meta
 
         # Propose folder and filename
         folder_path, _conf = folder_router.propose_folder(analysis, create_if_missing=True)
@@ -314,7 +395,11 @@ def _process_document_background(
 
         learning = LearningEngine(db)
         
-        # Process
+        # Process with sequence grouping
+        prev_meta: Optional[Dict[str, Any]] = None
+        current_seq_idx = 1
+        current_seq = f"seq-{current_seq_idx}"
+
         for idx, page_pdf_bytes in enumerate(pages, start=1):
             image_bytes = None
             if analyze:
@@ -369,6 +454,20 @@ def _process_document_background(
                     "provider_used": None,
                     "model_used": None,
                 }
+
+            # Assign sequence id in extracted metadata
+            meta = analysis.get("extracted_metadata", {}) or {}
+            if not isinstance(meta, dict):
+                meta = {}
+            if _is_continuation(prev_meta, meta):
+                pass
+            else:
+                if idx != 1:
+                    current_seq_idx += 1
+                    current_seq = f"seq-{current_seq_idx}"
+            meta["sequence_id"] = current_seq
+            analysis["extracted_metadata"] = meta
+            prev_meta = meta
 
             folder_path, _ = folder_router.propose_folder(analysis, create_if_missing=True)
             filename = folder_router.generate_filename(analysis, page_number=idx, extension="pdf")

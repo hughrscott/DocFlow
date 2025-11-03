@@ -55,8 +55,8 @@ Heuristics to Answer is_continuation_of_previous
 ## Multi‑Page Grouping (Design)
 - During upload or reanalysis, compute a lightweight fingerprint per page:
   - `header_signature`, `footer_signature`, `dominant_fonts`, `page_number_text`, `identifiers`.
-- Compare each page to previous page; if >= threshold similarity OR page numbering indicates sequence, mark `is_continuation_of_previous=true`.
-- Persist a `sequence_id` (to be added) to tie pages that belong together.
+- Compare each page to previous page; if >= threshold similarity OR explicit `is_continuation_of_previous.value` is true, mark as continuation.
+- Persist a `sequence_id` inside each page's `extracted_metadata` to tie pages that belong together (no DB migration required).
 - UI: show grouped pages and allow “merge/move as a set”.
 
 ## Implementation Plan

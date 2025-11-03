@@ -15,7 +15,8 @@ This document tracks current status. Sections below are living and should be upd
 ## In‑Progress
 
 - UI: one‑click "Move to Proposed" (page‑level)
- - Doc-level aggregator & Essentials (initial)
+- Doc-level aggregator & Essentials (initial)
+ - Multi-page grouping: assign and persist `sequence_id` in page metadata during upload and reanalyze
 
 ## Next
 
@@ -25,7 +26,7 @@ This document tracks current status. Sections below are living and should be upd
 - Add unit and integration tests for core flows
 - Multi‑page grouping heuristics and sequence tracking
 - File move audit trail with revert capability
- - Doc-level corrections: confirm class (wired; iterate with learning feedback)
+- Doc-level corrections: confirm class (wired; iterate with learning feedback)
 
 ---
 
