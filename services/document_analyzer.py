@@ -91,9 +91,11 @@ class DocumentAnalyzer:
             # Parse LLM response
             logger.debug(f"Parsing LLM response for page {page_number}")
             extracted_data = self._parse_llm_response(llm_response.content)
+            # Normalize to legacy-compatible fields
+            normalized = self._normalize_extraction(extracted_data)
             
             # Calculate confidence
-            confidence = self._calculate_confidence(extracted_data)
+            confidence = self._calculate_confidence(normalized)
             
             logger.info(
                 f"Page {page_number} analysis complete: "
@@ -104,11 +106,11 @@ class DocumentAnalyzer:
             return {
                 "success": True,
                 "error": None,
-                "document_type": extracted_data.get("document_type", "unknown"),
-                "institution": extracted_data.get("institution"),
-                "date": extracted_data.get("date"),
+                "document_type": normalized.get("document_type", "unknown"),
+                "institution": normalized.get("institution"),
+                "date": normalized.get("date"),
                 "confidence_score": confidence,
-                "extracted_metadata": extracted_data,
+                "extracted_metadata": normalized,
                 "provider_used": llm_response.provider.value,
                 "model_used": llm_response.model,
             }
@@ -130,31 +132,38 @@ class DocumentAnalyzer:
     
     def _create_analysis_prompt(self) -> str:
         """
-        Create the prompt for document analysis.
-        
-        This prompt instructs the LLM on what to extract from the document.
-        
-        Returns:
-            Analysis prompt string
+        Create the prompt for document analysis using a structured schema.
         """
-        prompt = """You are an expert document classifier and data extractor. Analyze this document image carefully and extract the following information in JSON format:
-
-{
-    "document_type": "Type of document (e.g., 'bank_statement', 'tax_bill', 'utility_bill', 'insurance_claim', 'invoice', 'medical_record', 'mortgage_statement', 'property_tax', 'credit_card_statement', 'loan_document', 'utility_bill', 'other')",
-    "institution": "Name of the organization/institution that issued this document (e.g., 'PNC Bank', 'IRS', 'Harris County Tax Office', 'Blue Cross Insurance')",
-    "date": "Date or date range of the document in YYYY-MM format (e.g., '2025-01', '2024-12')",
-    "account_type": "Type of account if applicable (e.g., 'checking', 'savings', 'credit_card', 'mortgage', 'personal')",
-    "account_holder": "Name of the account holder if visible",
-    "account_number_masked": "Last 4 digits of account number if visible (e.g., '****1234')",
-    "amount": "Primary amount on document if applicable (e.g., balance, total due)",
-    "document_category": "Broad category (e.g., 'Financial', 'Government', 'Insurance', 'Medical', 'Utility', 'Legal')",
-    "key_identifiers": "Any identifying information (reference numbers, case numbers, policy numbers, etc.)",
-    "confidence_indicators": "What clues helped you classify this document?",
-    "is_multipage_indicator": "Does this document appear to be part of a multi-page document?"
-}
-
-Be thorough in extraction. If information is not visible or unclear, use null. Return ONLY valid JSON, no other text."""
-        
+        prompt = (
+            "You are an expert document classifier and data extractor. "
+            "Analyze this document image and return ONLY valid JSON matching the schema below. No prose.\n\n"
+            "Schema (all fields optional unless implied):\n"
+            "{\n"
+            "  \"issuer\": { \"name\": string|null, \"confidence\": number },\n"
+            "  \"recipient\": { \"name\": string|null, \"confidence\": number },\n"
+            "  \"document_type\": { \"value\": string, \"confidence\": number },\n"
+            "  \"document_subtype\": string|null,\n"
+            "  \"period\": { \"start_date\": \"YYYY-MM-DD\"|null, \"end_date\": \"YYYY-MM-DD\"|null, \"month\": \"YYYY-MM\"|null },\n"
+            "  \"identifiers\": { \"account_last4\": string|null, \"policy\": string|null, \"invoice\": string|null, \"statement_id\": string|null },\n"
+            "  \"amounts\": { \"total_due\": number|null, \"balance\": number|null, \"payment\": number|null, \"currency\": string|null },\n"
+            "  \"addressed_to\": string|null,\n"
+            "  \"is_continuation_of_previous\": { \"value\": boolean, \"confidence\": number, \"rationale\": string },\n"
+            "  \"page_markers\": { \"page_number_text\": string|null, \"total_pages_text\": string|null },\n"
+            "  \"layout_fingerprints\": { \"fonts\": string[], \"header_signature\": string|null, \"footer_signature\": string|null },\n"
+            "  \"proposed_filename\": string,\n"
+            "  \"hints\": string[]\n"
+            "}\n\n"
+            "Instructions:\n"
+            "- Identify issuer and recipient.\n"
+            "- Classify document_type using taxonomy: banking(bank_statement,credit_card_statement,mortgage_statement,loan_document), taxes(tax_bill,property_tax,income_tax), utilities(electric_bill,gas_bill,water_bill,internet_bill,mobile_bill), insurance(insurance_policy,insurance_claim,auto_insurance,health_insurance), medical(medical_record,prescription,health_report), employment(paystub,employment_contract), finance(invoice,receipt,payment_record), legal(affidavit,legal_notice,court_document), other(other,unknown).\n"
+            "- Pay special attention to legal documents like AFFIDAVIT/NOTARY pages (keywords: 'Affidavit', 'Sworn', 'State of', 'County of', 'Subscribed and sworn', 'Notary').\n"
+            "- Identify business names including d/b/a patterns (e.g., 'School of Rock d/b/a Flagstore LLC').\n"
+            "- Extract period (month or start/end).\n"
+            "- Include identifiers like account_last4/policy/invoice.\n"
+            "- Indicate if this page likely continues the previous page using page markers, layout similarity, and identifiers.\n"
+            "- Suggest a filename like <Institution>-<Type>-<YYYY-MM or range>-<Last4?>-PageN.pdf\n\n"
+            "Return only JSON."
+        )
         return prompt
     
     def _parse_llm_response(self, response_text: str) -> Dict[str, Any]:
@@ -293,3 +302,52 @@ Be thorough in extraction. If information is not visible or unclear, use null. R
         
         logger.info(f"Completed analysis of {len(page_images)} pages")
         return results
+
+    def _normalize_extraction(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Normalize extracted fields to the legacy keys the app expects while
+        preserving the richer structured values from the prompt.
+        """
+        out: Dict[str, Any] = {}
+        try:
+            src = data or {}
+            # Start with original structure
+            if isinstance(src, dict):
+                out.update(src)
+
+            # institution from issuer.name
+            issuer = src.get("issuer") if isinstance(src, dict) else None
+            institution = None
+            if isinstance(issuer, dict):
+                institution = issuer.get("name")
+            out["institution"] = institution
+
+            # date from period (month -> end_date -> start_date)
+            period = src.get("period") if isinstance(src, dict) else None
+            date_val = None
+            if isinstance(period, dict):
+                date_val = period.get("month") or period.get("end_date") or period.get("start_date")
+            out["date"] = date_val
+
+            # document_type from nested value if present
+            doc_t = src.get("document_type") if isinstance(src, dict) else None
+            if isinstance(doc_t, dict):
+                out["document_type"] = (doc_t.get("value") or "unknown").lower()
+            else:
+                out["document_type"] = (doc_t or "unknown").lower()
+
+            # identifiers.account_last4 -> account_number_masked
+            ids = src.get("identifiers") if isinstance(src, dict) else None
+            if isinstance(ids, dict):
+                last4 = ids.get("account_last4")
+                if last4 and isinstance(last4, str):
+                    out["account_number_masked"] = ("****" + last4[-4:])
+
+            # amounts: single value for scoring convenience
+            amts = src.get("amounts") if isinstance(src, dict) else None
+            if isinstance(amts, dict):
+                out["amount"] = amts.get("total_due") or amts.get("balance") or amts.get("payment")
+
+            return out
+        except Exception:
+            return data or {}

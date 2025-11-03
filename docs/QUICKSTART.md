@@ -1,5 +1,9 @@
 # DocFlow - Quick Start Guide
 
+Audience: developers
+Owner: maintainers
+Last Updated: 2025-11-03
+
 ## What's Been Created
 
 You now have a working MVP backend with the foundation in place:

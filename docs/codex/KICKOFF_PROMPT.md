@@ -1,5 +1,9 @@
 # DocFlow – Kickoff Prompt for New Codex Session
 
+Audience: Codex sessions
+Owner: maintainers
+Last Updated: 2025-11-03
+
 Use this prompt to rapidly bring a new Codex session up to speed. Paste it as-is.
 
 ---

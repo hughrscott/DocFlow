@@ -36,6 +36,17 @@ type DocDetail = {
   pages_done: number
   last_error?: string | null
   pages: PageResult[]
+  doc_level?: {
+    document_class?: string
+    confidence?: number
+    issuer?: string | null
+    recipient?: string | null
+    period?: string | null
+    identifiers?: Record<string, any>
+    salient_facts?: { label: string; value: any }[]
+    proposed_filename?: string | null
+    rationale?: string | null
+  } | null
 }
 
 export default function App() {
@@ -144,6 +155,28 @@ export default function App() {
         <section>
           <h2>Document Details</h2>
           <DocActions docId={selectedDoc.document_id} onUpdated={async ()=> setSelectedDoc(await getDocument(selectedDoc.document_id))} />
+          {selectedDoc.doc_level && (
+            <div className="card" style={{ marginTop: 10 }}>
+              <div style={{ fontWeight: 600, marginBottom: 6 }}>Essentials</div>
+              <div><b>Issuer:</b> {selectedDoc.doc_level.issuer || '—'}</div>
+              <div><b>Class:</b> {selectedDoc.doc_level.document_class || '—'} {selectedDoc.doc_level.confidence != null ? `(${Math.round((selectedDoc.doc_level.confidence||0)*100)}% conf)` : ''}</div>
+              <div><b>Period:</b> {selectedDoc.doc_level.period || '—'}</div>
+              {selectedDoc.doc_level.proposed_filename && (
+                <div><b>Suggested Filename:</b> {selectedDoc.doc_level.proposed_filename}</div>
+              )}
+              {selectedDoc.doc_level?.salient_facts && selectedDoc.doc_level.salient_facts.length > 0 && (
+                <div style={{ marginTop: 6 }}>
+                  <b>Key Facts:</b>
+                  <ul>
+                    {selectedDoc.doc_level.salient_facts.slice(0,5).map((sf, i)=> (
+                      <li key={i}>{sf.label}: {String(sf.value)}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              <ConfirmClassControls docId={selectedDoc.document_id} currentClass={selectedDoc.doc_level.document_class || ''} onUpdated={async ()=> setSelectedDoc(await getDocument(selectedDoc.document_id))} />
+            </div>
+          )}
           <div className="card">
             <div><b>ID:</b> {selectedDoc.document_id}</div>
             <div><b>Status:</b> {selectedDoc.status}</div>
@@ -205,6 +238,7 @@ function PageActions({ page, onUpdated }: { page: any, onUpdated: () => Promise<
   const [folder, setFolder] = useState(page.folder)
   const [filename, setFilename] = useState(page.filename)
   const [busy, setBusy] = useState(false)
+  const { show } = useToast()
 
   async function doReanalyze() {
     if (!page.page_id) return
@@ -236,20 +270,72 @@ function PageActions({ page, onUpdated }: { page: any, onUpdated: () => Promise<
     }
   }
 
+  async function moveToProposed() {
+    if (!page.page_id) return
+    if (!page.proposed_folder && !page.proposed_filename) return
+    setBusy(true)
+    try {
+      const { correctPage } = await import('./services/api')
+      const nextFolder = page.proposed_folder || page.folder
+      const nextFilename = page.proposed_filename || page.filename
+      await correctPage(page.page_id, nextFolder, nextFilename)
+      show(`Applied proposal for page ${page.page_number}`,'success')
+      // sync local inputs as well
+      setFolder(nextFolder)
+      setFilename(nextFilename)
+      await onUpdated()
+    } catch (e: any) {
+      show(e?.message ?? 'Apply proposal failed','error')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   return (
     <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
       <button onClick={doReanalyze} disabled={busy || !page.page_id}>Re‑analyze</button>
       <label style={{ color: '#a8b2d1' }}>DPI <input type="number" min={72} max={300} value={dpi} onChange={(e)=> setDpi(parseInt(e.target.value||'120',10))} style={{ width: 70 }} /></label>
       <button onClick={()=> { if (page.proposed_folder) setFolder(page.proposed_folder); if (page.proposed_filename) setFilename(page.proposed_filename); }} disabled={busy || (!page.proposed_folder && !page.proposed_filename)}>Use Proposed</button>
+      <button onClick={moveToProposed} disabled={busy || !page.page_id || (!page.proposed_folder && !page.proposed_filename)}>Move to Proposed</button>
       <label style={{ color: '#a8b2d1' }}>Folder <input type="text" value={folder} onChange={(e)=> setFolder(e.target.value)} style={{ width: 200 }} /></label>
       <label style={{ color: '#a8b2d1' }}>Filename <input type="text" value={filename} onChange={(e)=> setFilename(e.target.value)} style={{ width: 220 }} /></label>
       <button onClick={doCorrect} disabled={busy || !page.page_id}>Correct</button>
     </div>
   )
 }
+
+function ConfirmClassControls({ docId, currentClass, onUpdated }: { docId: string; currentClass: string; onUpdated: () => Promise<void> }) {
+  const [value, setValue] = useState(currentClass || '')
+  const [busy, setBusy] = useState(false)
+  const { show } = useToast()
+
+  async function onConfirm() {
+    if (!value) return
+    setBusy(true)
+    try {
+      const { confirmDocumentClass } = await import('./services/api')
+      await confirmDocumentClass(docId, value)
+      show('Document class confirmed', 'success')
+      await onUpdated()
+    } catch (e: any) {
+      show(e?.message ?? 'Confirm class failed', 'error')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="controls" style={{ marginTop: 8, gap: 8 }}>
+      <label>Confirm Class: <input type="text" value={value} onChange={(e)=> setValue(e.target.value)} style={{ width: 240 }} placeholder="e.g., legal, utility_bill, invoice" /></label>
+      <button onClick={onConfirm} disabled={busy || !value}>Confirm</button>
+    </div>
+  )
+}
 function DocActions({ docId, onUpdated }: { docId: string; onUpdated: () => Promise<void> }) {
   const [dpi, setDpi] = useState(120)
   const [busy, setBusy] = useState(false)
+  const { show } = useToast()
+
   async function doReanalyzeAll() {
     setBusy(true)
     try {
@@ -267,12 +353,11 @@ function DocActions({ docId, onUpdated }: { docId: string; onUpdated: () => Prom
       setBusy(false)
     }
   }
+
   return (
     <div className="controls">
       <button onClick={doReanalyzeAll} disabled={busy}>Re‑analyze All (background)</button>
       <label style={{ color: '#a8b2d1' }}>DPI <input type="number" min={72} max={300} value={dpi} onChange={(e)=> setDpi(parseInt(e.target.value||'120',10))} style={{ width: 70 }} /></label>
-  const { show } = useToast()
     </div>
   )
-  const { show } = useToast()
 }

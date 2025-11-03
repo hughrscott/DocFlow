@@ -1,4 +1,35 @@
-# DocFlow - Remaining Implementation Files
+# DocFlow - Status (Done / In‑Progress / Next)
+
+Audience: contributors and Codex sessions
+Owner: maintainers
+Last Updated: 2025-11-03
+
+This document tracks current status. Sections below are living and should be updated at session start and end.
+
+## Done (recent highlights)
+
+- Docs reorg into `docs/` with codex kickoff + playbook (2025-11-03)
+- Backend MVP endpoints (upload, list, details, reanalyze document/page, correct, settings, health)
+- Analyzer prompt upgraded to structured JSON schema; normalization added (2025-11-03)
+
+## In‑Progress
+
+- UI: one‑click "Move to Proposed" (page‑level)
+ - Doc-level aggregator & Essentials (initial)
+
+## Next
+
+- One‑click "Move to Proposed" and bulk apply
+- Visual progress indicators for background jobs
+- JSON logging default + request_id propagation
+- Add unit and integration tests for core flows
+- Multi‑page grouping heuristics and sequence tracking
+- File move audit trail with revert capability
+ - Doc-level corrections: confirm class (wired; iterate with learning feedback)
+
+---
+
+# Historical Notes (previous content)
 
 ## Files Already Created ✅
 

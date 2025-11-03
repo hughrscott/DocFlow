@@ -1,4 +1,8 @@
-# DocFlow - Project Summary
+# DocFlow - Architecture Overview
+
+Audience: contributors
+Owner: maintainers
+Last Updated: 2025-11-03
 
 ## What Has Been Created
 

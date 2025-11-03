@@ -74,3 +74,13 @@ export async function reanalyzeDocument(documentId: string, dpi = 150, backgroun
   if (!res.ok) throw new Error('Document reanalyze failed')
   return res.json()
 }
+
+export async function confirmDocumentClass(documentId: string, document_class: string, rationale?: string) {
+  const res = await fetch(`${API_BASE}/api/v1/documents/${documentId}/confirm_class`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ document_class, rationale }),
+  })
+  if (!res.ok) throw new Error('Confirm class failed')
+  return res.json()
+}

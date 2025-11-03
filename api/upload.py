@@ -9,7 +9,7 @@ into the documents directory. Persists documents, pages, and decisions.
 from fastapi import APIRouter, UploadFile, File, Depends, HTTPException, BackgroundTasks
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Tuple
 from pathlib import Path
 import io
 import os
@@ -67,6 +67,7 @@ class DocumentDetails(BaseModel):
     pages_done: int
     last_error: Optional[str] = None
     pages: List[PageResult]
+    doc_level: Optional[Dict[str, Any]] = None
 
 
 def _ensure_dirs() -> None:
@@ -467,6 +468,9 @@ async def get_document(document_id: str, db: Session = Depends(get_db)):
             )
         )
 
+    # Build document-level aggregation summary (in-memory)
+    doc_level = _aggregate_document_summary(pages)
+
     return DocumentDetails(
         document_id=doc.id,
         original_filename=doc.original_filename,
@@ -476,7 +480,147 @@ async def get_document(document_id: str, db: Session = Depends(get_db)):
         pages_done=pages_done,
         last_error=last_error,
         pages=page_results,
+        doc_level=doc_level,
     )
+
+
+def _aggregate_document_summary(pages: List[Page]) -> Dict[str, Any]:
+    """Aggregate page-level metadata into a doc-level summary.
+
+    Heuristics:
+    - Class: majority vote of (extracted.document_type.value || page.document_type)
+    - Issuer: most common of (extracted.issuer.name || page.institution)
+    - Period: prefer extracted.period.month, else any date found; unify to a single string
+    - Identifiers: union of known ids across pages (limit to a few)
+    - Confidence: proportion of pages supporting chosen class and issuer (averaged)
+    - Proposed filename: prefer extracted.proposed_filename from any page, else generate
+    """
+    if not pages:
+        return {}
+
+    from collections import Counter
+    # Tally classes and issuers
+    class_counter: Counter = Counter()
+    issuer_counter: Counter = Counter()
+    months: List[str] = []
+    ids_union: Dict[str, Any] = {}
+    proposed_filenames: List[str] = []
+
+    def safe_get(d: Dict[str, Any], path: List[str]) -> Any:
+        cur = d
+        for key in path:
+            if not isinstance(cur, dict) or key not in cur:
+                return None
+            cur = cur[key]
+        return cur
+
+    for p in pages:
+        meta = p.extracted_metadata or {}
+        override = meta.get("doc_level_override") if isinstance(meta, dict) else None
+        # class
+        override_class = override.get("document_class") if isinstance(override, dict) else None
+        cls = (
+            override_class
+            or safe_get(meta, ["document_type", "value"]) 
+            or meta.get("document_type") 
+            or (p.document_type or "unknown")
+        )
+        cls = (cls or "unknown").lower()
+        class_counter[cls] += 1
+        # issuer
+        issuer = safe_get(meta, ["issuer", "name"]) or p.institution or None
+        if issuer:
+            issuer_counter[issuer.strip()] += 1
+        # period
+        m = safe_get(meta, ["period", "month"]) or meta.get("date")
+        if m:
+            months.append(m)
+        # identifiers
+        ids = meta.get("identifiers")
+        if isinstance(ids, dict):
+            for k, v in ids.items():
+                if v and k not in ids_union:
+                    ids_union[k] = v
+        # proposed filename
+        pf = meta.get("proposed_filename")
+        if pf:
+            proposed_filenames.append(str(pf))
+
+    total = max(len(pages), 1)
+    doc_class, class_count = (class_counter.most_common(1)[0] if class_counter else ("unknown", 0))
+    issuer_top, issuer_count = (issuer_counter.most_common(1)[0] if issuer_counter else (None, 0))
+
+    # Confidence: mean of support for class and issuer
+    class_conf = class_count / total if total else 0.0
+    issuer_conf = issuer_count / total if total else 0.0
+    confidence = round((class_conf + issuer_conf) / 2.0, 2)
+
+    period = None
+    if months:
+        # choose most common month/date
+        period = Counter(months).most_common(1)[0][0]
+
+    # Proposed filename fallback
+    proposed_filename = proposed_filenames[0] if proposed_filenames else None
+    if not proposed_filename:
+        try:
+            fr = FolderRouter(settings.documents_dir)
+            analysis = {"document_type": doc_class, "institution": issuer_top, "date": period}
+            proposed_filename = fr.generate_filename(analysis, page_number=1, extension="pdf")
+        except Exception:
+            proposed_filename = None
+
+    # Salient facts (top few items)
+    salient: List[Dict[str, Any]] = []
+    if issuer_top:
+        salient.append({"label": "Issuer", "value": issuer_top})
+    if period:
+        salient.append({"label": "Period", "value": period})
+    for key in ("invoice", "policy", "case_number", "statement_id", "account_last4"):
+        if key in ids_union and len(salient) < 5:
+            salient.append({"label": key, "value": ids_union[key]})
+
+    return {
+        "document_class": doc_class,
+        "confidence": confidence,
+        "issuer": issuer_top,
+        "recipient": None,  # can be filled from metadata later
+        "period": period,
+        "identifiers": ids_union,
+        "salient_facts": salient,
+        "proposed_filename": proposed_filename,
+        "rationale": "Aggregated from page-level classifications and issuer mentions",
+    }
+
+
+class ConfirmClassRequest(BaseModel):
+    document_class: str
+    rationale: Optional[str] = None
+
+
+@router.post("/{document_id}/confirm_class")
+async def confirm_document_class(document_id: str, req: ConfirmClassRequest, db: Session = Depends(get_db)):
+    """Confirm/override the document-level class by annotating all pages' metadata.
+
+    Stores an override in each page's extracted_metadata under `doc_level_override`.
+    No schema migration needed; aggregator will respect this override.
+    """
+    pages = db.query(Page).filter(Page.document_id == document_id).all()
+    if not pages:
+        raise HTTPException(status_code=404, detail="Document not found or has no pages")
+
+    for p in pages:
+        meta = p.extracted_metadata or {}
+        if not isinstance(meta, dict):
+            meta = {}
+        meta["doc_level_override"] = {
+            "document_class": req.document_class,
+            "rationale": req.rationale or "user_confirmed",
+        }
+        p.extracted_metadata = meta
+    db.commit()
+
+    return {"success": True, "document_id": document_id, "document_class": req.document_class}
 
 
 class ReanalyzeResponse(BaseModel):

@@ -33,6 +33,15 @@ DocFlow is an AI-powered document management system that automatically analyzes,
 - Extensible architecture for other providers
 - Automatic fallback if primary provider fails
 
+## Documentation
+
+See `docs/README.md` for the full documentation index:
+- Quick Start: `docs/QUICKSTART.md`
+- API Reference: `docs/API.md`
+- Operations: `docs/OPERATIONS.md`
+- Status & Roadmap: `docs/STATUS.md`, `ROADMAP.md`
+- Codex Kickoff: `docs/codex/KICKOFF_PROMPT.md`
+
 ## Architecture
 
 ```
