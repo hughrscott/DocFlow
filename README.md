@@ -276,10 +276,14 @@ All done automatically!
 - `GET /api/v1/documents` — List recent documents (page, page_size)
 - `POST /api/v1/documents/upload` — Upload PDF; query params: `analyze` (bool, default true), `dpi` (int), `background` (bool, default false)
 - `GET /api/v1/documents/{document_id}` — Get document + page results
-  - Includes `pages_done`, `total_pages`, and latest `last_error` if any
+  - Includes `pages_done`, `total_pages`, latest `last_error`, and per-page `sequence_id` for grouping
 - `POST /api/v1/documents/{document_id}/reanalyze` — Re-run AI analysis for all pages (query: `dpi`, `background`)
 - `POST /api/v1/documents/pages/{page_id}/reanalyze` — Re-run AI analysis for a single page (query: `dpi`)
 - `POST /api/v1/documents/pages/{page_id}/correct` — Apply a per-page correction (folder/filename)
+- `POST /api/v1/documents/{document_id}/sequences/{sequence_id}/apply_proposed` — Bulk apply each page’s proposed folder/filename for a sequence
+- `POST /api/v1/documents/pages/{page_id}/moves/revert` — Undo the most recent audited move for a page
+- `GET /api/v1/documents/folder_suggestions` — Fetch cached folder-analysis hints (path, depth, file counts)
+- `POST /api/v1/documents/folder_suggestions/refresh` — Re-analyze the filesystem to refresh folder suggestions
 - `POST /api/v1/documents/decisions/correct` — Record a routing correction
 - `GET /api/v1/settings` — Read LLM settings (YAML)
 - `POST /api/v1/settings` — Update provider selection/config (Basic auth when `AUTH_ENABLED=true`)

@@ -2,7 +2,7 @@
 
 Audience: contributors and Codex sessions
 Owner: maintainers
-Last Updated: 2025-11-03
+Last Updated: 2025-11-13
 
 This document tracks current status. Sections below are living and should be updated at session start and end.
 
@@ -11,22 +11,26 @@ This document tracks current status. Sections below are living and should be upd
 - Docs reorg into `docs/` with codex kickoff + playbook (2025-11-03)
 - Backend MVP endpoints (upload, list, details, reanalyze document/page, correct, settings, health)
 - Analyzer prompt upgraded to structured JSON schema; normalization added (2025-11-03)
+ - Added few-shot examples for West University/West U and The Heights (2025-11-11)
+ - Provider readiness endpoint `/api/v1/providers/readiness` with test (2025-11-11)
+ - Multi-page grouping polish: sequences persist through reanalyze, `sequence_id` surfaces in APIs/UX, and bulk “Move to Proposed” applies routing as a single action
+ - File move audit trail with revert endpoint + regression coverage; `FileMoveAudit` table added (rerun `init_db`)
+ - Provider readiness + background progress indicators surfaced in the frontend
+ - Folder-structure analysis now cached with API/UI suggestions for routing confirmation
 
 ## In‑Progress
 
-- UI: one‑click "Move to Proposed" (page‑level)
 - Doc-level aggregator & Essentials (initial)
- - Multi-page grouping: assign and persist `sequence_id` in page metadata during upload and reanalyze
+- Integration tests across upload → reanalyze → correction flows
+- Frontend redesign + readiness/progress UX tuned for desktop/app-store build
+- Packaging/installer workflow groundwork
 
 ## Next
 
-- One‑click "Move to Proposed" and bulk apply
-- Visual progress indicators for background jobs
-- JSON logging default + request_id propagation
-- Add unit and integration tests for core flows
-- Multi‑page grouping heuristics and sequence tracking
-- File move audit trail with revert capability
-- Doc-level corrections: confirm class (wired; iterate with learning feedback)
+- Search/tagging + OCR/full-text index explorations
+- Postgres option & simple migration scripts
+- Doc-level corrections iteration with learning feedback
+- Provider readiness telemetry expansions + alerting
 
 ---
 

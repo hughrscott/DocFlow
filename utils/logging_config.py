@@ -8,6 +8,7 @@ import logging
 import logging.config
 import os
 import json
+from utils import log_context
 
 
 class JsonFormatter(logging.Formatter):
@@ -18,12 +19,17 @@ class JsonFormatter(logging.Formatter):
             "logger": record.name,
             "message": record.getMessage(),
         }
+        # Include request_id if available
+        rid = getattr(record, "request_id", None) or log_context.get_request_id()
+        if rid:
+            data["request_id"] = rid
         return json.dumps(data)
 
 
 def setup_logging(level: str = None) -> None:
     level = (level or os.getenv("LOG_LEVEL", "INFO")).upper()
-    fmt = os.getenv("LOG_FORMAT", "text").lower()
+    # Default to JSON format unless explicitly overridden
+    fmt = os.getenv("LOG_FORMAT", "json").lower()
 
     config = {
         "version": 1,

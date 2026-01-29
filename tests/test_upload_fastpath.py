@@ -36,7 +36,15 @@ def test_upload_fastpath_background():
         assert data['pages_done'] >= 1
         # Files should be created under temp docs dir
         assert os.path.isdir(tmp_docs)
+
+        listing = client.get('/api/v1/documents?page=1&page_size=25')
+        assert listing.status_code == 200
+        items = listing.json().get('items', [])
+        match = next((item for item in items if item['id'] == doc_id), None)
+        assert match is not None, "Uploaded document missing from list response"
+        assert match['pages_done'] == data['pages_done']
+        assert 'pages_failed' in match
+        assert 'last_error' in match
     finally:
         shutil.rmtree(tmp_docs, ignore_errors=True)
         shutil.rmtree(tmp_up, ignore_errors=True)
-

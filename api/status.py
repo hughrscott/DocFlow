@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, case
 from datetime import datetime
 
 from database.database import get_db
@@ -65,6 +65,10 @@ class DocumentBrief(BaseModel):
     upload_date: str
     total_pages: int
     status: str
+    pages_done: int = 0
+    pages_failed: int = 0
+    last_error: Optional[str] = None
+    last_error_at: Optional[str] = None
     sample_pages: List[PageBrief] = []
 
 
@@ -93,7 +97,50 @@ async def list_documents(
             .limit(page_size)
             .all()
         )
+        doc_ids = [d.id for d in docs]
+
+        stats_map: Dict[str, Dict[str, int]] = {doc_id: {"processed": 0, "failed": 0} for doc_id in doc_ids}
+        if doc_ids:
+            counts = (
+                db.query(
+                    Page.document_id.label("doc_id"),
+                    func.count(Page.id).label("processed"),
+                    func.sum(
+                        case(
+                            (Page.processing_status == "failed", 1),
+                            else_=0,
+                        )
+                    ).label("failed"),
+                )
+                .filter(Page.document_id.in_(doc_ids))
+                .group_by(Page.document_id)
+                .all()
+            )
+            for row in counts:
+                stats_map[row.doc_id] = {
+                    "processed": int(row.processed or 0),
+                    "failed": int(row.failed or 0),
+                }
+
+        error_map: Dict[str, Dict[str, Optional[str]]] = {}
+        if doc_ids:
+            error_rows = (
+                db.query(Page.document_id, Page.processing_error, Page.analysis_date)
+                .filter(Page.document_id.in_(doc_ids))
+                .filter(Page.processing_error.isnot(None))
+                .order_by(Page.document_id.asc(), Page.analysis_date.desc())
+                .all()
+            )
+            for row in error_rows:
+                doc_id = row.document_id
+                if doc_id in error_map:
+                    continue
+                timestamp = row.analysis_date.isoformat() if row.analysis_date else None
+                error_map[doc_id] = {"message": row.processing_error, "timestamp": timestamp}
+
         for d in docs:
+            stats = stats_map.get(d.id, {"processed": 0, "failed": 0})
+            err = error_map.get(d.id, {})
             pages = (
                 db.query(Page)
                 .filter(Page.document_id == d.id)
@@ -108,6 +155,10 @@ async def list_documents(
                     upload_date=d.upload_date.isoformat() if d.upload_date else "",
                     total_pages=d.total_pages,
                     status=d.status,
+                    pages_done=stats["processed"],
+                    pages_failed=stats["failed"],
+                    last_error=err.get("message"),
+                    last_error_at=err.get("timestamp"),
                     sample_pages=[
                         PageBrief(
                             page_number=p.page_number,
@@ -121,3 +172,71 @@ async def list_documents(
 
     return DocumentsListResponse(total=total, page=page, page_size=page_size, items=items)
 
+
+class ProviderInfo(BaseModel):
+    name: str
+    enabled: bool
+    configured: bool
+    reachable: bool
+    details: Dict[str, Any] = {}
+
+
+class ProvidersReadinessResponse(BaseModel):
+    vision_provider: str
+    text_provider: str
+    providers: Dict[str, ProviderInfo]
+
+
+@router.get("/providers/readiness", response_model=ProvidersReadinessResponse)
+async def providers_readiness():
+    """Report configured providers and live readiness checks.
+
+    Non-fatal: if config missing or health checks fail, returns reachable=false for those providers.
+    """
+    # Load config (may raise; handle gracefully)
+    vision = "unknown"
+    text = "unknown"
+    providers_out: Dict[str, ProviderInfo] = {}
+    try:
+        manager = LLMManager(settings.llm_config_path)
+        cfg = manager.config or {}
+        llm_cfg = cfg.get("llm", {})
+        vision = llm_cfg.get("vision_provider", "unknown")
+        text = llm_cfg.get("text_provider", "unknown")
+        prov_cfg = cfg.get("providers", {})
+
+        # For each known provider, summarize
+        for name, pconf in prov_cfg.items():
+            enabled = bool(pconf.get("enabled", False))
+            configured = True
+            details: Dict[str, Any] = {}
+            if name == "claude":
+                details = {"model": pconf.get("vision_model"), "has_api_key": bool(pconf.get("api_key"))}
+                configured = bool(pconf.get("api_key"))
+            elif name == "ollama":
+                details = {"base_url": pconf.get("base_url"), "vision_model": pconf.get("vision_model"), "text_model": pconf.get("text_model")}
+                configured = bool(pconf.get("base_url"))
+
+            reachable = False
+            try:
+                if name in manager.providers:
+                    reachable = await manager.providers[name].health_check()
+            except Exception:
+                reachable = False
+
+            providers_out[name] = ProviderInfo(
+                name=name,
+                enabled=enabled,
+                configured=configured,
+                reachable=reachable,
+                details=details,
+            )
+    except Exception:
+        # No config present; return empty map
+        providers_out = {}
+
+    return ProvidersReadinessResponse(
+        vision_provider=vision,
+        text_provider=text,
+        providers=providers_out,
+    )

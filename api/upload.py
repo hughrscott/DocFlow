@@ -6,19 +6,20 @@ Provides endpoints to upload PDFs, split into pages, attempt AI analysis
 into the documents directory. Persists documents, pages, and decisions.
 """
 
-from fastapi import APIRouter, UploadFile, File, Depends, HTTPException, BackgroundTasks
+from fastapi import APIRouter, UploadFile, File, Depends, HTTPException, BackgroundTasks, Request
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any, Tuple
 from pathlib import Path
 import io
 import os
 import uuid
 import logging
+from datetime import datetime
 
 from config.settings import settings
 from database.database import get_db, SessionLocal
-from database.models import Document, Page, ProcessingDecision
+from database.models import Document, Page, ProcessingDecision, FileMoveAudit
 from sqlalchemy.orm import Session
 
 from services.pdf_processor import PDFProcessor
@@ -46,6 +47,7 @@ class PageResult(BaseModel):
     proposed_filename: Optional[str] = None
     provider_used: Optional[str] = None
     model_used: Optional[str] = None
+    sequence_id: Optional[str] = None
     success: bool = True
     error: Optional[str] = None
     decision_id: Optional[str] = None
@@ -65,9 +67,49 @@ class DocumentDetails(BaseModel):
     total_pages: int
     error_message: Optional[str] = None
     pages_done: int
+    last_error_at: Optional[str] = None
     last_error: Optional[str] = None
     pages: List[PageResult]
     doc_level: Optional[Dict[str, Any]] = None
+
+
+class ReanalyzeDocumentResponse(BaseModel):
+    document_id: str
+    status: str
+    pages_updated: int = 0
+    background: bool = False
+
+
+class SequenceApplyResponse(BaseModel):
+    document_id: str
+    sequence_id: str
+    pages_total: int
+    pages_moved: int
+    missing_proposals: List[int] = Field(default_factory=list)
+    errors: List[str] = Field(default_factory=list)
+    audit_ids: List[str] = Field(default_factory=list)
+
+
+class RevertMoveRequest(BaseModel):
+    audit_id: Optional[str] = None
+
+
+class RevertMoveResponse(BaseModel):
+    success: bool
+    reverted_audit_id: Optional[str] = None
+    restored_to: Optional[Dict[str, str]] = None
+
+
+class FolderSuggestion(BaseModel):
+    path: str
+    depth: int
+    file_count: int
+    subfolders: List[str]
+
+
+class FolderSuggestionsResponse(BaseModel):
+    suggestions: List[FolderSuggestion]
+    generated_at: Optional[str] = None
 
 
 def _ensure_dirs() -> None:
@@ -136,6 +178,61 @@ def _is_continuation(prev_meta: Optional[Dict[str, Any]], curr_meta: Dict[str, A
     return score >= 2
 
 
+def _move_page_to_destination(
+    *,
+    page: Page,
+    dest_folder: str,
+    dest_filename: str,
+    db: Session,
+    folder_router: FolderRouter,
+    file_manager: FileManager,
+    reason: str,
+    moved_by: str,
+    decision: Optional[ProcessingDecision] = None,
+) -> Dict[str, Any]:
+    """Move a page's PDF to a new folder/filename and record audit."""
+    current_path = folder_router.full_path_for_document(page.assigned_folder, page.output_filename)
+    success, dest_path, msg = file_manager.move_file(current_path, dest_folder, dest_filename)
+    if not success:
+        return {"success": False, "message": msg}
+
+    final_filename = Path(dest_path).name if dest_path else dest_filename
+    old_folder = page.assigned_folder
+    old_filename = page.output_filename
+
+    page.assigned_folder = dest_folder
+    page.output_filename = final_filename
+    page.processing_status = "completed"
+    page.processing_error = None
+
+    audit = FileMoveAudit(
+        page_id=page.id,
+        decision_id=decision.id if decision else None,
+        old_folder=old_folder,
+        old_filename=old_filename,
+        new_folder=dest_folder,
+        new_filename=final_filename,
+        moved_by=moved_by,
+        reason=reason,
+    )
+
+    try:
+        db.add(audit)
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        raise
+
+    return {
+        "success": True,
+        "destination": dest_path,
+        "final_folder": dest_folder,
+        "final_filename": final_filename,
+        "audit": audit,
+        "message": msg,
+    }
+
+
 @router.post("/upload", response_model=UploadResponse)
 async def upload_document(
     file: UploadFile = File(...),
@@ -143,7 +240,8 @@ async def upload_document(
     dpi: int = 150,
     background: bool = False,
     background_tasks: BackgroundTasks = None,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    request: Request = None,
 ):
     """
     Upload a PDF, split into pages, analyze (if possible), and organize files.
@@ -208,6 +306,7 @@ async def upload_document(
                 temp_pdf_path=temp_pdf_path,
                 analyze=analyze,
                 dpi=dpi,
+                request_id=getattr(getattr(request, 'state', None), 'request_id', None),
             )
 
         logger.info(f"Scheduled background processing for document {document_id}")
@@ -334,6 +433,7 @@ async def upload_document(
                 filename=filename,
                 provider_used=analysis.get("provider_used"),
                 model_used=analysis.get("model_used"),
+                sequence_id=(analysis.get("extracted_metadata") or {}).get("sequence_id"),
                 success=org_result.get("success", False),
                 error=None if org_result.get("success") else org_result.get("message"),
             )
@@ -363,8 +463,15 @@ def _process_document_background(
     temp_pdf_path: str,
     analyze: bool,
     dpi: int,
+    request_id: str | None = None,
 ) -> None:
     """Background task to process a document end-to-end."""
+    from utils import log_context
+    if request_id:
+        try:
+            log_context.set_request_id(request_id)
+        except Exception:
+            pass
     db: Session = SessionLocal()
     try:
         with open(temp_pdf_path, "rb") as f:
@@ -524,6 +631,29 @@ def _process_document_background(
         db.close()
 
 
+@router.get("/folder_suggestions", response_model=FolderSuggestionsResponse)
+async def get_folder_suggestions():
+    folder_router = FolderRouter(settings.documents_dir)
+    suggestions = folder_router.get_folder_suggestions()
+    structure = folder_router.folder_structure or {}
+    return FolderSuggestionsResponse(
+        suggestions=[FolderSuggestion(**s) for s in suggestions],
+        generated_at=structure.get("generated_at"),
+    )
+
+
+@router.post("/folder_suggestions/refresh", response_model=FolderSuggestionsResponse)
+async def refresh_folder_suggestions():
+    folder_router = FolderRouter(settings.documents_dir)
+    folder_router.analyze_folder_structure()
+    suggestions = folder_router.get_folder_suggestions()
+    structure = folder_router.folder_structure or {}
+    return FolderSuggestionsResponse(
+        suggestions=[FolderSuggestion(**s) for s in suggestions],
+        generated_at=structure.get("generated_at"),
+    )
+
+
 @router.get("/{document_id}", response_model=DocumentDetails)
 async def get_document(document_id: str, db: Session = Depends(get_db)):
     """Fetch a document and its page results."""
@@ -534,9 +664,14 @@ async def get_document(document_id: str, db: Session = Depends(get_db)):
     pages = db.query(Page).filter(Page.document_id == document_id).order_by(Page.page_number.asc()).all()
     pages_done = len(pages)
     last_error = None
+    last_error_at = None
     for p in reversed(pages):
         if p.processing_error:
             last_error = p.processing_error
+            try:
+                last_error_at = p.analysis_date.isoformat() if p.analysis_date else None
+            except Exception:
+                last_error_at = None
             break
     page_results: List[PageResult] = []
     for p in pages:
@@ -561,6 +696,7 @@ async def get_document(document_id: str, db: Session = Depends(get_db)):
                 proposed_filename=(latest_decision.proposed_filename if latest_decision else None),
                 provider_used=p.llm_provider_used or None,
                 model_used=p.llm_model_used or None,
+                sequence_id=(p.extracted_metadata or {}).get("sequence_id"),
                 success=(p.processing_status == "completed"),
                 error=p.processing_error,
                 decision_id=(latest_decision.id if latest_decision else None),
@@ -578,6 +714,7 @@ async def get_document(document_id: str, db: Session = Depends(get_db)):
         error_message=doc.error_message,
         pages_done=pages_done,
         last_error=last_error,
+        last_error_at=last_error_at,
         pages=page_results,
         doc_level=doc_level,
     )
@@ -755,11 +892,20 @@ async def reanalyze_page(page_id: str, dpi: int = 150, db: Session = Depends(get
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Analysis failed: {e}")
 
+    existing_meta = page.extracted_metadata or {}
+    existing_seq = existing_meta.get("sequence_id")
+
     # Update page with new analysis
     page.document_type = analysis.get("document_type", page.document_type)
     page.institution = analysis.get("institution")
     page.confidence_score = analysis.get("confidence_score", 0.0)
-    page.extracted_metadata = analysis.get("extracted_metadata", {})
+    meta = analysis.get("extracted_metadata", {}) or {}
+    if not isinstance(meta, dict):
+        meta = {}
+    if existing_seq and not meta.get("sequence_id"):
+        meta["sequence_id"] = existing_seq
+    analysis["extracted_metadata"] = meta
+    page.extracted_metadata = meta
     page.llm_provider_used = analysis.get("provider_used") or ""
     page.llm_model_used = analysis.get("model_used") or ""
     db.commit()
@@ -793,6 +939,7 @@ async def reanalyze_page(page_id: str, dpi: int = 150, db: Session = Depends(get
             proposed_filename=new_filename,
             provider_used=page.llm_provider_used or None,
             model_used=page.llm_model_used or None,
+            sequence_id=(page.extracted_metadata or {}).get("sequence_id"),
             success=True,
             error=None,
             decision_id=decision.id if decision else None,
@@ -814,44 +961,198 @@ async def correct_page(page_id: str, req: PageCorrectionRequest, db: Session = D
 
     folder_router = FolderRouter(settings.documents_dir)
     file_manager = FileManager(settings.documents_dir)
-    # Current path
-    current_path = folder_router.full_path_for_document(page.assigned_folder, page.output_filename)
-    # Move to corrected path
-    success, dest, msg = file_manager.move_file(current_path, req.folder, req.filename)
-    if not success:
-        raise HTTPException(status_code=400, detail=msg)
-
-    # Update page
-    page.assigned_folder = req.folder
-    page.output_filename = req.filename
-    page.processing_status = "completed"
-    db.commit()
-
     # Find latest decision for this page
-    decision = db.query(ProcessingDecision).filter(ProcessingDecision.page_id == page.id).order_by(ProcessingDecision.timestamp.desc()).first()
+    decision = (
+        db.query(ProcessingDecision)
+        .filter(ProcessingDecision.page_id == page.id)
+        .order_by(ProcessingDecision.timestamp.desc())
+        .first()
+    )
+    move_result = _move_page_to_destination(
+        page=page,
+        dest_folder=req.folder,
+        dest_filename=req.filename,
+        db=db,
+        folder_router=folder_router,
+        file_manager=file_manager,
+        reason="user_correction",
+        moved_by="user",
+        decision=decision,
+    )
+    if not move_result.get("success"):
+        raise HTTPException(status_code=400, detail=move_result.get("message", "move_failed"))
+
+    final_folder = move_result["final_folder"]
+    final_filename = move_result["final_filename"]
+
     learning = LearningEngine(db)
     if decision:
-        learning.record_correction(decision_id=decision.id, actual_folder=req.folder, actual_filename=req.filename)
+        learning.record_correction(
+            decision_id=decision.id,
+            actual_folder=final_folder,
+            actual_filename=final_filename,
+            user_corrected=True,
+        )
     else:
-        # Create a decision to learn from
         learning.record_decision(
             page_id=page.id,
-            proposed_folder=req.folder,
-            proposed_filename=req.filename,
+            proposed_folder=final_folder,
+            proposed_filename=final_filename,
             proposed_confidence=page.confidence_score,
-            actual_folder=req.folder,
-            actual_filename=req.filename,
+            actual_folder=final_folder,
+            actual_filename=final_filename,
             user_corrected=True,
         )
 
-    return {"success": True, "message": "Page corrected", "destination": dest}
+    audit = move_result.get("audit")
+    return {
+        "success": True,
+        "message": "Page corrected",
+        "destination": move_result.get("destination"),
+        "audit_id": audit.id if audit else None,
+    }
 
 
-class ReanalyzeDocumentResponse(BaseModel):
-    document_id: str
-    status: str
-    pages_updated: int = 0
-    background: bool = False
+@router.post("/{document_id}/sequences/{sequence_id}/apply_proposed", response_model=SequenceApplyResponse)
+async def apply_sequence_proposed(document_id: str, sequence_id: str, db: Session = Depends(get_db)):
+    """Apply proposed folder/filenames for every page in a sequence."""
+    doc = db.query(Document).filter(Document.id == document_id).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    pages = (
+        db.query(Page)
+        .filter(Page.document_id == document_id)
+        .order_by(Page.page_number.asc())
+        .all()
+    )
+    sequence_pages = [
+        p for p in pages if (p.extracted_metadata or {}).get("sequence_id") == sequence_id
+    ]
+    if not sequence_pages:
+        raise HTTPException(status_code=404, detail="Sequence not found for document")
+
+    folder_router = FolderRouter(settings.documents_dir)
+    file_manager = FileManager(settings.documents_dir)
+    learning = LearningEngine(db)
+
+    page_ids = [p.id for p in sequence_pages]
+    decisions = (
+        db.query(ProcessingDecision)
+        .filter(ProcessingDecision.page_id.in_(page_ids))
+        .order_by(ProcessingDecision.timestamp.desc())
+        .all()
+    )
+    latest_decisions: Dict[str, ProcessingDecision] = {}
+    for dec in decisions:
+        if dec.page_id not in latest_decisions:
+            latest_decisions[dec.page_id] = dec
+
+    missing: List[int] = []
+    errors: List[str] = []
+    audit_ids: List[str] = []
+    moved = 0
+
+    for page in sequence_pages:
+        decision = latest_decisions.get(page.id)
+        target_folder = decision.proposed_folder if decision else None
+        target_filename = decision.proposed_filename if decision else None
+        if not target_folder or not target_filename:
+            missing.append(page.page_number)
+            continue
+
+        move_result = _move_page_to_destination(
+            page=page,
+            dest_folder=target_folder,
+            dest_filename=target_filename,
+            db=db,
+            folder_router=folder_router,
+            file_manager=file_manager,
+            reason="sequence_apply_proposed",
+            moved_by="user",
+            decision=decision,
+        )
+        if not move_result.get("success"):
+            errors.append(f"{page.page_number}:{move_result.get('message', 'move_failed')}")
+            continue
+
+        moved += 1
+        audit = move_result.get("audit")
+        if audit:
+            audit_ids.append(audit.id)
+
+        learning.record_correction(
+            decision_id=decision.id,
+            actual_folder=move_result["final_folder"],
+            actual_filename=move_result["final_filename"],
+            user_corrected=False,
+        )
+
+    return SequenceApplyResponse(
+        document_id=document_id,
+        sequence_id=sequence_id,
+        pages_total=len(sequence_pages),
+        pages_moved=moved,
+        missing_proposals=missing,
+        errors=errors,
+        audit_ids=audit_ids,
+    )
+
+
+@router.post("/pages/{page_id}/moves/revert", response_model=RevertMoveResponse)
+async def revert_page_move(page_id: str, req: Optional[RevertMoveRequest] = None, db: Session = Depends(get_db)):
+    """Revert the latest (or specified) file move for a page."""
+    if req is None:
+        req = RevertMoveRequest()
+    page = db.query(Page).filter(Page.id == page_id).first()
+    if not page:
+        raise HTTPException(status_code=404, detail="Page not found")
+
+    query = db.query(FileMoveAudit).filter(FileMoveAudit.page_id == page_id, FileMoveAudit.reverted == False)
+    if req.audit_id:
+        query = query.filter(FileMoveAudit.id == req.audit_id)
+    audit = query.order_by(FileMoveAudit.moved_at.desc()).first()
+    if not audit:
+        raise HTTPException(status_code=404, detail="No reversible move found for this page")
+
+    folder_router = FolderRouter(settings.documents_dir)
+    file_manager = FileManager(settings.documents_dir)
+    decision = None
+    if audit.decision_id:
+        decision = db.query(ProcessingDecision).filter(ProcessingDecision.id == audit.decision_id).first()
+
+    move_result = _move_page_to_destination(
+        page=page,
+        dest_folder=audit.old_folder,
+        dest_filename=audit.old_filename,
+        db=db,
+        folder_router=folder_router,
+        file_manager=file_manager,
+        reason="revert_move",
+        moved_by="user",
+        decision=decision,
+    )
+    if not move_result.get("success"):
+        raise HTTPException(status_code=400, detail=move_result.get("message", "revert_failed"))
+
+    audit.reverted = True
+    audit.reverted_at = datetime.utcnow()
+    db.commit()
+
+    if decision:
+        learning = LearningEngine(db)
+        learning.record_correction(
+            decision_id=decision.id,
+            actual_folder=move_result["final_folder"],
+            actual_filename=move_result["final_filename"],
+            user_corrected=True,
+        )
+
+    return RevertMoveResponse(
+        success=True,
+        reverted_audit_id=audit.id,
+        restored_to={"folder": move_result["final_folder"], "filename": move_result["final_filename"]},
+    )
 
 
 @router.post("/{document_id}/reanalyze", response_model=ReanalyzeDocumentResponse)
@@ -886,8 +1187,11 @@ async def reanalyze_document(
         router = FolderRouter(settings.documents_dir)
         pdf = PDFProcessor(temp_dir=settings.uploads_temp_dir)
         learning = LearningEngine(db)
+        prev_meta: Optional[Dict[str, Any]] = None
+        current_seq_idx = 1
+        current_seq = f"seq-{current_seq_idx}"
 
-        for p in pages:
+        for idx, p in enumerate(pages, start=1):
             pdf_path = router.full_path_for_document(p.assigned_folder, p.output_filename)
             if not Path(pdf_path).exists():
                 errors.append(f"missing:{p.page_number}")
@@ -900,7 +1204,19 @@ async def reanalyze_document(
                 p.document_type = analysis.get("document_type", p.document_type)
                 p.institution = analysis.get("institution")
                 p.confidence_score = analysis.get("confidence_score", 0.0)
-                p.extracted_metadata = analysis.get("extracted_metadata", {})
+                meta = analysis.get("extracted_metadata", {}) or {}
+                if not isinstance(meta, dict):
+                    meta = {}
+                if _is_continuation(prev_meta, meta):
+                    pass
+                else:
+                    if idx != 1:
+                        current_seq_idx += 1
+                        current_seq = f"seq-{current_seq_idx}"
+                meta["sequence_id"] = meta.get("sequence_id") or current_seq
+                analysis["extracted_metadata"] = meta
+                p.extracted_metadata = meta
+                prev_meta = meta
                 p.llm_provider_used = analysis.get("provider_used") or ""
                 p.llm_model_used = analysis.get("model_used") or ""
                 db.commit()
@@ -949,7 +1265,10 @@ def _reanalyze_document_background(document_id: str, dpi: int = 150) -> None:
             return
         pages = db.query(Page).filter(Page.document_id == document_id).order_by(Page.page_number.asc()).all()
         updated = 0
-        for p in pages:
+        prev_meta: Optional[Dict[str, Any]] = None
+        current_seq_idx = 1
+        current_seq = f"seq-{current_seq_idx}"
+        for idx, p in enumerate(pages, start=1):
             pdf_path = router.full_path_for_document(p.assigned_folder, p.output_filename)
             if not Path(pdf_path).exists():
                 continue
@@ -972,7 +1291,19 @@ def _reanalyze_document_background(document_id: str, dpi: int = 150) -> None:
                 p.document_type = result.get("document_type", p.document_type)
                 p.institution = result.get("institution")
                 p.confidence_score = result.get("confidence_score", 0.0)
-                p.extracted_metadata = result.get("extracted_metadata", {})
+                meta = result.get("extracted_metadata", {}) or {}
+                if not isinstance(meta, dict):
+                    meta = {}
+                if _is_continuation(prev_meta, meta):
+                    pass
+                else:
+                    if idx != 1:
+                        current_seq_idx += 1
+                        current_seq = f"seq-{current_seq_idx}"
+                meta["sequence_id"] = meta.get("sequence_id") or current_seq
+                result["extracted_metadata"] = meta
+                p.extracted_metadata = meta
+                prev_meta = meta
                 p.llm_provider_used = result.get("provider_used") or ""
                 p.llm_model_used = result.get("model_used") or ""
                 db.commit()

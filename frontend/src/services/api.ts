@@ -84,3 +84,42 @@ export async function confirmDocumentClass(documentId: string, document_class: s
   if (!res.ok) throw new Error('Confirm class failed')
   return res.json()
 }
+
+export async function applySequenceProposed(documentId: string, sequenceId: string) {
+  const res = await fetch(`${API_BASE}/api/v1/documents/${documentId}/sequences/${sequenceId}/apply_proposed`, {
+    method: 'POST',
+  })
+  if (!res.ok) throw new Error('Sequence apply failed')
+  return res.json()
+}
+
+export async function revertPageMove(pageId: string, auditId?: string) {
+  const payload = auditId ? { audit_id: auditId } : {}
+  const res = await fetch(`${API_BASE}/api/v1/documents/pages/${pageId}/moves/revert`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+  if (!res.ok) throw new Error('Revert move failed')
+  return res.json()
+}
+
+export async function getProviderReadiness() {
+  const res = await fetch(`${API_BASE}/api/v1/providers/readiness`)
+  if (!res.ok) throw new Error('Provider readiness failed')
+  return res.json()
+}
+
+export async function getFolderSuggestions() {
+  const res = await fetch(`${API_BASE}/api/v1/documents/folder_suggestions`)
+  if (!res.ok) throw new Error('Folder suggestions failed')
+  return res.json()
+}
+
+export async function refreshFolderSuggestions() {
+  const res = await fetch(`${API_BASE}/api/v1/documents/folder_suggestions/refresh`, {
+    method: 'POST',
+  })
+  if (!res.ok) throw new Error('Folder suggestions refresh failed')
+  return res.json()
+}

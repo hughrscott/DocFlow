@@ -4,7 +4,7 @@ Audience: contributors
 Owner: maintainers
 Last Updated: 2025-11-03
 
-- One‑click "Move to Proposed" and bulk apply at document level
+- One‑click "Move to Proposed" and bulk apply at document level (DONE)
 - Visual progress for background jobs; better error surfaces
 - Make JSON logging default; propagate request_id across services
 - Tests: unit for folder router and analyzer; integration for upload and reanalyze

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { uploadDocument, listDocuments, getDocument } from './services/api'
 import UploadArea from './components/UploadArea'
 import SettingsView from './components/SettingsView'
@@ -10,6 +10,10 @@ type DocBrief = {
   upload_date: string
   total_pages: number
   status: string
+  pages_done: number
+  pages_failed: number
+  last_error?: string | null
+  last_error_at?: string | null
 }
 
 type PageResult = {
@@ -24,6 +28,7 @@ type PageResult = {
   proposed_filename?: string | null
   provider_used?: string | null
   model_used?: string | null
+  sequence_id?: string | null
   success: boolean
   error?: string | null
   page_id?: string | null
@@ -35,6 +40,7 @@ type DocDetail = {
   total_pages: number
   pages_done: number
   last_error?: string | null
+  last_error_at?: string | null
   pages: PageResult[]
   doc_level?: {
     document_class?: string
@@ -53,6 +59,11 @@ export default function App() {
   const [docs, setDocs] = useState<DocBrief[]>([])
   const [loading, setLoading] = useState(false)
   const [selectedDoc, setSelectedDoc] = useState<DocDetail | null>(null)
+  const [sequenceBusy, setSequenceBusy] = useState<string | null>(null)
+  const [readiness, setReadiness] = useState<any | null>(null)
+  const [folderSuggestions, setFolderSuggestions] = useState<any[]>([])
+  const [folderSuggestionsUpdatedAt, setFolderSuggestionsUpdatedAt] = useState<string | null>(null)
+  const [suggestionsBusy, setSuggestionsBusy] = useState(false)
   const { show } = useToast()
 
   async function refresh() {
@@ -67,9 +78,42 @@ export default function App() {
     }
   }
 
+  async function loadReadiness() {
+    try {
+      const { getProviderReadiness } = await import('./services/api')
+      const data = await getProviderReadiness()
+      setReadiness(data)
+    } catch (e: any) {
+      show(e?.message ?? 'Failed to load provider readiness', 'error')
+    }
+  }
+
+  async function loadFolderSuggestions(forceRefresh = false) {
+    try {
+      if (forceRefresh) setSuggestionsBusy(true)
+      const {
+        getFolderSuggestions,
+        refreshFolderSuggestions,
+      } = await import('./services/api')
+      const data = forceRefresh ? await refreshFolderSuggestions() : await getFolderSuggestions()
+      setFolderSuggestions(data?.suggestions || [])
+      setFolderSuggestionsUpdatedAt(data?.generated_at || null)
+    } catch (e: any) {
+      show(e?.message ?? 'Failed to load folder suggestions', 'error')
+    } finally {
+      if (forceRefresh) setSuggestionsBusy(false)
+    }
+  }
+
   useEffect(() => {
     refresh()
+    loadReadiness()
+    loadFolderSuggestions(false)
   }, [])
+
+  useEffect(() => {
+    setSequenceBusy(null)
+  }, [selectedDoc?.document_id])
 
   async function handleUpload(file: File, opts: { analyze: boolean; background: boolean; dpi: number }) {
     try {
@@ -90,6 +134,38 @@ export default function App() {
       await refresh()
     } catch (e: any) {
       show(e?.message ?? 'Upload failed', 'error')
+    }
+  }
+
+  const sequenceEntries = useMemo(() => {
+    if (!selectedDoc?.pages) return []
+    const grouped = new Map<string, PageResult[]>()
+    selectedDoc.pages.forEach((p) => {
+      if (!p.sequence_id) return
+      if (!grouped.has(p.sequence_id)) grouped.set(p.sequence_id, [])
+      grouped.get(p.sequence_id)!.push(p)
+    })
+    return Array.from(grouped.entries()).map(([sequenceId, pages]) => ({
+      sequenceId,
+      pages: pages.slice().sort((a, b) => a.page_number - b.page_number),
+    }))
+  }, [selectedDoc])
+
+  async function applySequence(seqId: string) {
+    if (!selectedDoc) return
+    setSequenceBusy(seqId)
+    try {
+      const { applySequenceProposed } = await import('./services/api')
+      await applySequenceProposed(selectedDoc.document_id, seqId)
+      show(`Applied proposals for ${seqId}`, 'success')
+      const detail = await getDocument(selectedDoc.document_id)
+      if (!detail.pages) detail.pages = []
+      setSelectedDoc(detail)
+      await refresh()
+    } catch (e: any) {
+      show(e?.message ?? 'Failed to apply sequence', 'error')
+    } finally {
+      setSequenceBusy(null)
     }
   }
 
@@ -127,7 +203,14 @@ export default function App() {
                   <td>{d.original_filename}</td>
                   <td>{new Date(d.upload_date).toLocaleString()}</td>
                   <td>{d.status}</td>
-                  <td>{d.total_pages}</td>
+                  <td>
+                    {d.pages_done}/{d.total_pages}
+                    {d.pages_failed > 0 ? (
+                      <span className="error" style={{ display: 'block', fontSize: 12 }}>
+                        {d.pages_failed} failed
+                      </span>
+                    ) : null}
+                  </td>
                   <td>
                     <button onClick={async () => {
                       try {
@@ -149,6 +232,82 @@ export default function App() {
       <section>
         <h2>Settings</h2>
         <SettingsView />
+      </section>
+
+      <section>
+        <h2>Provider Status</h2>
+        {readiness ? (
+          <div className="card">
+            <div>Vision Provider: <b>{readiness.vision_provider}</b></div>
+            <div>Text Provider: <b>{readiness.text_provider}</b></div>
+            <table className="table" style={{ marginTop: 10 }}>
+              <thead>
+                <tr>
+                  <th>Provider</th>
+                  <th>Enabled</th>
+                  <th>Configured</th>
+                  <th>Reachable</th>
+                  <th>Details</th>
+                </tr>
+              </thead>
+              <tbody>
+                {Object.values(readiness.providers || {}).map((p: any) => (
+                  <tr key={p.name}>
+                    <td>{p.name}</td>
+                    <td>{p.enabled ? 'yes' : 'no'}</td>
+                    <td>{p.configured ? 'yes' : 'no'}</td>
+                    <td style={{ color: p.reachable ? '#2ecc71' : '#e67e22' }}>
+                      {p.reachable ? 'online' : 'unreachable'}
+                    </td>
+                    <td>
+                      {Object.entries(p.details || {}).map(([k, v]) => (
+                        <div key={k}>{k}: {String(v)}</div>
+                      ))}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="card">Loading provider readiness…</div>
+        )}
+      </section>
+
+      <section>
+        <h2>Folder Suggestions</h2>
+        <div className="card">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div>Last analyzed: {folderSuggestionsUpdatedAt ? new Date(folderSuggestionsUpdatedAt).toLocaleString() : 'n/a'}</div>
+            <button onClick={() => loadFolderSuggestions(true)} disabled={suggestionsBusy}>
+              {suggestionsBusy ? 'Refreshing…' : 'Refresh Analysis'}
+            </button>
+          </div>
+          {folderSuggestions.length === 0 ? (
+            <div style={{ marginTop: 8 }}>No suggestions yet.</div>
+          ) : (
+            <table className="table" style={{ marginTop: 10 }}>
+              <thead>
+                <tr>
+                  <th>Path</th>
+                  <th>Depth</th>
+                  <th>Files</th>
+                  <th>Subfolders</th>
+                </tr>
+              </thead>
+              <tbody>
+                {folderSuggestions.slice(0, 8).map((s) => (
+                  <tr key={s.path}>
+                    <td>{s.path}</td>
+                    <td>{s.depth}</td>
+                    <td>{s.file_count}</td>
+                    <td>{(s.subfolders || []).join(', ') || '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
       </section>
 
       {selectedDoc && (
@@ -177,13 +336,63 @@ export default function App() {
               <ConfirmClassControls docId={selectedDoc.document_id} currentClass={selectedDoc.doc_level.document_class || ''} onUpdated={async ()=> setSelectedDoc(await getDocument(selectedDoc.document_id))} />
             </div>
           )}
+          {sequenceEntries.length > 0 && (
+            <div className="card">
+              <div style={{ fontWeight: 600, marginBottom: 6 }}>Sequences</div>
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>Sequence</th>
+                    <th>Pages</th>
+                    <th>Sample Proposed Folder</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sequenceEntries.map(({ sequenceId, pages }) => {
+                    const displayProposal = pages.find((p) => p.proposed_folder || p.proposed_filename)
+                    const canApply = pages.every((p) => p.proposed_folder && p.proposed_filename)
+                    return (
+                      <tr key={sequenceId}>
+                        <td>{sequenceId}</td>
+                        <td>{pages.map((p) => p.page_number).join(', ')}</td>
+                        <td>
+                          {displayProposal ? (
+                            <>
+                              <div>{displayProposal.proposed_folder}</div>
+                              <div>{displayProposal.proposed_filename}</div>
+                            </>
+                          ) : (
+                            '—'
+                          )}
+                        </td>
+                        <td>
+                          <button
+                            onClick={() => applySequence(sequenceId)}
+                            disabled={!canApply || sequenceBusy === sequenceId}
+                          >
+                            Apply Proposed ({pages.length})
+                          </button>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
           <div className="card">
             <div><b>ID:</b> {selectedDoc.document_id}</div>
             <div><b>Status:</b> {selectedDoc.status}</div>
             <div>
               <b>Progress:</b> {selectedDoc.pages_done}/{selectedDoc.total_pages}
             </div>
-            {selectedDoc.last_error && <div className="error">Last error: {selectedDoc.last_error}</div>}
+            {selectedDoc.last_error && (
+              <div className="error">
+                Last error: {selectedDoc.last_error}
+                {selectedDoc.last_error_at ? ` @ ${new Date(selectedDoc.last_error_at).toLocaleString()}` : ''}
+              </div>
+            )}
           </div>
 
           <h3>Pages</h3>
@@ -191,6 +400,7 @@ export default function App() {
             <thead>
               <tr>
                 <th>#</th>
+                <th>Seq</th>
                 <th>Type</th>
                 <th>Institution</th>
                 <th>Date</th>
@@ -209,6 +419,7 @@ export default function App() {
               {selectedDoc.pages?.map((p) => (
                 <tr key={p.page_id || p.page_number}>
                   <td>{p.page_number}</td>
+                  <td>{p.sequence_id || ''}</td>
                   <td>{p.document_type || 'unknown'}</td>
                   <td>{p.institution || ''}</td>
                   <td>{p.date || ''}</td>
@@ -291,6 +502,21 @@ function PageActions({ page, onUpdated }: { page: any, onUpdated: () => Promise<
     }
   }
 
+  async function revertMove() {
+    if (!page.page_id) return
+    setBusy(true)
+    try {
+      const { revertPageMove } = await import('./services/api')
+      await revertPageMove(page.page_id)
+      show(`Reverted move for page ${page.page_number}`, 'success')
+      await onUpdated()
+    } catch (e: any) {
+      show(e?.message ?? 'Revert failed', 'error')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   return (
     <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
       <button onClick={doReanalyze} disabled={busy || !page.page_id}>Re‑analyze</button>
@@ -300,6 +526,7 @@ function PageActions({ page, onUpdated }: { page: any, onUpdated: () => Promise<
       <label style={{ color: '#a8b2d1' }}>Folder <input type="text" value={folder} onChange={(e)=> setFolder(e.target.value)} style={{ width: 200 }} /></label>
       <label style={{ color: '#a8b2d1' }}>Filename <input type="text" value={filename} onChange={(e)=> setFilename(e.target.value)} style={{ width: 220 }} /></label>
       <button onClick={doCorrect} disabled={busy || !page.page_id}>Correct</button>
+      <button onClick={revertMove} disabled={busy || !page.page_id}>Revert Move</button>
     </div>
   )
 }

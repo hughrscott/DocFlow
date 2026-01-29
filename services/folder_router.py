@@ -7,8 +7,11 @@ create new ones from scratch.
 """
 
 import os
+import json
 import logging
-from typing import Dict, Any, Tuple, Optional, List
+import re
+from collections import Counter
+from typing import Dict, Any, Tuple, Optional, List, Set
 from pathlib import Path
 from datetime import datetime
 
@@ -27,6 +30,8 @@ class FolderRouter:
     - Generate appropriate filenames
     """
     
+    FILE_SAMPLE_LIMIT = 20
+
     def __init__(self, root_documents_dir: str, max_depth: int = 4):
         """
         Initialize folder router with root directory.
@@ -45,7 +50,10 @@ class FolderRouter:
         logger.info(f"Max folder depth: {max_depth}")
         
         # Cache for folder structure analysis
-        self.folder_structure = None
+        self.cache_dir = self.root_dir / ".docflow_cache"
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
+        self.cache_file = self.cache_dir / "folder_structure.json"
+        self.folder_structure = self._load_cached_structure()
         self.folder_patterns = {}
     
     def analyze_folder_structure(self) -> Dict[str, Any]:
@@ -100,11 +108,17 @@ class FolderRouter:
                 # Extract patterns from folder names
                 patterns = self._extract_folder_patterns(folder_name)
                 
+                file_samples = [Path(f).stem for f in files[: self.FILE_SAMPLE_LIMIT]]
+                file_keywords = self._extract_file_keywords(file_samples)
+
                 folders_info[folder_name] = {
                     "depth": depth,
                     "subfolders": dirs,
                     "file_count": len(files),
-                    "patterns": patterns
+                    "patterns": patterns,
+                    "file_samples": file_samples,
+                    "file_keywords": file_keywords,
+                    "signals": sorted(set(patterns["keywords"]).union(file_keywords)),
                 }
                 
                 logger.debug(f"Found folder: {folder_name} (depth={depth}, files={len(files)})")
@@ -112,10 +126,12 @@ class FolderRouter:
             structure = {
                 "total_folders": total_folders,
                 "max_depth": max_depth_found,
-                "folders": folders_info
+                "folders": folders_info,
+                "generated_at": datetime.utcnow().isoformat()
             }
             
             self.folder_structure = structure
+            self._save_structure(structure)
             logger.info(f"Analysis complete: {total_folders} folders found")
             
             return structure
@@ -172,19 +188,36 @@ class FolderRouter:
             Example: ("Banking/Personal/PNC-Checking", 0.95)
         """
         try:
+            if not self.folder_structure:
+                self.analyze_folder_structure()
+
             doc_type = analysis_result.get("document_type", "unknown").lower()
             institution = analysis_result.get("institution", "Unknown").title()
-            account_type = analysis_result.get("account_type", "").lower()
+            account_type = (
+                analysis_result.get("account_type")
+                or (analysis_result.get("extracted_metadata", {}) or {}).get("account_type")
+                or ""
+            )
+            account_type = str(account_type).lower()
             
+            metadata = analysis_result.get("extracted_metadata", {}) or {}
             logger.info(f"Proposing folder for: type={doc_type}, institution={institution}")
-            
-            # Build folder path based on document type
-            folder_path = self._build_folder_path(
+
+            folder_path = self._match_existing_folder(
                 doc_type=doc_type,
                 institution=institution,
                 account_type=account_type,
-                metadata=analysis_result.get("extracted_metadata", {})
+                metadata=metadata,
             )
+
+            if not folder_path:
+                # Build folder path based on document type/schema
+                folder_path = self._build_folder_path(
+                    doc_type=doc_type,
+                    institution=institution,
+                    account_type=account_type,
+                    metadata=metadata,
+                )
             
             # Calculate confidence
             confidence = analysis_result.get("confidence_score", 0.5)
@@ -201,6 +234,86 @@ class FolderRouter:
             logger.error(f"Error proposing folder: {e}")
             # Default to generic folder on error
             return "Documents/Unorganized", 0.0
+
+    def _document_signals(
+        self,
+        doc_type: str,
+        institution: str,
+        account_type: str,
+        metadata: Dict[str, Any],
+    ) -> Set[str]:
+        """Build a set of lowercase signals that describe the document."""
+        signals: Set[str] = set()
+
+        category = self._category_for_type(doc_type)
+        if category:
+            signals.add(category.lower())
+
+        for token in self._tokenize_text(doc_type):
+            signals.add(token)
+
+        if account_type:
+            signals.add(account_type.lower())
+
+        if institution and institution != "Unknown":
+            clean_inst = self._clean_institution_name(institution)
+            if clean_inst:
+                signals.add(clean_inst.lower())
+            for token in self._tokenize_text(clean_inst):
+                signals.add(token)
+
+        location = (metadata.get("business_context") or {}).get("location")
+        if location:
+            for token in self._tokenize_text(location):
+                signals.add(token)
+
+        doc_subtype = metadata.get("document_subtype")
+        if doc_subtype:
+            for token in self._tokenize_text(doc_subtype):
+                signals.add(token)
+
+        return {s for s in signals if s}
+
+    def _match_existing_folder(
+        self,
+        doc_type: str,
+        institution: str,
+        account_type: str,
+        metadata: Dict[str, Any],
+    ) -> Optional[str]:
+        """Return the best matching existing folder path, if any."""
+        if not self.folder_structure:
+            return None
+
+        desired_category = self._category_for_type(doc_type)
+        doc_signals = self._document_signals(doc_type, institution, account_type, metadata)
+        if not doc_signals:
+            return None
+
+        best_score = 0
+        best_folder = None
+
+        for folder_path, info in self.folder_structure.get("folders", {}).items():
+            folder_signals = set(info.get("signals", []))
+            if not folder_signals:
+                continue
+
+            score = len(doc_signals.intersection(folder_signals))
+
+            # Mild boost if top-level category already matches desired
+            if desired_category and folder_path.split("/", 1)[0] == desired_category:
+                score += 1
+
+            # Boost if account type segment present
+            if account_type and account_type.title() in info["patterns"]["parts"]:
+                score += 1
+
+            if score > best_score:
+                best_score = score
+                best_folder = folder_path
+
+        # Require at least two matching signals to avoid noisy matches
+        return best_folder if best_score >= 2 else None
     
     def _build_folder_path(
         self,
@@ -228,38 +341,8 @@ class FolderRouter:
             Folder path as string
         """
         
-        # Map document types to top-level categories
-        category_map = {
-            "bank_statement": "Banking",
-            "credit_card_statement": "Banking",
-            "mortgage_statement": "Banking",
-            "loan_document": "Banking",
-            
-            "tax_bill": "Taxes",
-            "property_tax": "Taxes",
-            "income_tax": "Taxes",
-            
-            "utility_bill": "Utilities",
-            "electric_bill": "Utilities",
-            "gas_bill": "Utilities",
-            "water_bill": "Utilities",
-            
-            "insurance_claim": "Insurance",
-            "insurance_policy": "Insurance",
-            "health_insurance": "Insurance",
-            "auto_insurance": "Insurance",
-            
-            "medical_record": "Medical",
-            "prescription": "Medical",
-            "health_report": "Medical",
-            
-            "invoice": "Finance",
-            "receipt": "Finance",
-            "payment_record": "Finance",
-        }
-        
         # Get top-level category
-        top_category = category_map.get(doc_type, "Documents")
+        top_category = self._category_for_type(doc_type)
         
         # Build sub-path based on account type and institution
         sub_paths = [top_category]
@@ -284,6 +367,34 @@ class FolderRouter:
             folder_path = "/".join(parts)
         
         return folder_path
+
+    def _category_for_type(self, doc_type: str) -> str:
+        mapping = {
+            "bank_statement": "Banking",
+            "credit_card_statement": "Banking",
+            "mortgage_statement": "Banking",
+            "loan_document": "Banking",
+            "tax_bill": "Taxes",
+            "property_tax": "Taxes",
+            "income_tax": "Taxes",
+            "utility_bill": "Utilities",
+            "electric_bill": "Utilities",
+            "gas_bill": "Utilities",
+            "water_bill": "Utilities",
+            "internet_bill": "Utilities",
+            "mobile_bill": "Utilities",
+            "insurance_claim": "Insurance",
+            "insurance_policy": "Insurance",
+            "health_insurance": "Insurance",
+            "auto_insurance": "Insurance",
+            "medical_record": "Medical",
+            "prescription": "Medical",
+            "health_report": "Medical",
+            "invoice": "Finance",
+            "receipt": "Finance",
+            "payment_record": "Finance",
+        }
+        return mapping.get(doc_type, "Documents")
     
     def _clean_institution_name(self, institution: str) -> str:
         """
@@ -324,6 +435,8 @@ class FolderRouter:
         try:
             full_path = self.root_dir / folder_path
             full_path.mkdir(parents=True, exist_ok=True)
+            # Refresh structure next time so new folders/files are considered
+            self.folder_structure = None
             logger.debug(f"Folder ready: {full_path}")
             return True
         
@@ -434,3 +547,39 @@ class FolderRouter:
             Full absolute path
         """
         return str(self.root_dir / folder_path / filename)
+
+    # --- helpers for keyword extraction -------------------------------------------------
+
+    TOKEN_PATTERN = re.compile(r"[A-Za-z0-9]+")
+
+    def _tokenize_text(self, text: str) -> List[str]:
+        if not text:
+            return []
+        return [token.lower() for token in self.TOKEN_PATTERN.findall(str(text))]
+
+    def _extract_file_keywords(self, file_stems: List[str]) -> List[str]:
+        tokens: List[str] = []
+        for stem in file_stems:
+            tokens.extend(self._tokenize_text(stem))
+        # Return most common tokens to keep signal set small
+        counts = Counter(tokens)
+        return [token for token, _ in counts.most_common(20)]
+
+    def _load_cached_structure(self) -> Optional[Dict[str, Any]]:
+        try:
+            if self.cache_file.exists():
+                with open(self.cache_file, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    logger.debug("Loaded folder structure cache")
+                    return data
+        except Exception as exc:
+            logger.warning(f"Failed to load folder structure cache: {exc}")
+        return None
+
+    def _save_structure(self, structure: Dict[str, Any]) -> None:
+        try:
+            with open(self.cache_file, "w", encoding="utf-8") as f:
+                json.dump(structure, f, indent=2)
+            logger.debug("Persisted folder structure cache")
+        except Exception as exc:
+            logger.warning(f"Failed to write folder structure cache: {exc}")

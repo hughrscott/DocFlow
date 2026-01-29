@@ -112,18 +112,21 @@ class LearningEngine:
         self,
         decision_id: str,
         actual_folder: str,
-        actual_filename: str
+        actual_filename: str,
+        user_corrected: bool = True,
     ) -> Dict[str, Any]:
         """
-        Record a user correction to a previous decision.
+        Record a correction/confirmation to a previous decision.
         
-        Called when user corrects where a document was routed.
+        Called whenever the actual routing destination is known
+        (either via user correction or automatic acceptance).
         Updates the decision and triggers learning.
         
         Args:
             decision_id: ID of decision to correct
-            actual_folder: Correct folder
-            actual_filename: Correct filename
+            actual_folder: Final folder
+            actual_filename: Final filename
+            user_corrected: Whether the change was explicitly user-driven
             
         Returns:
             Dictionary with update info
@@ -147,7 +150,7 @@ class LearningEngine:
             # Update decision
             decision.actual_folder = actual_folder
             decision.actual_filename = actual_filename
-            decision.user_corrected = True
+            decision.user_corrected = user_corrected
             decision.decision_correct = (decision.proposed_folder == actual_folder)
             
             self.db.commit()

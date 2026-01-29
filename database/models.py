@@ -172,3 +172,27 @@ class LearningMetrics(Base):
     
     def __repr__(self) -> str:
         return f"<LearningMetrics(accuracy={self.accuracy_percentage}%, period={self.period_start})>"
+
+
+class FileMoveAudit(Base):
+    """
+    Tracks every file move so we can audit history and revert mistakes.
+    """
+
+    __tablename__ = "file_move_audit"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    page_id = Column(String, ForeignKey("pages.id"), nullable=False)
+    decision_id = Column(String, ForeignKey("processing_decisions.id"), nullable=True)
+    old_folder = Column(String, nullable=False)
+    old_filename = Column(String, nullable=False)
+    new_folder = Column(String, nullable=False)
+    new_filename = Column(String, nullable=False)
+    moved_by = Column(String, nullable=False, default="system")  # system | user | api
+    reason = Column(String, nullable=True)
+    moved_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    reverted = Column(Boolean, nullable=False, default=False)
+    reverted_at = Column(DateTime, nullable=True)
+
+    def __repr__(self) -> str:
+        return f"<FileMoveAudit(page={self.page_id}, {self.old_folder}/{self.old_filename} -> {self.new_folder}/{self.new_filename})>"
