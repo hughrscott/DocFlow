@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useState, useRef } from 'react'
 import { uploadDocument, listDocuments, getDocument } from './services/api'
 import UploadArea from './components/UploadArea'
 import SettingsView from './components/SettingsView'
