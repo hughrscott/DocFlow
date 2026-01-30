@@ -7,7 +7,7 @@ into the documents directory. Persists documents, pages, and decisions.
 """
 
 from fastapi import APIRouter, UploadFile, File, Depends, HTTPException, BackgroundTasks, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any, Tuple
 from pathlib import Path
@@ -1361,3 +1361,125 @@ async def correct_decision(
     except Exception as e:
         logger.error(f"Correction error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+class PageImageResponse(BaseModel):
+    page_id: str
+    document_id: str
+    page_number: int
+    image_available: bool
+    message: str
+
+
+@router.get("/pages/{page_id}/image", response_class=StreamingResponse)
+async def get_page_image(
+    page_id: str,
+    dpi: int = 150,
+    db: Session = Depends(get_db)
+):
+    """
+    Get the image representation of a document page for preview purposes.
+
+    Args:
+        page_id: ID of the page to retrieve image for
+        dpi: Resolution for image conversion (default 150)
+        db: Database session
+
+    Returns:
+        Image stream of the document page
+    """
+    try:
+        # Find the page in the database
+        page = db.query(Page).filter(Page.id == page_id).first()
+        if not page:
+            raise HTTPException(status_code=404, detail="Page not found")
+
+        # Locate the PDF file on disk
+        router = FolderRouter(settings.documents_dir)
+        pdf_path = router.full_path_for_document(page.assigned_folder, page.output_filename)
+
+        if not Path(pdf_path).exists():
+            raise HTTPException(status_code=404, detail="Page PDF file not found on disk")
+
+        # Convert PDF page to image
+        pdf_processor = PDFProcessor(temp_dir=settings.uploads_temp_dir)
+        pdf_bytes = Path(pdf_path).read_bytes()
+
+        image_bytes = await pdf_processor.pdf_page_to_image(pdf_bytes, dpi=dpi)
+
+        # Return the image as a stream
+        return StreamingResponse(io.BytesIO(image_bytes), media_type="image/png")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error retrieving page image: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to retrieve page image: {str(e)}")
+
+
+@router.get("/documents/{document_id}/pages", response_model=List[PageResult])
+async def get_document_pages(
+    document_id: str,
+    db: Session = Depends(get_db)
+):
+    """
+    Get all pages for a document with their metadata.
+
+    Args:
+        document_id: ID of the document
+        db: Database session
+
+    Returns:
+        List of page results with metadata
+    """
+    try:
+        # Find the document
+        doc = db.query(Document).filter(Document.id == document_id).first()
+        if not doc:
+            raise HTTPException(status_code=404, detail="Document not found")
+
+        # Get all pages for the document
+        pages = db.query(Page).filter(Page.document_id == document_id).order_by(Page.page_number.asc()).all()
+
+        if not pages:
+            return []
+
+        # Convert to PageResult objects
+        page_results = []
+        for page in pages:
+            # Fetch latest decision, if any
+            latest_decision = (
+                db.query(ProcessingDecision)
+                .filter(ProcessingDecision.page_id == page.id)
+                .order_by(ProcessingDecision.timestamp.desc())
+                .first()
+            )
+
+            page_results.append(
+                PageResult(
+                    page_id=page.id,
+                    page_number=page.page_number,
+                    document_type=page.document_type,
+                    institution=page.institution,
+                    date=(page.extracted_metadata or {}).get("date"),
+                    confidence_score=page.confidence_score,
+                    folder=page.assigned_folder,
+                    filename=page.output_filename,
+                    proposed_folder=(latest_decision.proposed_folder if latest_decision else None),
+                    proposed_filename=(latest_decision.proposed_filename if latest_decision else None),
+                    provider_used=page.llm_provider_used or None,
+                    model_used=page.llm_model_used or None,
+                    sequence_id=(page.extracted_metadata or {}).get("sequence_id"),
+                    success=(page.processing_status == "completed"),
+                    error=page.processing_error,
+                    decision_id=(latest_decision.id if latest_decision else None),
+                )
+            )
+
+        return page_results
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error retrieving document pages: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to retrieve document pages: {str(e)}")

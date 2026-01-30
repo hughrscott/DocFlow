@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { getDocument, correctPage, reanalyzePage, applySequenceProposed } from '../services/api';
+import { getDocument, correctPage, reanalyzePage, applySequenceProposed, getPageImage } from '../services/api';
 
 type PageResult = {
   page_id?: string;
@@ -72,6 +72,7 @@ const CarouselReview: React.FC<CarouselReviewProps> = ({ documentId, onClose, on
   const [folder, setFolder] = useState('');
   const [filename, setFilename] = useState('');
   const [isNewFolder, setIsNewFolder] = useState(false);
+  const [pageImageUrl, setPageImageUrl] = useState<string | null>(null);
 
   // Load document data
   useEffect(() => {
@@ -90,6 +91,18 @@ const CarouselReview: React.FC<CarouselReviewProps> = ({ documentId, onClose, on
 
           // Determine if folder is new
           setIsNewFolder(!firstPage.folder.includes(firstPage.proposed_folder || ''));
+
+          // Load the first page image
+          if (firstPage.page_id) {
+            try {
+              const imageBlob = await getPageImage(firstPage.page_id);
+              const imageUrl = URL.createObjectURL(imageBlob);
+              setPageImageUrl(imageUrl);
+            } catch (imgError) {
+              console.error('Error loading page image:', imgError);
+              // Don't show error for image loading, just use placeholder
+            }
+          }
         }
       } catch (error) {
         console.error('Error loading document:', error);
@@ -100,43 +113,90 @@ const CarouselReview: React.FC<CarouselReviewProps> = ({ documentId, onClose, on
     };
 
     loadDocument();
+
+    // Cleanup object URLs
+    return () => {
+      if (pageImageUrl) {
+        URL.revokeObjectURL(pageImageUrl);
+      }
+    };
   }, [documentId]);
 
   // Navigate to next document
-  const goToNext = useCallback(() => {
+  const goToNext = useCallback(async () => {
     if (document && currentIndex < document.pages.length - 1) {
       const nextPageIndex = currentIndex + 1;
       setCurrentIndex(nextPageIndex);
-      
+
       // Update form fields with next page's data
       const nextPage = document.pages[nextPageIndex];
       setClassification(nextPage.document_type || '');
       setFolder(nextPage.proposed_folder || nextPage.folder || '');
       setFilename(nextPage.proposed_filename || nextPage.filename || '');
-      
+
       // Determine if folder is new
       setIsNewFolder(!nextPage.folder.includes(nextPage.proposed_folder || ''));
+
+      // Update page image
+      if (nextPage.page_id) {
+        try {
+          const imageBlob = await getPageImage(nextPage.page_id);
+          const imageUrl = URL.createObjectURL(imageBlob);
+          // Revoke previous image URL
+          if (pageImageUrl) URL.revokeObjectURL(pageImageUrl);
+          setPageImageUrl(imageUrl);
+        } catch (imgError) {
+          console.error('Error loading page image:', imgError);
+          // Revoke previous image URL
+          if (pageImageUrl) URL.revokeObjectURL(pageImageUrl);
+          setPageImageUrl(null);
+        }
+      } else {
+        // Revoke previous image URL
+        if (pageImageUrl) URL.revokeObjectURL(pageImageUrl);
+        setPageImageUrl(null);
+      }
     }
-  }, [currentIndex, document]);
+  }, [currentIndex, document, pageImageUrl]);
 
   // Navigate to previous document
-  const goToPrevious = useCallback(() => {
+  const goToPrevious = useCallback(async () => {
     if (currentIndex > 0) {
       const prevPageIndex = currentIndex - 1;
       setCurrentIndex(prevPageIndex);
-      
+
       // Update form fields with previous page's data
       const prevPage = document?.pages[prevPageIndex];
       if (prevPage) {
         setClassification(prevPage.document_type || '');
         setFolder(prevPage.proposed_folder || prevPage.folder || '');
         setFilename(prevPage.proposed_filename || prevPage.filename || '');
-        
+
         // Determine if folder is new
         setIsNewFolder(!prevPage.folder.includes(prevPage.proposed_folder || ''));
+
+        // Update page image
+        if (prevPage.page_id) {
+          try {
+            const imageBlob = await getPageImage(prevPage.page_id);
+            const imageUrl = URL.createObjectURL(imageBlob);
+            // Revoke previous image URL
+            if (pageImageUrl) URL.revokeObjectURL(pageImageUrl);
+            setPageImageUrl(imageUrl);
+          } catch (imgError) {
+            console.error('Error loading page image:', imgError);
+            // Revoke previous image URL
+            if (pageImageUrl) URL.revokeObjectURL(pageImageUrl);
+            setPageImageUrl(null);
+          }
+        } else {
+          // Revoke previous image URL
+          if (pageImageUrl) URL.revokeObjectURL(pageImageUrl);
+          setPageImageUrl(null);
+        }
       }
     }
-  }, [currentIndex, document]);
+  }, [currentIndex, document, pageImageUrl]);
 
   // Handle keyboard navigation
   useEffect(() => {
@@ -279,26 +339,37 @@ const CarouselReview: React.FC<CarouselReviewProps> = ({ documentId, onClose, on
 
         <div className="carousel-content">
           <div className="document-preview">
-            {/* Placeholder for document preview - in a real app, this would show the actual document page */}
-            <div className="preview-placeholder">
-              <div className="preview-label">Document Preview</div>
-              <div className="preview-content">
-                <div className="preview-page-number">Page {currentPage.page_number}</div>
-                <div className="preview-info">
-                  <div><strong>Document Type:</strong> {currentPage.document_type}</div>
-                  <div><strong>Institution:</strong> {currentPage.institution || 'N/A'}</div>
-                  <div><strong>Date:</strong> {currentPage.date || 'N/A'}</div>
-                  <div><strong>Confidence:</strong> {(currentPage.confidence_score * 100).toFixed(0)}%</div>
-                  <div><strong>Current Folder:</strong> {currentPage.folder}</div>
-                  <div><strong>Current Filename:</strong> {currentPage.filename}</div>
-                  {currentPage.proposed_folder && (
-                    <div><strong>Proposed Folder:</strong> {currentPage.proposed_folder}</div>
-                  )}
-                  {currentPage.proposed_filename && (
-                    <div><strong>Proposed Filename:</strong> {currentPage.proposed_filename}</div>
-                  )}
+            <div className="preview-content">
+              <div className="preview-page-number">Page {currentPage.page_number}</div>
+              {pageImageUrl ? (
+                <img
+                  src={pageImageUrl}
+                  alt={`Document page ${currentPage.page_number}`}
+                  className="preview-image"
+                  onError={() => {
+                    // If image fails to load, show error message
+                    console.error('Failed to load page image');
+                  }}
+                />
+              ) : (
+                <div className="preview-placeholder">
+                  <div>No preview available</div>
+                  <div className="preview-info">
+                    <div><strong>Document Type:</strong> {currentPage.document_type}</div>
+                    <div><strong>Institution:</strong> {currentPage.institution || 'N/A'}</div>
+                    <div><strong>Date:</strong> {currentPage.date || 'N/A'}</div>
+                    <div><strong>Confidence:</strong> {(currentPage.confidence_score * 100).toFixed(0)}%</div>
+                    <div><strong>Current Folder:</strong> {currentPage.folder}</div>
+                    <div><strong>Current Filename:</strong> {currentPage.filename}</div>
+                    {currentPage.proposed_folder && (
+                      <div><strong>Proposed Folder:</strong> {currentPage.proposed_folder}</div>
+                    )}
+                    {currentPage.proposed_filename && (
+                      <div><strong>Proposed Filename:</strong> {currentPage.proposed_filename}</div>
+                    )}
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
           </div>
 

@@ -104,6 +104,18 @@ export async function revertPageMove(pageId: string, auditId?: string) {
   return res.json()
 }
 
+export async function getPageImage(pageId: string, dpi: number = 150) {
+  const res = await fetch(`${API_BASE}/api/v1/documents/pages/${pageId}/image?dpi=${dpi}`)
+  if (!res.ok) throw new Error('Get page image failed')
+  return res.blob()
+}
+
+export async function getDocumentPages(documentId: string) {
+  const res = await fetch(`${API_BASE}/api/v1/documents/${documentId}/pages`)
+  if (!res.ok) throw new Error('Get document pages failed')
+  return res.json()
+}
+
 export async function getProviderReadiness() {
   const res = await fetch(`${API_BASE}/api/v1/providers/readiness`)
   if (!res.ok) throw new Error('Provider readiness failed')
