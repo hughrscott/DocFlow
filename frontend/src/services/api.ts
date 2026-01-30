@@ -116,6 +116,12 @@ export async function getDocumentPages(documentId: string) {
   return res.json()
 }
 
+export async function getDocumentCarouselData(documentId: string) {
+  const res = await fetch(`${API_BASE}/api/v1/documents/${documentId}/carousel`)
+  if (!res.ok) throw new Error('Get document carousel data failed')
+  return res.json()
+}
+
 export async function getProviderReadiness() {
   const res = await fetch(`${API_BASE}/api/v1/providers/readiness`)
   if (!res.ok) throw new Error('Provider readiness failed')

@@ -341,3 +341,12 @@ button:hover { filter: brightness(1.1); }
   font-size: 18px;
   color: var(--muted);
 }
+
+.preview-loading {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 70vh;
+  font-size: 16px;
+  color: var(--muted);
+}

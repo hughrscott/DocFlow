@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { getDocument, correctPage, reanalyzePage, applySequenceProposed, getPageImage } from '../services/api';
+import { getDocument, correctPage, reanalyzePage, applySequenceProposed, getPageImage, getDocumentCarouselData } from '../services/api';
 
 type PageResult = {
   page_id?: string;
@@ -73,6 +73,7 @@ const CarouselReview: React.FC<CarouselReviewProps> = ({ documentId, onClose, on
   const [filename, setFilename] = useState('');
   const [isNewFolder, setIsNewFolder] = useState(false);
   const [pageImageUrl, setPageImageUrl] = useState<string | null>(null);
+  const [imageLoading, setImageLoading] = useState(false);
 
   // Load document data
   useEffect(() => {
@@ -94,6 +95,7 @@ const CarouselReview: React.FC<CarouselReviewProps> = ({ documentId, onClose, on
 
           // Load the first page image
           if (firstPage.page_id) {
+            setImageLoading(true);
             try {
               const imageBlob = await getPageImage(firstPage.page_id);
               const imageUrl = URL.createObjectURL(imageBlob);
@@ -101,6 +103,8 @@ const CarouselReview: React.FC<CarouselReviewProps> = ({ documentId, onClose, on
             } catch (imgError) {
               console.error('Error loading page image:', imgError);
               // Don't show error for image loading, just use placeholder
+            } finally {
+              setImageLoading(false);
             }
           }
         }
@@ -139,6 +143,7 @@ const CarouselReview: React.FC<CarouselReviewProps> = ({ documentId, onClose, on
 
       // Update page image
       if (nextPage.page_id) {
+        setImageLoading(true);
         try {
           const imageBlob = await getPageImage(nextPage.page_id);
           const imageUrl = URL.createObjectURL(imageBlob);
@@ -150,11 +155,14 @@ const CarouselReview: React.FC<CarouselReviewProps> = ({ documentId, onClose, on
           // Revoke previous image URL
           if (pageImageUrl) URL.revokeObjectURL(pageImageUrl);
           setPageImageUrl(null);
+        } finally {
+          setImageLoading(false);
         }
       } else {
         // Revoke previous image URL
         if (pageImageUrl) URL.revokeObjectURL(pageImageUrl);
         setPageImageUrl(null);
+        setImageLoading(false);
       }
     }
   }, [currentIndex, document, pageImageUrl]);
@@ -177,6 +185,7 @@ const CarouselReview: React.FC<CarouselReviewProps> = ({ documentId, onClose, on
 
         // Update page image
         if (prevPage.page_id) {
+          setImageLoading(true);
           try {
             const imageBlob = await getPageImage(prevPage.page_id);
             const imageUrl = URL.createObjectURL(imageBlob);
@@ -188,11 +197,14 @@ const CarouselReview: React.FC<CarouselReviewProps> = ({ documentId, onClose, on
             // Revoke previous image URL
             if (pageImageUrl) URL.revokeObjectURL(pageImageUrl);
             setPageImageUrl(null);
+          } finally {
+            setImageLoading(false);
           }
         } else {
           // Revoke previous image URL
           if (pageImageUrl) URL.revokeObjectURL(pageImageUrl);
           setPageImageUrl(null);
+          setImageLoading(false);
         }
       }
     }
@@ -341,7 +353,9 @@ const CarouselReview: React.FC<CarouselReviewProps> = ({ documentId, onClose, on
           <div className="document-preview">
             <div className="preview-content">
               <div className="preview-page-number">Page {currentPage.page_number}</div>
-              {pageImageUrl ? (
+              {imageLoading ? (
+                <div className="preview-loading">Loading preview...</div>
+              ) : pageImageUrl ? (
                 <img
                   src={pageImageUrl}
                   alt={`Document page ${currentPage.page_number}`}
