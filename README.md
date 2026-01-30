@@ -137,7 +137,7 @@ curl http://127.0.0.1:8000/api/v1/documents/<document_id>
 
 ### Frontend Setup
 
-This repo includes a minimal React + Vite frontend scaffold under `frontend/`.
+This repo includes a React + Vite frontend under `frontend/` with both MVP features and the upcoming carousel-based document review interface.
 
 1. **Navigate to frontend directory:**
 ```bash
@@ -158,11 +158,22 @@ npm run dev
 - API proxy is configured for `/api` to `http://localhost:8000` (no CORS needed)
 - Optionally set `VITE_API_BASE` in `frontend/.env` to override API base URL
 
-UI features (MVP)
+UI features (Current)
 - Upload a PDF with analyze/background/dpi options
 - View recent documents (filename, uploaded time, status, pages)
 - View document details including per-page results (type, institution, date, confidence, folder/filename, provider/model, status)
 - View and edit LLM settings (providers and base URL) with Basic auth for saving
+- Provider readiness indicators and folder suggestions
+- Document sequence grouping with bulk apply functionality
+- File move audit trail with revert capability
+
+UI features (Upcoming - Carousel Review Interface)
+- Visual carousel display of document pages with thumbnails
+- Interactive classification confirmation with dropdown options
+- Folder assignment panel with existing/new folder indicators
+- Filename preview and customization
+- Batch approval workflow for efficient document processing
+- Keyboard navigation and accessibility features
 
 ## Configuration
 
@@ -426,6 +437,7 @@ mypy .
 ## Future Enhancements
 
 🚀 Planned features:
+- Carousel-based document review interface with visual classification confirmation
 - Web-based UI for folder management
 - Document search and tagging
 - Bulk processing with job queue

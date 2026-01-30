@@ -44,9 +44,10 @@ Key Schemas and Conventions
 - Grouping: `sequence_id` is attached in `api/upload.py` via heuristics (continuations, page markers, fonts, identifiers).
 
 High-Value Tasks (from STATUS/ROADMAP)
+- Carousel-based document review interface with visual classification confirmation and approval workflow.
 - Doc-level aggregator polish + Essentials UI surfacing confirmed class, period, and key identifiers.
 - Integration tests for reanalyze/correct flows plus broader analyzer/router unit coverage.
-- Frontend redesign + readiness/progress visualizations tuned for desktop/app-store delivery.
+- Frontend redesign + readiness/progress visualizations tuned for desktop/app-store delivery with carousel UI.
 - Packaging/install experience so DocFlow can ship as a desktop application (bundled backend + UI).
 - Search/tagging + OCR/full-text experiments once core flows are hardened.
 

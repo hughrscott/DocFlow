@@ -9,9 +9,10 @@ Usage
 - Keep items small and shippable (vertical slices) with tests.
 
 Now / Priority
+- Carousel-based document review interface with visual classification confirmation
 - Doc-level aggregator + Essentials card surfacing confirmed class and period
 - Integration tests: reanalyze document/page; correction updates learning
-- Frontend redesign toward the long-term desktop/app-store experience
+- Frontend redesign toward the long-term desktop/app-store experience with carousel UI
 - Packaging/installer workflow so DocFlow can be shipped as a desktop app
 
 Next

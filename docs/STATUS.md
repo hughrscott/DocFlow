@@ -20,9 +20,10 @@ This document tracks current status. Sections below are living and should be upd
 
 ## In‑Progress
 
+- Carousel-based document review interface with visual classification confirmation
 - Doc-level aggregator & Essentials (initial)
 - Integration tests across upload → reanalyze → correction flows
-- Frontend redesign + readiness/progress UX tuned for desktop/app-store build
+- Frontend redesign + readiness/progress UX tuned for desktop/app-store build with carousel UI
 - Packaging/installer workflow groundwork
 
 ## Next
