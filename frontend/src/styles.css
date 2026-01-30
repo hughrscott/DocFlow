@@ -37,3 +37,293 @@ button:hover { filter: brightness(1.1); }
 .toast.success { border-color: #73daca; color: #73daca; }
 .toast.error { border-color: #f7768e; color: #f7768e; }
 .toast.info { border-color: var(--primary); color: var(--primary); }
+
+/* Carousel Review Styles */
+.carousel-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(11, 16, 32, 0.9); /* Dark overlay matching theme */
+  z-index: 1000;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 20px;
+}
+
+.carousel-container {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  width: 95%;
+  max-width: 1200px;
+  height: 90vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+}
+
+.carousel-header {
+  padding: 20px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.carousel-header h2 {
+  margin: 0;
+  color: var(--fg);
+}
+
+.carousel-controls {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+}
+
+.carousel-progress {
+  font-size: 14px;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.progress-bar {
+  width: 200px;
+  height: 6px;
+  background: var(--border);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background: var(--primary);
+  transition: width 0.3s ease;
+}
+
+.close-button {
+  background: #f7768e;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  padding: 0;
+  font-size: 16px;
+  color: var(--bg);
+}
+
+.close-button:hover {
+  filter: brightness(1.1);
+}
+
+.carousel-content {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+.document-preview {
+  flex: 1;
+  padding: 20px;
+  border-right: 1px solid var(--border);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background: #0f1425; /* Slightly lighter than main bg */
+}
+
+.preview-placeholder {
+  width: 100%;
+  max-width: 500px;
+  text-align: center;
+}
+
+.preview-label {
+  font-size: 14px;
+  color: var(--muted);
+  margin-bottom: 10px;
+}
+
+.preview-content {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 20px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+}
+
+.preview-page-number {
+  font-size: 24px;
+  font-weight: bold;
+  color: var(--primary);
+  margin-bottom: 15px;
+}
+
+.preview-info {
+  text-align: left;
+  font-size: 14px;
+}
+
+.preview-info div {
+  margin: 5px 0;
+  padding: 5px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.review-panel {
+  width: 400px;
+  padding: 20px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.classification-section,
+.folder-section,
+.filename-section {
+  padding: 15px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+}
+
+.classification-section h3,
+.folder-section h3,
+.filename-section h3 {
+  margin-top: 0;
+  margin-bottom: 15px;
+  color: var(--fg);
+}
+
+.classification-select {
+  width: 100%;
+  padding: 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 14px;
+  color: var(--fg);
+}
+
+.confidence-indicator {
+  margin-top: 10px;
+  font-size: 13px;
+  color: var(--muted);
+  font-style: italic;
+}
+
+.folder-input,
+.filename-input {
+  width: 100%;
+  padding: 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 14px;
+  color: var(--fg);
+}
+
+.folder-status {
+  margin-top: 8px;
+  padding: 5px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: bold;
+  display: inline-block;
+}
+
+.folder-status.new-folder {
+  background: #e0af68;
+  color: var(--bg);
+}
+
+.folder-status.existing-folder {
+  background: #73daca;
+  color: var(--bg);
+}
+
+.action-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.nav-button, .skip-button, .save-button {
+  padding: 12px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--bg);
+}
+
+.prev-button {
+  background: #7aa2f7;
+}
+
+.prev-button:hover {
+  filter: brightness(1.1);
+}
+
+.next-button {
+  background: #9ece6a;
+}
+
+.next-button:hover {
+  filter: brightness(1.1);
+}
+
+.skip-button {
+  background: #bb9af7;
+}
+
+.skip-button:hover {
+  filter: brightness(1.1);
+}
+
+.save-button {
+  background: #73daca;
+}
+
+.save-button:hover {
+  filter: brightness(1.1);
+}
+
+.batch-actions {
+  margin-top: 20px;
+  padding-top: 15px;
+  border-top: 1px solid var(--border);
+}
+
+.approve-all-button {
+  width: 100%;
+  padding: 12px;
+  background: #ff9e64;
+  color: var(--bg);
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.approve-all-button:hover {
+  filter: brightness(1.1);
+}
+
+.carousel-loading,
+.carousel-empty {
+  text-align: center;
+  padding: 40px;
+  font-size: 18px;
+  color: var(--muted);
+}

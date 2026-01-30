@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react'
 import { uploadDocument, listDocuments, getDocument } from './services/api'
 import UploadArea from './components/UploadArea'
 import SettingsView from './components/SettingsView'
+import CarouselReview from './components/CarouselReview'
 import { useToast } from './components/Toast'
 
 type DocBrief = {
@@ -64,6 +65,7 @@ export default function App() {
   const [folderSuggestions, setFolderSuggestions] = useState<any[]>([])
   const [folderSuggestionsUpdatedAt, setFolderSuggestionsUpdatedAt] = useState<string | null>(null)
   const [suggestionsBusy, setSuggestionsBusy] = useState(false)
+  const [showCarousel, setShowCarousel] = useState(false)
   const { show } = useToast()
 
   async function refresh() {
@@ -393,6 +395,12 @@ export default function App() {
                 {selectedDoc.last_error_at ? ` @ ${new Date(selectedDoc.last_error_at).toLocaleString()}` : ''}
               </div>
             )}
+            <button
+              onClick={() => setShowCarousel(true)}
+              style={{ marginTop: '10px', backgroundColor: '#9ece6a', color: '#0b1020' }}
+            >
+              Open Carousel Review
+            </button>
           </div>
 
           <h3>Pages</h3>
@@ -439,6 +447,19 @@ export default function App() {
             </tbody>
           </table>
         </section>
+      )}
+
+      {showCarousel && selectedDoc && (
+        <CarouselReview
+          documentId={selectedDoc.document_id}
+          onClose={() => setShowCarousel(false)}
+          onComplete={() => {
+            setShowCarousel(false);
+            // Refresh the document details after carousel review
+            getDocument(selectedDoc.document_id).then(setSelectedDoc).catch(console.error);
+          }}
+          showToast={show}
+        />
       )}
     </div>
   )
