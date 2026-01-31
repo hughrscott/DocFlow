@@ -1483,3 +1483,53 @@ async def get_document_pages(
     except Exception as e:
         logger.error(f"Error retrieving document pages: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to retrieve document pages: {str(e)}")
+
+
+class DocumentCarouselData(BaseModel):
+    document_id: str
+    original_filename: str
+    status: str
+    total_pages: int
+    pages_done: int
+    last_error: Optional[str] = None
+    last_error_at: Optional[str] = None
+    pages: List[PageResult]
+    doc_level: Optional[Dict[str, Any]] = None
+
+
+@router.get("/documents/{document_id}/carousel", response_model=DocumentCarouselData)
+async def get_document_carousel_data(
+    document_id: str,
+    db: Session = Depends(get_db)
+):
+    """
+    Get document data specifically formatted for the carousel interface.
+
+    Args:
+        document_id: ID of the document
+        db: Database session
+
+    Returns:
+        Document data with all pages and metadata for carousel interface
+    """
+    try:
+        # Get the document details
+        doc_details = await get_document(document_id, db)
+
+        return DocumentCarouselData(
+            document_id=doc_details.document_id,
+            original_filename=doc_details.original_filename,
+            status=doc_details.status,
+            total_pages=doc_details.total_pages,
+            pages_done=doc_details.pages_done,
+            last_error=doc_details.last_error,
+            last_error_at=doc_details.last_error_at,
+            pages=doc_details.pages,
+            doc_level=doc_details.doc_level
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error retrieving document carousel data: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to retrieve document carousel data: {str(e)}")

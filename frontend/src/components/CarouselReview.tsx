@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { getDocument, correctPage, reanalyzePage, applySequenceProposed, getPageImage } from '../services/api';
+import { getDocument, correctPage, reanalyzePage, applySequenceProposed, getPageImage, getDocumentCarouselData } from '../services/api';
 
 type PageResult = {
   page_id?: string;
@@ -73,6 +73,7 @@ const CarouselReview: React.FC<CarouselReviewProps> = ({ documentId, onClose, on
   const [filename, setFilename] = useState('');
   const [isNewFolder, setIsNewFolder] = useState(false);
   const [pageImageUrl, setPageImageUrl] = useState<string | null>(null);
+  const [imageLoading, setImageLoading] = useState(false);
 
   // Load document data
   useEffect(() => {
@@ -94,6 +95,7 @@ const CarouselReview: React.FC<CarouselReviewProps> = ({ documentId, onClose, on
 
           // Load the first page image
           if (firstPage.page_id) {
+            setImageLoading(true);
             try {
               const imageBlob = await getPageImage(firstPage.page_id);
               const imageUrl = URL.createObjectURL(imageBlob);
@@ -101,6 +103,8 @@ const CarouselReview: React.FC<CarouselReviewProps> = ({ documentId, onClose, on
             } catch (imgError) {
               console.error('Error loading page image:', imgError);
               // Don't show error for image loading, just use placeholder
+            } finally {
+              setImageLoading(false);
             }
           }
         }
@@ -139,6 +143,7 @@ const CarouselReview: React.FC<CarouselReviewProps> = ({ documentId, onClose, on
 
       // Update page image
       if (nextPage.page_id) {
+        setImageLoading(true);
         try {
           const imageBlob = await getPageImage(nextPage.page_id);
           const imageUrl = URL.createObjectURL(imageBlob);
@@ -150,11 +155,14 @@ const CarouselReview: React.FC<CarouselReviewProps> = ({ documentId, onClose, on
           // Revoke previous image URL
           if (pageImageUrl) URL.revokeObjectURL(pageImageUrl);
           setPageImageUrl(null);
+        } finally {
+          setImageLoading(false);
         }
       } else {
         // Revoke previous image URL
         if (pageImageUrl) URL.revokeObjectURL(pageImageUrl);
         setPageImageUrl(null);
+        setImageLoading(false);
       }
     }
   }, [currentIndex, document, pageImageUrl]);
@@ -177,6 +185,7 @@ const CarouselReview: React.FC<CarouselReviewProps> = ({ documentId, onClose, on
 
         // Update page image
         if (prevPage.page_id) {
+          setImageLoading(true);
           try {
             const imageBlob = await getPageImage(prevPage.page_id);
             const imageUrl = URL.createObjectURL(imageBlob);
@@ -188,11 +197,14 @@ const CarouselReview: React.FC<CarouselReviewProps> = ({ documentId, onClose, on
             // Revoke previous image URL
             if (pageImageUrl) URL.revokeObjectURL(pageImageUrl);
             setPageImageUrl(null);
+          } finally {
+            setImageLoading(false);
           }
         } else {
           // Revoke previous image URL
           if (pageImageUrl) URL.revokeObjectURL(pageImageUrl);
           setPageImageUrl(null);
+          setImageLoading(false);
         }
       }
     }
@@ -340,8 +352,10 @@ const CarouselReview: React.FC<CarouselReviewProps> = ({ documentId, onClose, on
         <div className="carousel-content">
           <div className="document-preview">
             <div className="preview-content">
-              <div className="preview-page-number">Page {currentPage.page_number}</div>
-              {pageImageUrl ? (
+              <div className="preview-page-number">Page {currentPage.page_number} of {totalPages}</div>
+              {imageLoading ? (
+                <div className="preview-loading">Loading preview...</div>
+              ) : pageImageUrl ? (
                 <img
                   src={pageImageUrl}
                   alt={`Document page ${currentPage.page_number}`}
@@ -376,8 +390,8 @@ const CarouselReview: React.FC<CarouselReviewProps> = ({ documentId, onClose, on
           <div className="review-panel">
             <div className="classification-section">
               <h3>Classification</h3>
-              <select 
-                value={classification} 
+              <select
+                value={classification}
                 onChange={(e) => setClassification(e.target.value)}
                 className="classification-select"
               >
@@ -419,40 +433,40 @@ const CarouselReview: React.FC<CarouselReviewProps> = ({ documentId, onClose, on
             </div>
 
             <div className="action-buttons">
-              <button 
-                onClick={goToPrevious} 
+              <button
+                onClick={goToPrevious}
                 disabled={currentIndex === 0}
                 className="nav-button prev-button"
               >
                 ← Previous
               </button>
-              
-              <button 
+
+              <button
                 onClick={handleSkip}
                 className="skip-button"
               >
                 Skip
               </button>
-              
-              <button 
+
+              <button
                 onClick={handleSave}
                 disabled={updating}
                 className="save-button"
               >
                 {updating ? 'Saving...' : 'Save & Next'}
               </button>
-              
-              <button 
-                onClick={goToNext} 
+
+              <button
+                onClick={goToNext}
                 disabled={currentIndex === totalPages - 1}
                 className="nav-button next-button"
               >
                 Next →
               </button>
             </div>
-            
+
             <div className="batch-actions">
-              <button 
+              <button
                 onClick={handleApproveAll}
                 disabled={updating}
                 className="approve-all-button"
@@ -461,6 +475,57 @@ const CarouselReview: React.FC<CarouselReviewProps> = ({ documentId, onClose, on
               </button>
             </div>
           </div>
+        </div>
+
+        {/* Thumbnail Strip */}
+        <div className="thumbnail-strip">
+          {document?.pages.map((page, index) => (
+            <div
+              key={page.page_id || index}
+              className={`thumbnail-item ${index === currentIndex ? 'active' : ''}`}
+              onClick={() => {
+                // Update the current index and load the corresponding page image
+                setCurrentIndex(index);
+
+                // Update form fields with page's data
+                setClassification(page.document_type || '');
+                setFolder(page.proposed_folder || page.folder || '');
+                setFilename(page.proposed_filename || page.filename || '');
+
+                // Determine if folder is new
+                setIsNewFolder(!page.folder.includes(page.proposed_folder || ''));
+
+                // Load the page image
+                if (page.page_id) {
+                  setImageLoading(true);
+                  getPageImage(page.page_id)
+                    .then(imageBlob => {
+                      const imageUrl = URL.createObjectURL(imageBlob);
+                      // Revoke previous image URL
+                      if (pageImageUrl) URL.revokeObjectURL(pageImageUrl);
+                      setPageImageUrl(imageUrl);
+                    })
+                    .catch(imgError => {
+                      console.error('Error loading page image:', imgError);
+                      // Revoke previous image URL
+                      if (pageImageUrl) URL.revokeObjectURL(pageImageUrl);
+                      setPageImageUrl(null);
+                    })
+                    .finally(() => {
+                      setImageLoading(false);
+                    });
+                } else {
+                  // Revoke previous image URL
+                  if (pageImageUrl) URL.revokeObjectURL(pageImageUrl);
+                  setPageImageUrl(null);
+                  setImageLoading(false);
+                }
+              }}
+            >
+              <div className="thumbnail-number">Pg {page.page_number}</div>
+              <div className="thumbnail-type">{page.document_type}</div>
+            </div>
+          ))}
         </div>
       </div>
     </div>
