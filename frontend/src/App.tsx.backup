@@ -1,8 +1,64 @@
 import React, { useEffect, useMemo, useState, useRef } from 'react'
 import { uploadDocument, listDocuments, getDocument } from './services/api'
-import ModernUploadArea from './components/ModernUploadArea'
-import './components/modern-upload-area.css'
-import './components/modern-review.css'
+import UploadArea from './components/UploadArea'
+import SettingsView from './components/SettingsView'
+import CarouselReview from './components/CarouselReview'
+import { useToast } from './components/Toast'
+
+type DocBrief = {
+  id: string
+  original_filename: string
+  upload_date: string
+  total_pages: number
+  status: string
+  pages_done: number
+  pages_failed: number
+  last_error?: string | null
+  last_error_at?: string | null
+}
+
+type PageResult = {
+  page_number: number
+  document_type: string
+  institution?: string | null
+  date?: string | null
+  confidence_score: number
+  folder: string
+  filename: string
+  proposed_folder?: string | null
+  proposed_filename?: string | null
+  provider_used?: string | null
+  model_used?: string | null
+  sequence_id?: string | null
+  success: boolean
+  error?: string | null
+  page_id?: string | null
+}
+
+type DocDetail = {
+  document_id: string
+  status: string
+  total_pages: number
+  pages_done: number
+  last_error?: string | null
+  last_error_at?: string | null
+  pages: PageResult[]
+  doc_level?: {
+    document_class?: string
+    confidence?: number
+    issuer?: string | null
+    recipient?: string | null
+    period?: string | null
+    identifiers?: Record<string, any>
+    salient_facts?: { label: string; value: any }[]
+    proposed_filename?: string | null
+    rationale?: string | null
+  } | null
+}
+
+import React, { useEffect, useMemo, useState, useRef } from 'react'
+import { uploadDocument, listDocuments, getDocument } from './services/api'
+import UploadArea from './components/UploadArea'
 import SettingsView from './components/SettingsView'
 import CarouselReview from './components/CarouselReview'
 import { useToast } from './components/Toast'
@@ -68,7 +124,33 @@ export default function App() {
   const [folderSuggestionsUpdatedAt, setFolderSuggestionsUpdatedAt] = useState<string | null>(null)
   const [suggestionsBusy, setSuggestionsBusy] = useState(false)
   const [showCarousel, setShowCarousel] = useState(false)
+  const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const { show } = useToast()
+
+  // Poll for document updates when there are processing documents
+  useEffect(() => {
+    // Check if there are any documents with status 'processing'
+    const hasProcessingDocs = docs.some(doc => doc.status === 'processing');
+
+    if (hasProcessingDocs && !intervalRef.current) {
+      // Start polling every 2 seconds
+      intervalRef.current = setInterval(() => {
+        refresh(); // This will update the docs state
+      }, 2000);
+    } else if (!hasProcessingDocs && intervalRef.current) {
+      // Stop polling if no processing docs
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+
+    // Cleanup interval on unmount
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+    };
+  }, [docs]); // Re-run when docs change
 
   async function refresh() {
     setLoading(true)
@@ -118,6 +200,29 @@ export default function App() {
   useEffect(() => {
     setSequenceBusy(null)
   }, [selectedDoc?.document_id])
+
+  // Poll for selected document updates when it's processing
+  useEffect(() => {
+    let interval: NodeJS.Timeout | null = null;
+
+    if (selectedDoc && selectedDoc.status === 'processing' && selectedDoc.document_id) {
+      // Start polling every 2 seconds for document details
+      interval = setInterval(async () => {
+        try {
+          const detail = await getDocument(selectedDoc.document_id)
+          if (!detail.pages) detail.pages = []
+          setSelectedDoc(detail)
+        } catch (e: any) {
+          console.error('Failed to refresh document details:', e)
+        }
+      }, 2000);
+    }
+
+    // Cleanup interval on unmount or when document stops processing
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [selectedDoc?.document_id, selectedDoc?.status]) // Re-run when selected doc ID or status changes
 
   async function handleUpload(file: File, opts: { analyze: boolean; background: boolean; dpi: number }) {
     try {
@@ -182,7 +287,7 @@ export default function App() {
 
       <section>
         <h2>Upload</h2>
-        <ModernUploadArea onUpload={handleUpload} />
+        <UploadArea onUpload={handleUpload} />
         
       </section>
 
