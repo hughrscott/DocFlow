@@ -175,6 +175,25 @@ UI features (Upcoming - Carousel Review Interface)
 - Batch approval workflow for efficient document processing
 - Keyboard navigation and accessibility features
 
+### System Dependencies
+
+For PDF processing and OCR capabilities, you need to install Poppler:
+
+**On macOS:**
+```bash
+brew install poppler
+```
+
+**On Ubuntu/Debian:**
+```bash
+sudo apt-get install poppler-utils
+```
+
+**On Windows:**
+Download and install from: https://github.com/oschwartz10612/poppler-windows/releases/
+
+Poppler is required for the `pdf2image` library to convert PDF pages to images for AI analysis.
+
 ## Configuration
 
 ### LLM Provider Configuration
