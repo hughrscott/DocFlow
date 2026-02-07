@@ -3,8 +3,10 @@ import { uploadDocument, listDocuments, getDocument } from './services/api'
 import ModernUploadArea from './components/ModernUploadArea'
 import './components/modern-upload-area.css'
 import './components/modern-review.css'
+import './components/proposal-review.css'
 import SettingsView from './components/SettingsView'
 import CarouselReview from './components/CarouselReview'
+import ProposalReview from './components/ProposalReview'
 import { useToast } from './components/Toast'
 
 type DocBrief = {
@@ -68,6 +70,8 @@ export default function App() {
   const [folderSuggestionsUpdatedAt, setFolderSuggestionsUpdatedAt] = useState<string | null>(null)
   const [suggestionsBusy, setSuggestionsBusy] = useState(false)
   const [showCarousel, setShowCarousel] = useState(false)
+  const [showProposalReview, setShowProposalReview] = useState(false)
+  const [proposalDocId, setProposalDocId] = useState<string | null>(null)
   const { show } = useToast()
 
   async function refresh() {
@@ -123,17 +127,21 @@ export default function App() {
     try {
       const out = await uploadDocument(file, opts)
       show(`Uploaded: ${out.document_id}`, 'success')
-      // If background, poll a couple of times
-      if (opts.background) {
-        for (let i = 0; i < 10; i++) {
-          const d = await getDocument(out.document_id)
-          setSelectedDoc(d)
-          if (d.status === 'completed' || d.status === 'failed') break
-          await new Promise((r) => setTimeout(r, 500))
-        }
-      } else {
+
+      // Poll until a terminal state is reached
+      const terminalStatuses = ['completed', 'failed', 'awaiting_review']
+      for (let i = 0; i < 60; i++) {
         const d = await getDocument(out.document_id)
         setSelectedDoc(d)
+        if (terminalStatuses.includes(d.status)) {
+          // If v2 pipeline reached review state, auto-open proposal review
+          if (d.status === 'awaiting_review') {
+            setProposalDocId(out.document_id)
+            setShowProposalReview(true)
+          }
+          break
+        }
+        await new Promise((r) => setTimeout(r, 1000))
       }
       await refresh()
     } catch (e: any) {
@@ -206,7 +214,24 @@ export default function App() {
                 <tr key={d.id}>
                   <td>{d.original_filename}</td>
                   <td>{new Date(d.upload_date).toLocaleString()}</td>
-                  <td>{d.status}</td>
+                  <td>
+                    <span className={
+                      d.status === 'awaiting_review' ? 'pr-status-pill pr-status-proposed' :
+                      d.status === 'completed' ? 'pr-status-pill pr-status-filed' :
+                      d.status === 'failed' ? 'pr-status-pill pr-status-rejected' :
+                      ''
+                    } style={
+                      !['awaiting_review', 'completed', 'failed'].includes(d.status)
+                        ? { color: '#e0af68', fontSize: 13 }
+                        : undefined
+                    }>
+                      {d.status === 'awaiting_review' ? 'Ready for Review' :
+                       d.status === 'splitting' ? 'Splitting...' :
+                       d.status === 'classifying' ? 'Classifying...' :
+                       d.status === 'proposing' ? 'Proposing...' :
+                       d.status}
+                    </span>
+                  </td>
                   <td>
                     {d.pages_done}/{d.total_pages}
                     {d.pages_failed > 0 ? (
@@ -215,7 +240,7 @@ export default function App() {
                       </span>
                     ) : null}
                   </td>
-                  <td>
+                  <td style={{ display: 'flex', gap: 6 }}>
                     <button onClick={async () => {
                       try {
                         const detail = await getDocument(d.id)
@@ -225,6 +250,17 @@ export default function App() {
                         show(e?.message ?? 'Failed to load document', 'error')
                       }
                     }}>Details</button>
+                    {d.status === 'awaiting_review' && (
+                      <button
+                        style={{ background: '#9ece6a', color: '#0b1020' }}
+                        onClick={() => {
+                          setProposalDocId(d.id)
+                          setShowProposalReview(true)
+                        }}
+                      >
+                        Review
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -397,12 +433,24 @@ export default function App() {
                 {selectedDoc.last_error_at ? ` @ ${new Date(selectedDoc.last_error_at).toLocaleString()}` : ''}
               </div>
             )}
-            <button
-              onClick={() => setShowCarousel(true)}
-              style={{ marginTop: '10px', backgroundColor: '#9ece6a', color: '#0b1020' }}
-            >
-              Open Carousel Review
-            </button>
+            {selectedDoc.status === 'awaiting_review' ? (
+              <button
+                onClick={() => {
+                  setProposalDocId(selectedDoc.document_id)
+                  setShowProposalReview(true)
+                }}
+                style={{ marginTop: '10px', backgroundColor: '#9ece6a', color: '#0b1020' }}
+              >
+                Review Proposals
+              </button>
+            ) : (
+              <button
+                onClick={() => setShowCarousel(true)}
+                style={{ marginTop: '10px', backgroundColor: '#9ece6a', color: '#0b1020' }}
+              >
+                Open Carousel Review
+              </button>
+            )}
           </div>
 
           <h3>Pages</h3>
@@ -459,6 +507,22 @@ export default function App() {
             setShowCarousel(false);
             // Refresh the document details after carousel review
             getDocument(selectedDoc.document_id).then(setSelectedDoc).catch(console.error);
+          }}
+          showToast={show}
+        />
+      )}
+
+      {showProposalReview && proposalDocId && (
+        <ProposalReview
+          documentId={proposalDocId}
+          onClose={() => setShowProposalReview(false)}
+          onComplete={() => {
+            setShowProposalReview(false)
+            show('All proposals reviewed', 'success')
+            refresh()
+            if (selectedDoc) {
+              getDocument(selectedDoc.document_id).then(setSelectedDoc).catch(console.error)
+            }
           }}
           showToast={show}
         />

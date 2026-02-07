@@ -5,7 +5,7 @@ Manages initialization, health checking, and provider selection with
 automatic fallback support for resilient document analysis.
 """
 
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List, Tuple
 import yaml
 import logging
 from llm.base import VisionProvider, TextProvider, LLMResponse, ProviderType
@@ -216,6 +216,40 @@ class LLMManager:
                 success=False
             )
     
+    async def analyze_images(
+        self,
+        images: List[Tuple[bytes, str]],
+        prompt: str,
+        max_tokens: int = 4000
+    ) -> LLMResponse:
+        """
+        Analyze multiple images using the best available vision provider.
+
+        Args:
+            images: List of (image_bytes, label) tuples
+            prompt: Analysis prompt
+            max_tokens: Maximum response tokens
+
+        Returns:
+            LLMResponse with analysis results
+        """
+        try:
+            provider = await self.get_vision_provider()
+            return await provider.analyze_images(images, prompt, max_tokens)
+        except Exception as e:
+            logger.error(f"Multi-image analysis failed: {e}")
+            return LLMResponse(
+                content="",
+                model="unknown",
+                provider=ProviderType.CLAUDE,
+                error=str(e),
+                success=False,
+            )
+
+    def get_provider_name(self) -> str:
+        """Return the name of the primary configured vision provider."""
+        return self.config.get("llm", {}).get("vision_provider", "claude")
+
     async def process_text(
         self,
         text: str,

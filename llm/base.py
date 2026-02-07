@@ -8,7 +8,7 @@ ensuring consistent behavior across different provider types.
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import Enum
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List, Tuple
 
 
 class ProviderType(Enum):
@@ -97,19 +97,49 @@ class VisionProvider(LLMProvider):
     ) -> LLMResponse:
         """
         Analyze an image and return structured response.
-        
+
         Args:
             image_data: Raw image bytes (PNG, JPEG, etc.)
             prompt: Analysis prompt/instruction
             max_tokens: Maximum tokens in response
-            
+
         Returns:
             LLMResponse with analysis results
-            
+
         Raises:
             Exception: If image analysis fails
         """
         pass
+
+    async def analyze_images(
+        self,
+        images: List[Tuple[bytes, str]],
+        prompt: str,
+        max_tokens: int = 4000
+    ) -> LLMResponse:
+        """
+        Analyze multiple images in a single API call.
+
+        Default implementation falls back to analyzing the first image only.
+        Providers that support multi-image (e.g. Claude) should override this.
+
+        Args:
+            images: List of (image_bytes, label) tuples
+            prompt: Analysis prompt/instruction
+            max_tokens: Maximum tokens in response
+
+        Returns:
+            LLMResponse with analysis results
+        """
+        if images:
+            return await self.analyze_image(images[0][0], prompt, max_tokens)
+        return LLMResponse(
+            content="",
+            model="unknown",
+            provider=ProviderType.CLAUDE,
+            error="No images provided",
+            success=False,
+        )
 
 
 class TextProvider(LLMProvider):

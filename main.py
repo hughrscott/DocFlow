@@ -17,6 +17,7 @@ from utils.middleware import request_id_and_timing_middleware
 from api.upload import router as upload_router
 from api.status import router as status_router
 from api.settings import router as settings_router
+from api.proposals import router as proposals_router
 
 # Configure logging
 setup_logging()
@@ -59,6 +60,7 @@ app.middleware("http")(request_id_and_timing_middleware)
 app.include_router(upload_router)
 app.include_router(status_router)
 app.include_router(settings_router)
+app.include_router(proposals_router)
 
 
 @app.get("/")
@@ -76,7 +78,12 @@ async def root():
             "recommendations": "GET /api/v1/recommendations",
             "health": "GET /api/v1/health",
             "document": "GET /api/v1/documents/{document_id}",
-            "metrics": "POST /api/v1/metrics/record"
+            "metrics": "POST /api/v1/metrics/record",
+            "proposals": "GET /api/v1/proposals/{document_id}",
+            "accept": "POST /api/v1/proposals/sub_documents/{sub_doc_id}/accept",
+            "modify": "POST /api/v1/proposals/sub_documents/{sub_doc_id}/modify",
+            "reject": "POST /api/v1/proposals/sub_documents/{sub_doc_id}/reject",
+            "accept_all": "POST /api/v1/proposals/{document_id}/accept_all",
         }
     }
 

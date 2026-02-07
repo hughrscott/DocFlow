@@ -65,6 +65,8 @@ class DocumentDetails(BaseModel):
     original_filename: str
     status: str
     total_pages: int
+    pipeline_version: int = 1
+    sub_document_count: Optional[int] = None
     error_message: Optional[str] = None
     pages_done: int
     last_error_at: Optional[str] = None
@@ -115,6 +117,109 @@ class FolderSuggestionsResponse(BaseModel):
 def _ensure_dirs() -> None:
     Path(settings.uploads_temp_dir).mkdir(parents=True, exist_ok=True)
     Path(settings.documents_dir).mkdir(parents=True, exist_ok=True)
+
+
+async def _upload_v2(
+    file: UploadFile,
+    background_tasks: Optional[BackgroundTasks],
+    db: Session,
+    request: Optional[Request],
+) -> UploadResponse:
+    """Handle upload using the v2 pipeline (always background)."""
+    if file.content_type not in ("application/pdf", "application/octet-stream"):
+        raise HTTPException(status_code=400, detail="Only PDF files are supported")
+
+    data = await file.read()
+    if not data:
+        raise HTTPException(status_code=400, detail="Empty file")
+
+    pdf = PDFProcessor(temp_dir=settings.uploads_temp_dir)
+    is_valid, err = await pdf.validate_pdf(data)
+    if not is_valid:
+        raise HTTPException(status_code=400, detail=f"Invalid PDF: {err}")
+    page_count = await pdf.get_page_count(data)
+
+    document_id = str(uuid.uuid4())
+    doc = Document(
+        id=document_id,
+        original_filename=file.filename or "upload.pdf",
+        total_pages=page_count,
+        status="processing",
+        file_size_bytes=len(data),
+        pipeline_version=2,
+    )
+    db.add(doc)
+    db.commit()
+
+    # Save PDF to temp for background processing
+    temp_pdf_path = str(Path(settings.uploads_temp_dir) / f"{document_id}_upload.pdf")
+    with open(temp_pdf_path, "wb") as f:
+        f.write(data)
+
+    if background_tasks is not None:
+        background_tasks.add_task(
+            _process_v2_background,
+            document_id=document_id,
+            temp_pdf_path=temp_pdf_path,
+            request_id=getattr(getattr(request, "state", None), "request_id", None),
+        )
+
+    return UploadResponse(
+        document_id=document_id,
+        original_filename=doc.original_filename,
+        total_pages=page_count,
+        results=[],
+    )
+
+
+def _process_v2_background(
+    document_id: str,
+    temp_pdf_path: str,
+    request_id: Optional[str] = None,
+) -> None:
+    """Background task that runs the v2 pipeline orchestrator."""
+    from utils import log_context
+    if request_id:
+        try:
+            log_context.set_request_id(request_id)
+        except Exception:
+            pass
+
+    db_session: Session = SessionLocal()
+    try:
+        with open(temp_pdf_path, "rb") as f:
+            pdf_data = f.read()
+
+        llm_manager = LLMManager(settings.llm_config_path)
+
+        from services.pipeline_orchestrator import PipelineOrchestrator
+        orchestrator = PipelineOrchestrator(llm_manager, db_session)
+
+        import asyncio
+        try:
+            asyncio.get_event_loop().run_until_complete(
+                orchestrator.process_document(document_id, pdf_data)
+            )
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            loop.run_until_complete(
+                orchestrator.process_document(document_id, pdf_data)
+            )
+
+    except Exception as e:
+        logger.error(f"V2 pipeline background failed for {document_id}: {e}")
+        try:
+            doc = db_session.query(Document).filter(Document.id == document_id).first()
+            if doc:
+                doc.status = "failed"
+                doc.error_message = str(e)[:500]
+                db_session.commit()
+        except Exception:
+            pass
+    finally:
+        _cleanup_file(temp_pdf_path)
+        db_session.close()
 
 
 def _safe_get(d: Dict[str, Any], path: List[str]) -> Any:
@@ -239,6 +344,7 @@ async def upload_document(
     analyze: bool = True,
     dpi: int = 150,
     background: bool = False,
+    pipeline_version: int = 0,
     background_tasks: BackgroundTasks = None,
     db: Session = Depends(get_db),
     request: Request = None,
@@ -246,8 +352,24 @@ async def upload_document(
     """
     Upload a PDF, split into pages, analyze (if possible), and organize files.
     Returns per-page destinations and metadata.
+
+    pipeline_version=2 routes to the v2 pipeline (smart splitting, rich
+    classification, directory-aware filing).  0 means use the configured
+    default.
     """
     _ensure_dirs()
+
+    # Resolve effective pipeline version
+    effective_version = pipeline_version if pipeline_version > 0 else settings.default_pipeline_version
+
+    # ── V2 pipeline path ──────────────────────────────────────────
+    if effective_version == 2:
+        return await _upload_v2(
+            file=file,
+            background_tasks=background_tasks,
+            db=db,
+            request=request,
+        )
 
     if file.content_type not in ("application/pdf", "application/octet-stream"):
         raise HTTPException(status_code=400, detail="Only PDF files are supported")
@@ -711,6 +833,8 @@ async def get_document(document_id: str, db: Session = Depends(get_db)):
         original_filename=doc.original_filename,
         status=doc.status,
         total_pages=doc.total_pages,
+        pipeline_version=doc.pipeline_version or 1,
+        sub_document_count=doc.sub_document_count,
         error_message=doc.error_message,
         pages_done=pages_done,
         last_error=last_error,

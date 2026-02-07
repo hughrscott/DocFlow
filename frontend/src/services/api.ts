@@ -1,6 +1,6 @@
 const API_BASE = import.meta.env.VITE_API_BASE || '' // default proxy through Vite
 
-export async function uploadDocument(file: File, opts: { analyze: boolean; background: boolean; dpi: number }) {
+export async function uploadDocument(file: File, opts: { analyze: boolean; background: boolean; dpi: number; pipeline_version?: number }) {
   const form = new FormData()
   form.append('file', file)
   const params = new URLSearchParams({
@@ -8,6 +8,9 @@ export async function uploadDocument(file: File, opts: { analyze: boolean; backg
     background: String(opts.background),
     dpi: String(opts.dpi),
   })
+  if (opts.pipeline_version != null) {
+    params.set('pipeline_version', String(opts.pipeline_version))
+  }
   const res = await fetch(`${API_BASE}/api/v1/documents/upload?${params.toString()}`, {
     method: 'POST',
     body: form,
@@ -139,5 +142,79 @@ export async function refreshFolderSuggestions() {
     method: 'POST',
   })
   if (!res.ok) throw new Error('Folder suggestions refresh failed')
+  return res.json()
+}
+
+// ── V2 Pipeline: Proposals API ──────────────────────────────────────
+
+export async function getProposals(documentId: string) {
+  const res = await fetch(`${API_BASE}/api/v1/proposals/${documentId}`)
+  if (!res.ok) throw new Error('Get proposals failed')
+  return res.json()
+}
+
+export async function acceptProposal(subDocId: string) {
+  const res = await fetch(`${API_BASE}/api/v1/proposals/sub_documents/${subDocId}/accept`, {
+    method: 'POST',
+  })
+  if (!res.ok) throw new Error('Accept failed')
+  return res.json()
+}
+
+export async function modifyProposal(
+  subDocId: string,
+  data: { folder?: string; filename?: string; document_type?: string; rationale?: string }
+) {
+  const res = await fetch(`${API_BASE}/api/v1/proposals/sub_documents/${subDocId}/modify`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) throw new Error('Modify failed')
+  return res.json()
+}
+
+export async function rejectProposal(subDocId: string, reason: string) {
+  const res = await fetch(`${API_BASE}/api/v1/proposals/sub_documents/${subDocId}/reject`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ reason }),
+  })
+  if (!res.ok) throw new Error('Reject failed')
+  return res.json()
+}
+
+export async function acceptAllProposals(documentId: string, subDocumentIds?: string[]) {
+  const body = subDocumentIds ? { sub_document_ids: subDocumentIds } : {}
+  const res = await fetch(`${API_BASE}/api/v1/proposals/${documentId}/accept_all`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+  if (!res.ok) throw new Error('Accept all failed')
+  return res.json()
+}
+
+export async function getSubDocPreview(subDocId: string, page: number = 1, dpi: number = 150) {
+  const res = await fetch(
+    `${API_BASE}/api/v1/proposals/sub_documents/${subDocId}/preview?page=${page}&dpi=${dpi}`
+  )
+  if (!res.ok) throw new Error('Preview failed')
+  return res.blob()
+}
+
+export async function reclassifySubDoc(subDocId: string) {
+  const res = await fetch(`${API_BASE}/api/v1/proposals/sub_documents/${subDocId}/reclassify`, {
+    method: 'POST',
+  })
+  if (!res.ok) throw new Error('Reclassify failed')
+  return res.json()
+}
+
+export async function refileSubDoc(subDocId: string) {
+  const res = await fetch(`${API_BASE}/api/v1/proposals/sub_documents/${subDocId}/refile`, {
+    method: 'POST',
+  })
+  if (!res.ok) throw new Error('Refile failed')
   return res.json()
 }

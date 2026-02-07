@@ -28,7 +28,14 @@ class Document(Base):
     status = Column(String, nullable=False, default="processing")  # processing, completed, failed
     error_message = Column(String, nullable=True)
     file_size_bytes = Column(Integer, nullable=False)
-    
+
+    # Pipeline v2 fields
+    pipeline_version = Column(Integer, nullable=False, default=1)  # 1=legacy, 2=new
+    sub_document_count = Column(Integer, nullable=True)
+    splitting_done = Column(Boolean, nullable=False, default=False)
+    classification_done = Column(Boolean, nullable=False, default=False)
+    filing_proposed = Column(Boolean, nullable=False, default=False)
+
     def __repr__(self) -> str:
         return f"<Document(id={self.id}, filename={self.original_filename}, pages={self.total_pages})>"
 
@@ -74,7 +81,11 @@ class Page(Base):
     # Provider Information
     llm_provider_used = Column(String, nullable=False)  # "claude", "ollama", etc.
     llm_model_used = Column(String, nullable=False)
-    
+
+    # Pipeline v2 fields
+    sub_document_id = Column(String, ForeignKey("sub_documents.id"), nullable=True)
+    text_content = Column(String, nullable=True)
+
     def __repr__(self) -> str:
         return f"<Page(id={self.id}, doc_id={self.document_id}, type={self.document_type})>"
 
@@ -196,3 +207,119 @@ class FileMoveAudit(Base):
 
     def __repr__(self) -> str:
         return f"<FileMoveAudit(page={self.page_id}, {self.old_folder}/{self.old_filename} -> {self.new_folder}/{self.new_filename})>"
+
+
+# ── Pipeline v2 models ──────────────────────────────────────────────────
+
+
+class SubDocument(Base):
+    """A logical document found within a PDF (e.g. a multi-page bank statement)."""
+
+    __tablename__ = "sub_documents"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    document_id = Column(String, ForeignKey("documents.id"), nullable=False)
+    start_page = Column(Integer, nullable=False)
+    end_page = Column(Integer, nullable=False)
+    page_count = Column(Integer, nullable=False)
+
+    # Classification
+    document_type = Column(String, nullable=True)
+    document_category = Column(String, nullable=True)
+    institution = Column(String, nullable=True)
+    classification_metadata = Column(JSON, nullable=True)  # type-specific fields
+    confidence_score = Column(Float, nullable=True)
+    split_rationale = Column(String, nullable=True)
+
+    # Filing
+    proposed_folder = Column(String, nullable=True)
+    proposed_filename = Column(String, nullable=True)
+    filing_rationale = Column(String, nullable=True)
+    final_folder = Column(String, nullable=True)
+    final_filename = Column(String, nullable=True)
+    output_path = Column(String, nullable=True)
+
+    # Status: proposed → accepted/modified/rejected → filed
+    status = Column(String, nullable=False, default="proposed")
+
+    # Provider info
+    llm_provider_used = Column(String, nullable=True)
+    llm_model_used = Column(String, nullable=True)
+
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def __repr__(self) -> str:
+        return f"<SubDocument(id={self.id}, doc={self.document_id}, pages={self.start_page}-{self.end_page}, type={self.document_type})>"
+
+
+class FilingProposal(Base):
+    """Tracks the proposal lifecycle for a sub-document's filing location."""
+
+    __tablename__ = "filing_proposals"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    sub_document_id = Column(String, ForeignKey("sub_documents.id"), nullable=False)
+
+    proposed_folder = Column(String, nullable=False)
+    proposed_filename = Column(String, nullable=False)
+    is_new_folder = Column(Boolean, nullable=False, default=False)
+    rationale = Column(String, nullable=True)
+    alternatives_considered = Column(JSON, nullable=True)
+    confidence = Column(Float, nullable=True)
+
+    # User decision
+    decision = Column(String, nullable=True)  # accepted / modified / rejected / null
+    user_folder = Column(String, nullable=True)
+    user_filename = Column(String, nullable=True)
+    user_rationale = Column(String, nullable=True)
+
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    decided_at = Column(DateTime, nullable=True)
+
+    def __repr__(self) -> str:
+        return f"<FilingProposal(id={self.id}, sub_doc={self.sub_document_id}, decision={self.decision})>"
+
+
+class LearningCorrection(Base):
+    """Structured correction fed back into future prompts."""
+
+    __tablename__ = "learning_corrections"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    sub_document_id = Column(String, ForeignKey("sub_documents.id"), nullable=False)
+
+    # Proposed vs actual
+    proposed_document_type = Column(String, nullable=True)
+    actual_document_type = Column(String, nullable=True)
+    proposed_folder = Column(String, nullable=True)
+    actual_folder = Column(String, nullable=True)
+    proposed_filename = Column(String, nullable=True)
+    actual_filename = Column(String, nullable=True)
+
+    user_rationale = Column(String, nullable=True)
+    correction_type = Column(String, nullable=False)  # classification / filing / splitting / filename
+
+    key_signals = Column(JSON, nullable=True)  # structured hints for future prompts
+    used_in_prompts = Column(Integer, nullable=False, default=0)
+
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    def __repr__(self) -> str:
+        return f"<LearningCorrection(id={self.id}, type={self.correction_type})>"
+
+
+class PIIRedactionLog(Base):
+    """Audit log for PII redactions performed before sending to cloud LLMs."""
+
+    __tablename__ = "pii_redaction_log"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    document_id = Column(String, ForeignKey("documents.id"), nullable=False)
+    page_number = Column(Integer, nullable=True)
+    redaction_type = Column(String, nullable=False)  # ssn / account_number / dob
+    provider = Column(String, nullable=False)  # which LLM provider was being used
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    def __repr__(self) -> str:
+        return f"<PIIRedactionLog(doc={self.document_id}, type={self.redaction_type})>"

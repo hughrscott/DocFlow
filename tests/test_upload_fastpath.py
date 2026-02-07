@@ -22,7 +22,7 @@ def test_upload_fastpath_background():
 
         with open(pdf_path, 'rb') as f:
             files = {'file': ('test_document.pdf', f, 'application/pdf')}
-            r = client.post('/api/v1/documents/upload?analyze=false&dpi=120&background=true', files=files)
+            r = client.post('/api/v1/documents/upload?analyze=false&dpi=120&background=true&pipeline_version=1', files=files)
         assert r.status_code == 200
         doc_id = r.json()['document_id']
         # Poll a few times

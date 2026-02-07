@@ -63,7 +63,7 @@ const DOCUMENT_TYPES = [
   'other', 'unknown'
 ];
 
-const CarouselReview: React.FC<CarouselReviewProps> = ({ documentId, onClose, onComplete }) => {
+const CarouselReview: React.FC<CarouselReviewProps> = ({ documentId, onClose, onComplete, showToast }) => {
   const [document, setDocument] = useState<DocDetail | null>(null);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [loading, setLoading] = useState(true);

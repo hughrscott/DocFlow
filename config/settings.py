@@ -63,7 +63,15 @@ class Settings(BaseSettings):
     # Learning
     learning_enabled: bool = os.getenv("LEARNING_ENABLED", "true").lower() == "true"
     min_confidence_threshold: float = float(os.getenv("MIN_CONFIDENCE_THRESHOLD", "0.7"))
-    
+
+    # Pipeline v2 settings
+    pii_protection_mode: str = os.getenv("PII_PROTECTION_MODE", "auto")  # auto | always | never
+    default_pipeline_version: int = int(os.getenv("DEFAULT_PIPELINE_VERSION", "2"))
+    max_pages_per_split_batch: int = int(os.getenv("MAX_PAGES_PER_SPLIT_BATCH", "20"))
+    split_thumbnail_dpi: int = int(os.getenv("SPLIT_THUMBNAIL_DPI", "100"))
+    max_learning_corrections_in_prompt: int = int(os.getenv("MAX_LEARNING_CORRECTIONS_IN_PROMPT", "5"))
+    filing_directory_scan_max_entries: int = int(os.getenv("FILING_DIRECTORY_SCAN_MAX_ENTRIES", "200"))
+
     # Pydantic v2 configuration
     model_config = SettingsConfigDict(env_file=".env", case_sensitive=False)
 

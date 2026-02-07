@@ -65,6 +65,8 @@ class DocumentBrief(BaseModel):
     upload_date: str
     total_pages: int
     status: str
+    pipeline_version: int = 1
+    sub_document_count: Optional[int] = None
     pages_done: int = 0
     pages_failed: int = 0
     last_error: Optional[str] = None
@@ -155,6 +157,8 @@ async def list_documents(
                     upload_date=d.upload_date.isoformat() if d.upload_date else "",
                     total_pages=d.total_pages,
                     status=d.status,
+                    pipeline_version=d.pipeline_version or 1,
+                    sub_document_count=d.sub_document_count,
                     pages_done=stats["processed"],
                     pages_failed=stats["failed"],
                     last_error=err.get("message"),

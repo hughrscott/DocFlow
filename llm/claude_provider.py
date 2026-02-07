@@ -7,7 +7,7 @@ Handles image analysis and text processing with proper error handling.
 
 import base64
 import asyncio
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List, Tuple
 from llm.base import VisionProvider, TextProvider, LLMResponse, ProviderType
 from anthropic import AsyncAnthropic, APIError, APIConnectionError, APITimeoutError
 import logging
@@ -201,6 +201,101 @@ class ClaudeProvider(VisionProvider, TextProvider):
                 success=False
             )
     
+    async def analyze_images(
+        self,
+        images: List[Tuple[bytes, str]],
+        prompt: str,
+        max_tokens: int = 4000
+    ) -> LLMResponse:
+        """
+        Analyze multiple images in a single Claude API call.
+
+        Sends all images as separate content blocks in one message,
+        each preceded by its label. This is efficient for tasks like
+        document boundary detection across pages.
+
+        Args:
+            images: List of (image_bytes, label) tuples
+            prompt: Analysis prompt
+            max_tokens: Maximum response tokens
+
+        Returns:
+            LLMResponse with analysis results
+        """
+        if not self.is_available():
+            return LLMResponse(
+                content="",
+                model=self.vision_model,
+                provider=ProviderType.CLAUDE,
+                error="Claude API not configured",
+                success=False,
+            )
+
+        try:
+            content_blocks = []
+            for image_data, label in images:
+                base64_image = base64.standard_b64encode(image_data).decode("utf-8")
+                content_blocks.append({"type": "text", "text": label})
+                content_blocks.append({
+                    "type": "image",
+                    "source": {
+                        "type": "base64",
+                        "media_type": "image/png",
+                        "data": base64_image,
+                    },
+                })
+            content_blocks.append({"type": "text", "text": prompt})
+
+            for attempt in range(self.max_retries):
+                try:
+                    response = await self.client.messages.create(
+                        model=self.vision_model,
+                        max_tokens=max_tokens,
+                        messages=[{"role": "user", "content": content_blocks}],
+                        timeout=self.timeout * 2,  # longer timeout for multi-image
+                    )
+
+                    logger.info(f"Successfully analyzed {len(images)} images with Claude (attempt {attempt + 1})")
+                    return LLMResponse(
+                        content=response.content[0].text,
+                        model=self.vision_model,
+                        provider=ProviderType.CLAUDE,
+                        usage={
+                            "input_tokens": response.usage.input_tokens,
+                            "output_tokens": response.usage.output_tokens,
+                        },
+                        success=True,
+                    )
+
+                except APITimeoutError as e:
+                    if attempt < self.max_retries - 1:
+                        wait_time = 2 ** attempt
+                        logger.warning(f"Claude multi-image timeout (attempt {attempt + 1}), retrying in {wait_time}s: {e}")
+                        await asyncio.sleep(wait_time)
+                    else:
+                        raise
+
+        except (APIConnectionError, APIError) as e:
+            error_msg = f"Claude API error during multi-image analysis: {str(e)}"
+            logger.error(error_msg)
+            return LLMResponse(
+                content="",
+                model=self.vision_model,
+                provider=ProviderType.CLAUDE,
+                error=error_msg,
+                success=False,
+            )
+        except Exception as e:
+            error_msg = f"Unexpected error during multi-image analysis: {str(e)}"
+            logger.error(error_msg)
+            return LLMResponse(
+                content="",
+                model=self.vision_model,
+                provider=ProviderType.CLAUDE,
+                error=error_msg,
+                success=False,
+            )
+
     async def process_text(
         self,
         text: str,
