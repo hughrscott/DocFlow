@@ -1,0 +1,137 @@
+# Mail Archiver — Default Config (Hugh Scott)
+# This file is the shipped default. Copy to user_config.yaml and customise.
+
+# Global settings
+archive_root: ~/ElectronicFiles
+scan_watch_folder: ~/ElectronicFiles/ToBeOrganized
+confidence_threshold: 0.75
+ollama_model: llama3.2
+ollama_host: http://localhost:11434
+
+# User identity
+user:
+  name: Hugh Scott
+  address: 3615 Robinhood St, Houston TX 77005
+
+# Family members
+family:
+  - name: Vivian Scott
+    relation: spouse
+  - name: Brodie Scott
+    relation: son
+  - name: Kirstie Scott
+    relation: daughter
+
+# Business entities
+entities:
+  - id: sulis_solar
+    name: Sulis Solar LLC
+    type: business
+    directory: SulisSolar
+    banks: [pnc]
+    account_hints: ["sulis", "1236"]
+
+  - id: sor_heights
+    name: School of Rock The Heights
+    legal_name: Flagstore LLC
+    type: business
+    directory: SOR/SORHeights
+    banks: [frost]
+    address: "742 E 20th St, Houston TX 77008"
+
+  - id: sor_west_u
+    name: School of Rock West U
+    legal_name: SOR Houston SW LLC
+    type: business
+    directory: SOR/SORHoustonSW
+    banks: [frost]
+
+  - id: together_solar
+    name: Together Solar
+    type: investment
+    directory: Investments/Together Solar
+
+  - id: great_scott
+    name: GreatScott Consulting
+    type: business
+    directory: GreatScottConsulting
+
+# Filing rules — evaluated top to bottom, first match wins
+filing_rules:
+  - id: pnc_sulis_solar_checking
+    match:
+      institution: pnc
+      account_hints: ["sulis", "solar", "1236"]
+      doc_type: [statement, checking]
+    file_to: SulisSolar/PNC
+    filename_template: "PNCBankSulisSolarChecking{period}.pdf"
+
+  - id: pnc_personal_loc
+    match:
+      institution: pnc
+      doc_type: [line_of_credit, loc]
+    file_to: PNC/Personal/LOC
+    filename_template: "PNCPersonalLineOfCredit{period}.pdf"
+
+  - id: frost_sor_houston_sw
+    match:
+      institution: frost
+      entity_hints: ["sor houston", "742 e 20th", "school of rock"]
+    file_to: Frost/SORHoustonSW/Checking
+    filename_template: "FrostSORHoustonSWChecking{period}.pdf"
+
+  - id: guardian_insurance_eob
+    match:
+      institution: guardian
+      doc_type: [eob, explanation_of_benefits]
+    file_to: Insurance/Guardian Health
+    filename_template: "GuardianLifeInsuranceEOB{period}{person}.pdf"
+
+  - id: houston_alarm
+    match:
+      institution: ["city of houston", "houston emergency", "burglar alarm"]
+    file_to: SOR/SORHeights
+    filename_template: "HoustonEmergencyAlarmFeeSchedule{period}.pdf"
+
+  - id: bettencourt_tax
+    match:
+      institution: bettencourt
+      doc_type: [invoice, statement]
+    file_to: "Tax/{year} Taxes"
+    filename_template: "BettencourtTaxAdvisors{doc_type}{period}.pdf"
+
+  - id: lloyds_uk
+    match:
+      institution: lloyds
+    file_to: UK Finance/Lloyds
+    filename_template: "LloydsBankAccountStatement{period}.pdf"
+
+  - id: medical_pesikoff
+    match:
+      institution: ["pesikoff", "core primary care", "privia"]
+      doc_type: [bill, statement, visit_summary]
+    file_to: Medical/Pesikoff
+    filename_template: "PesikoffCoreVisitBill{period}{person}.pdf"
+
+  # Edge case: Maryland Registered Agent invoices → Together Solar
+  - id: together_solar_registered_agent
+    match:
+      institution: ["corporate filings", "maryland"]
+      doc_type: [invoice]
+    file_to: Investments/Together Solar
+    filename_template: "TogetherSolarRegisteredAgent{period}.pdf"
+
+  # Edge case: Transnational / Celero (payment processor for SOR)
+  - id: transnational_sor
+    match:
+      institution: ["transnational", "celero"]
+    file_to: SOR/SORHeights
+    filename_template: "TransnationalCelero{period}.pdf"
+
+  # Blue Cross / BCBS
+  - id: bluecross_eob
+    match:
+      institution: ["blue cross", "blue shield", "bcbs"]
+      doc_type: [eob, explanation_of_benefits]
+    file_to: Insurance/BlueCross
+    filename_template: "BlueCrossEOB{period}{person}.pdf"
