@@ -88,6 +88,15 @@ def cluster_pages(page_records: list[PageRecord], config: dict) -> list[Document
             current_group = [record]
             continue
 
+        # If the PREVIOUS page was "Page N of N" (last page), this starts a new doc
+        prev = current_group[-1] if current_group else None
+        if prev:
+            prev_x, prev_total = _parse_page_of_n(prev.page_of_n)
+            if prev_x is not None and prev_total is not None and prev_x == prev_total:
+                groups.append(current_group)
+                current_group = [record]
+                continue
+
         # If we have no current group, start one
         if not current_group:
             current_group = [record]
@@ -120,25 +129,45 @@ def cluster_pages(page_records: list[PageRecord], config: dict) -> list[Document
             current_group = [record]
             continue
 
-        # If same institution, or current page has no institution (continuation)
-        # keep it in the current group
-        if same_institution or record.institution is None:
-            # But if we have different account hints on the same institution,
-            # that's a different document (e.g. two PNC accounts)
-            if (same_institution
-                    and record.account_hint is not None
+        # If same institution, check for different accounts
+        if same_institution:
+            if (record.account_hint is not None
                     and prev_non_blank.account_hint is not None
                     and not same_account):
                 groups.append(current_group)
                 current_group = [record]
                 continue
-
             current_group.append(record)
             continue
 
-        # Default: new group
-        groups.append(current_group)
-        current_group = [record]
+        # Institution is None — page has no institution signal.
+        # Check if the previous page also had no institution.
+        if prev_non_blank.institution is None:
+            # Both pages lack institution. Look for other boundary signals:
+            # - Different doc_type hints suggest different documents
+            # - Previous page had a period but this one has a different one
+            prev_doc_type = prev_non_blank.doc_type_hint
+            curr_doc_type = record.doc_type_hint
+            if (prev_doc_type is not None
+                    and curr_doc_type is not None
+                    and prev_doc_type != curr_doc_type):
+                groups.append(current_group)
+                current_group = [record]
+                continue
+
+        # If previous had an institution but current doesn't, it could be
+        # a continuation OR a new document. Use a heuristic: if the current
+        # group already has 3+ pages, a page with no institution signal
+        # is more likely a new document than a continuation.
+        if prev_non_blank.institution is not None and record.institution is None:
+            non_blank_count = sum(1 for r in current_group if not _is_blank_page(r))
+            if non_blank_count >= 3:
+                groups.append(current_group)
+                current_group = [record]
+                continue
+
+        current_group.append(record)
+        continue
 
     # Don't forget the last group
     if current_group:
@@ -174,6 +203,7 @@ def cluster_pages(page_records: list[PageRecord], config: dict) -> list[Document
             "periods": periods,
             "doc_types": doc_types,
             "page_of_n": [r.page_of_n for r in group],
+            "raw_texts": [r.raw_text for r in group],
         }
 
         candidate = DocumentCandidate(
@@ -193,6 +223,31 @@ def cluster_pages(page_records: list[PageRecord], config: dict) -> list[Document
             candidate.period, candidate.clustering_confidence,
         )
 
+    # Determine if LLM re-clustering is needed
+    needs_llm = False
+
+    # Single blob with unknown institution
+    if (len(candidates) == 1
+            and len(candidates[0].pages) > 1
+            and candidates[0].institution == "unknown"):
+        needs_llm = True
+
+    # Any candidate with too many pages is suspicious
+    oversized = [c for c in candidates if len(c.pages) > 4]
+    if oversized:
+        needs_llm = True
+
+    # Low clustering confidence
+    low_conf = [c for c in candidates if c.clustering_confidence < 0.5]
+    if low_conf:
+        needs_llm = True
+
+    if needs_llm:
+        logger.info("Rule-based clustering insufficient — calling LLM")
+        llm_candidates = _llm_cluster(page_records, config)
+        if llm_candidates:
+            candidates = llm_candidates
+
     # Assertion: every page must be assigned to exactly one candidate
     assigned_pages = [p for c in candidates for p in c.pages]
     all_pages = [r.page_number for r in page_records]
@@ -200,5 +255,104 @@ def cluster_pages(page_records: list[PageRecord], config: dict) -> list[Document
         f"Page assignment mismatch: assigned={sorted(assigned_pages)}, "
         f"expected={sorted(all_pages)}"
     )
+
+    return candidates
+
+
+def _llm_cluster(
+    page_records: list[PageRecord], config: dict
+) -> list[DocumentCandidate] | None:
+    """Use OpenRouter LLM to cluster pages into documents.
+
+    Returns a list of DocumentCandidates, or None if the LLM call fails.
+    """
+    from src.llm.client import chat_json
+    from src.llm.prompts import build_clustering_prompt
+
+    # Build page summaries for the prompt
+    page_summaries = []
+    for r in page_records:
+        first_lines = r.raw_text.strip()[:500] if r.raw_text.strip() else "(blank)"
+        page_summaries.append({
+            "page_number": r.page_number,
+            "first_lines": first_lines,
+            "institution_hint": r.institution,
+            "period_hint": r.period_hint,
+            "doc_type_hint": r.doc_type_hint,
+        })
+
+    prompt = build_clustering_prompt(page_summaries)
+
+    try:
+        result = chat_json(prompt, config=config)
+    except Exception:
+        logger.exception("LLM clustering call failed — falling back to rule-based")
+        return None
+
+    # Parse LLM response into DocumentCandidates
+    documents = result.get("documents", [])
+    if not documents:
+        logger.warning("LLM returned no documents")
+        return None
+
+    candidates = []
+    all_assigned: set[int] = set()
+
+    for doc in documents:
+        pages = doc.get("pages", [])
+        if not pages:
+            continue
+
+        all_assigned.update(pages)
+
+        # Cross-reference with PageRecords to get raw signals
+        doc_records = [r for r in page_records if r.page_number in pages]
+        institutions = [r.institution for r in doc_records]
+        accounts = [r.account_hint for r in doc_records]
+        periods = [r.period_hint for r in doc_records]
+        doc_types = [r.doc_type_hint for r in doc_records]
+
+        institution = (
+            _majority(institutions)
+            or doc.get("institution")
+            or "unknown"
+        )
+        period = _majority(periods) or doc.get("period")
+        doc_type = _majority(doc_types) or doc.get("doc_type")
+
+        raw_signals = {
+            "institutions": institutions,
+            "accounts": accounts,
+            "periods": periods,
+            "doc_types": doc_types,
+            "page_of_n": [r.page_of_n for r in doc_records],
+            "raw_texts": [r.raw_text for r in doc_records],
+            "llm_reasoning": doc.get("reasoning", ""),
+            "llm_institution": doc.get("institution"),
+            "llm_doc_type": doc.get("doc_type"),
+        }
+
+        candidate = DocumentCandidate(
+            pages=sorted(pages),
+            institution=institution,
+            account=_majority(accounts),
+            period=period,
+            doc_type=doc_type,
+            clustering_confidence=0.7,  # LLM-based gets a reasonable default
+            raw_signals=raw_signals,
+        )
+        candidates.append(candidate)
+        logger.info(
+            "LLM cluster: pages %s → %s (doc_type=%s, period=%s)",
+            candidate.pages, candidate.institution,
+            candidate.doc_type, candidate.period,
+        )
+
+    # Verify all pages are assigned
+    expected = {r.page_number for r in page_records}
+    if all_assigned != expected:
+        missing = expected - all_assigned
+        logger.warning("LLM missed pages %s — falling back to rule-based", missing)
+        return None
 
     return candidates

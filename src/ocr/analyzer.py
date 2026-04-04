@@ -42,6 +42,16 @@ SIGNAL_LIBRARY: dict[str, list[str]] = {
                   "bluecross blueshield"],
     "corporate_filings": ["corporate filings llc", "corporate filings",
                           "maryland registered agent"],
+    "harris_county_tax": ["tax assessor-collector", "harris county",
+                          "annette ramirez"],
+    "cirro_energy": ["cirro energy", "cirro", "n e r g"],
+    "usbank": ["u.s. bank", "us bank", "usb home mortgage",
+               "usbankhome.com"],
+    "routt_county": ["routt county", "steamboat springs"],
+    "rippling": ["rippling", "people center, inc", "people center inc"],
+    "tx_workforce": ["texas workforce commission", "labor market and career"],
+    "tx_comptroller": ["texas comptroller", "comptroller of public accounts",
+                       "notice of forfeiture"],
 }
 
 # ---------------------------------------------------------------------------
@@ -52,8 +62,11 @@ DOC_TYPE_KEYWORDS: dict[str, list[str]] = {
     # "statement") so that "Checking Account Summary" matches "checking" first.
     "eob": ["explanation of benefits", "eob", "this is not a bill",
             "claim number"],
-    "line_of_credit": ["line of credit", "credit line", "loc"],
-    "checking": ["checking account", "checking summary"],
+    "w2": ["form w-2", "wage and tax statement", "w-2"],
+    "tax_notice": ["notice of forfeiture", "property tax statement",
+                   "tax notice", "tax assessment"],
+    "checking": ["checking account", "checking summary", "business checking"],
+    "line_of_credit": ["line of credit", "credit line"],
     "visit_summary": ["visit summary", "office visit", "patient visit"],
     "invoice": ["invoice", "amount due", "payment due", "bill to"],
     "bill": ["bill", "balance due", "amount owed", "pay this amount"],
@@ -110,7 +123,7 @@ PAGE_OF_N_RE = re.compile(
 
 # Account number fragments — last 4 digits pattern
 ACCOUNT_HINT_RE = re.compile(
-    r"(?:account|acct)[\s#.:]*(?:number)?[\s#.:]*[\w\s*]*?(\d{4})\b", re.IGNORECASE
+    r"(?:account|acct)[\s#.:]*(?:number)?[\s#.:]*[^\n]{0,30}?(\d{4})\b", re.IGNORECASE
 )
 
 # ---------------------------------------------------------------------------

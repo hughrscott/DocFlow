@@ -114,8 +114,10 @@ class TestClassifyCandidates:
         assert "PNCBankSulisSolarChecking" in decisions[0].filename
 
     def test_unmatched_goes_to_review(self):
+        from unittest.mock import patch
         candidate = _make_candidate(institution="unknown_bank", doc_type="receipt")
-        decisions = classify_candidates([candidate], SAMPLE_CONFIG)
+        with patch("src.classification.classifier._llm_classify", return_value=None):
+            decisions = classify_candidates([candidate], SAMPLE_CONFIG)
         assert len(decisions) == 1
         assert decisions[0].rule_matched == "none"
         assert decisions[0].confidence == 0.0

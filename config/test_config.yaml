@@ -2,8 +2,8 @@
 # This file is the shipped default. Copy to user_config.yaml and customise.
 
 # Global settings
-archive_root: ~/ElectronicFiles
-scan_watch_folder: ~/ElectronicFiles/ToBeOrganized
+archive_root: /Users/hughscott/Documents/Coding/DocFlow/test_output
+scan_watch_folder: /Users/hughscott/Documents/Coding/DocFlow/test_input
 confidence_threshold: 0.75
 ollama_model: llama3.2
 ollama_host: http://localhost:11434

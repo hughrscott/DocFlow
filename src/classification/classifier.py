@@ -69,11 +69,16 @@ def _match_rule(rule: dict, candidate: DocumentCandidate) -> bool:
         if not _match_field(match["doc_type"], candidate.doc_type):
             return False
 
-    # Build a text pool from raw signals for hint matching
+    # Build a text pool from raw signals AND raw OCR text for hint matching
     signal_texts = []
     for key in ("institutions", "accounts", "periods", "doc_types"):
         vals = candidate.raw_signals.get(key, [])
         signal_texts.extend(str(v) for v in vals if v is not None)
+    # Include raw OCR text (first 1000 chars per page) for hint matching
+    raw_texts = candidate.raw_signals.get("raw_texts", [])
+    for rt in raw_texts:
+        if rt:
+            signal_texts.append(rt[:1000])
     text_pool = " ".join(signal_texts)
 
     # Account hints
@@ -142,6 +147,8 @@ def _generate_filename(template: str, candidate: DocumentCandidate) -> str:
         doc_type=doc_type,
         person=person,
     )
+    # Sanitise: remove slashes and other filesystem-unsafe chars from filename
+    filename = re.sub(r'[/\\:*?"<>|]', '', filename)
     return filename
 
 
@@ -202,17 +209,19 @@ def classify_candidates(
                 notes=None,
             )
         else:
-            # No rule matched
-            decision = FilingDecision(
-                candidate=candidate,
-                filename=f"Unmatched_{candidate.institution}_pages{'_'.join(str(p) for p in candidate.pages)}.pdf",
-                target_directory=_resolve_target_directory("_Unmatched", config),
-                rule_matched="none",
-                confidence=0.0,
-                auto_file=False,
-                notes=f"No filing rule matched for institution={candidate.institution}, "
-                      f"doc_type={candidate.doc_type}",
-            )
+            # No rule matched — try LLM classification
+            decision = _llm_classify(candidate, config, threshold)
+            if decision is None:
+                decision = FilingDecision(
+                    candidate=candidate,
+                    filename=f"Unmatched_{candidate.institution}_pages{'_'.join(str(p) for p in candidate.pages)}.pdf",
+                    target_directory=_resolve_target_directory("_Unmatched", config),
+                    rule_matched="none",
+                    confidence=0.0,
+                    auto_file=False,
+                    notes=f"No filing rule matched for institution={candidate.institution}, "
+                          f"doc_type={candidate.doc_type}",
+                )
 
         logger.info(
             "Classified: %s → %s/%s (rule=%s, confidence=%.2f, auto=%s)",
@@ -223,3 +232,108 @@ def classify_candidates(
         decisions.append(decision)
 
     return decisions
+
+
+# ---------------------------------------------------------------------------
+# LLM fallback classification
+# ---------------------------------------------------------------------------
+
+def _llm_classify(
+    candidate: DocumentCandidate,
+    config: dict,
+    threshold: float,
+) -> FilingDecision | None:
+    """Use OpenRouter LLM to classify a document that didn't match any rule.
+
+    Returns a FilingDecision, or None if the LLM call fails.
+    """
+    from src.llm.client import chat_json
+    from src.llm.prompts import build_classification_prompt
+
+    # Build document summary for the prompt
+    raw_text_preview = ""
+    raw_texts = candidate.raw_signals.get("raw_texts", [])
+    if raw_texts:
+        raw_text_preview = raw_texts[0][:500]
+
+    document_summary = {
+        "pages": candidate.pages,
+        "institution": candidate.institution,
+        "doc_type": candidate.doc_type,
+        "period": candidate.period,
+        "account": candidate.account,
+        "raw_text_preview": raw_text_preview,
+    }
+
+    filing_rules = config.get("filing_rules", [])
+    entities = config.get("entities", [])
+    family = config.get("family", [])
+    user = config.get("user", {})
+
+    prompt = build_classification_prompt(
+        document_summary, filing_rules, entities, family, user
+    )
+
+    try:
+        result = chat_json(prompt, config=config)
+    except Exception:
+        logger.exception("LLM classification call failed")
+        return None
+
+    # If LLM matched an existing rule, validate it before trusting
+    rule_id = result.get("rule_matched")
+    if rule_id:
+        matched = next(
+            (r for r in filing_rules if r["id"] == rule_id), None
+        )
+        if matched and _match_rule(matched, candidate):
+            # LLM picked a rule that also passes our rule-based checks
+            filename = _generate_filename(
+                matched["filename_template"], candidate
+            )
+            file_to = matched["file_to"].format(
+                year=_extract_year(candidate.period or result.get("period"))
+            )
+            target_dir = _resolve_target_directory(file_to, config)
+            confidence = result.get("confidence", 0.6)
+
+            return FilingDecision(
+                candidate=candidate,
+                filename=filename,
+                target_directory=target_dir,
+                rule_matched=rule_id,
+                confidence=round(confidence, 3),
+                auto_file=confidence >= threshold,
+                notes=f"LLM matched rule: {result.get('reasoning', '')}",
+            )
+        elif matched:
+            logger.info(
+                "LLM suggested rule %s but it doesn't pass rule-based checks "
+                "— using LLM's suggested filing instead", rule_id
+            )
+
+    # LLM suggested a new filing location
+    suggested_filename = result.get("suggested_filename", "")
+    suggested_dir = result.get("suggested_directory", "_LLMSuggested")
+    confidence = result.get("confidence", 0.5)
+
+    if not suggested_filename:
+        return None
+
+    # Clean up LLM filename — remove unresolved template vars like {period}
+    suggested_filename = re.sub(r"\{[^}]+\}", "", suggested_filename)
+    # Ensure it ends with .pdf
+    if not suggested_filename.lower().endswith(".pdf"):
+        suggested_filename += ".pdf"
+
+    target_dir = _resolve_target_directory(suggested_dir, config)
+
+    return FilingDecision(
+        candidate=candidate,
+        filename=suggested_filename,
+        target_directory=target_dir,
+        rule_matched=f"llm_suggested",
+        confidence=round(confidence, 3),
+        auto_file=confidence >= threshold,
+        notes=f"LLM classification: {result.get('reasoning', '')}",
+    )

@@ -14,6 +14,21 @@ from src.filing.filer import ensure_directory
 logger = logging.getLogger(__name__)
 
 
+def _unique_path(path: Path) -> Path:
+    """If *path* already exists, append _2, _3, etc. before the extension."""
+    if not path.exists():
+        return path
+    stem = path.stem
+    suffix = path.suffix
+    parent = path.parent
+    counter = 2
+    while True:
+        candidate = parent / f"{stem}_{counter}{suffix}"
+        if not candidate.exists():
+            return candidate
+        counter += 1
+
+
 def extract_documents(
     source_pdf: Path,
     decisions: list[FilingDecision],
@@ -30,7 +45,7 @@ def extract_documents(
         target_dir = Path(decision.target_directory)
         ensure_directory(target_dir)
 
-        output_path = target_dir / decision.filename
+        output_path = _unique_path(target_dir / decision.filename)
         writer = PdfWriter()
 
         for page_num in decision.candidate.pages:
