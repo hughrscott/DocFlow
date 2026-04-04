@@ -64,6 +64,13 @@ documents/
 *.log
 logs/
 
+# Test artifacts
+test_input/
+test_output/
+
+# Logs
+logs/
+
 # Misc
 .python-version
 *.bak
