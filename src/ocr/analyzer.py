@@ -208,18 +208,22 @@ def extract_period(text: str) -> str | None:
             return f"{month_num}/{year}"
 
     # Pattern 5 & 6: bare MM/DD/YYYY or MM/DD/YY — weakest signal
+    # Validate month (1-12) and year (2019-2030) to avoid OCR garbage
     for pat in PERIOD_PATTERNS[4:]:
-        m = pat.search(text)
-        if m:
+        for m in pat.finditer(text):
             month_num = m.group(1)
             year = m.group(3)
             if len(year) == 2:
                 year = f"20{year}"
             try:
-                month_name = calendar.month_name[int(month_num)]
+                month_int = int(month_num)
+                year_int = int(year)
+                if not (1 <= month_int <= 12 and 2019 <= year_int <= 2030):
+                    continue
+                month_name = calendar.month_name[month_int]
                 return f"{month_name}{year}"
             except (ValueError, IndexError):
-                return f"{month_num}/{year}"
+                continue
 
     return None
 

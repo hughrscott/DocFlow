@@ -14,10 +14,35 @@ from src.filing.filer import ensure_directory
 logger = logging.getLogger(__name__)
 
 
-def _unique_path(path: Path) -> Path:
-    """If *path* already exists, append _2, _3, etc. before the extension."""
+def _is_likely_duplicate(existing_path: Path, new_page_count: int) -> bool:
+    """Check if an existing file is likely the same document.
+
+    Compares page count as a quick heuristic. Same page count from same
+    filename template = likely duplicate.
+    """
+    try:
+        existing_reader = PdfReader(str(existing_path))
+        return len(existing_reader.pages) == new_page_count
+    except Exception:
+        return False
+
+
+def _unique_path(path: Path, page_count: int = 0) -> Path | None:
+    """Resolve filename collisions.
+
+    If *path* already exists:
+    - If it's a likely duplicate (same page count), return None to skip.
+    - If it's a different document, append _2, _3, etc.
+
+    Returns the path to write to, or None if it's a duplicate to skip.
+    """
     if not path.exists():
         return path
+
+    if page_count > 0 and _is_likely_duplicate(path, page_count):
+        logger.info("Skipping likely duplicate: %s", path)
+        return None
+
     stem = path.stem
     suffix = path.suffix
     parent = path.parent
@@ -45,7 +70,20 @@ def extract_documents(
         target_dir = Path(decision.target_directory)
         ensure_directory(target_dir)
 
-        output_path = _unique_path(target_dir / decision.filename)
+        page_count = len(decision.candidate.pages)
+        output_path = _unique_path(
+            target_dir / decision.filename, page_count=page_count
+        )
+
+        if output_path is None:
+            # Duplicate detected — skip extraction
+            logger.info(
+                "Skipped duplicate: pages %s → %s",
+                decision.candidate.pages, decision.filename,
+            )
+            written_files.append(target_dir / decision.filename)
+            continue
+
         writer = PdfWriter()
 
         for page_num in decision.candidate.pages:

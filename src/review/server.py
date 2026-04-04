@@ -75,6 +75,11 @@ async def correct(item_id: str, request: Request):
         raise HTTPException(404, f"Item {item_id} not found")
 
     _extract_item(item, filename, target_dir)
+
+    # Record the correction for rule learning
+    from src.config.learner import record_correction
+    record_correction(item, filename, target_dir, _config)
+
     return {"status": "corrected", "filename": filename, "directory": target_dir}
 
 

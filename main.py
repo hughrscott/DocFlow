@@ -52,6 +52,152 @@ def review(ctx, host: str, port: int) -> None:
     uvicorn.run(app, host=host, port=port, log_level="warning")
 
 
+@cli.command("learn")
+@click.pass_context
+def learn(ctx) -> None:
+    """Review corrections and show suggested new filing rules."""
+    import yaml
+    from rich.console import Console
+    from src.config.learner import suggest_rules
+
+    console = Console()
+    config_path = ctx.obj["config_path"]
+    if not config_path.exists():
+        config_path = Path(__file__).parent / "config" / "default_config.yaml"
+    with open(config_path) as f:
+        config = yaml.safe_load(f)
+
+    suggestions = suggest_rules(config)
+
+    if not suggestions:
+        console.print("[dim]No rule suggestions yet. Corrections from the review queue "
+                      "will appear here once patterns emerge.[/dim]")
+        return
+
+    console.rule("[bold blue]Suggested Filing Rules")
+    for s in suggestions:
+        console.print(f"\n  [bold]{s['id']}[/bold] (based on {s['based_on']})")
+        console.print(f"    match: {s['match']}")
+        console.print(f"    file_to: {s['file_to']}")
+        console.print(f"    template: {s['filename_template']}")
+
+    console.print(f"\n[dim]To add these rules, copy them into your config YAML.[/dim]")
+
+
+@cli.command("scan-archive")
+@click.pass_context
+@click.argument("archive_path", type=click.Path(exists=True, file_okay=False, path_type=Path))
+def scan_archive(ctx, archive_path: Path) -> None:
+    """Scan an existing archive and infer filing rules."""
+    import yaml
+    from rich.console import Console
+    from src.config.scanner import scan_existing_archive
+
+    console = Console()
+    console.rule("[bold blue]Archive Scanner")
+    console.print(f"Scanning: {archive_path}\n")
+
+    result = scan_existing_archive(archive_path)
+    stats = result["stats"]
+
+    console.print(f"  PDFs found: {stats['total_pdfs']}")
+    console.print(f"  Directories: {stats['total_directories']}")
+    console.print(f"  Institutions detected: {', '.join(stats['institutions_found']) or 'none'}")
+    console.print(f"  Rules inferred: {stats['rules_inferred']}")
+
+    if result["inferred_rules"]:
+        console.print("\n[bold]Inferred Filing Rules:[/bold]")
+        for rule in result["inferred_rules"]:
+            conf = rule.pop("confidence", 0)
+            count = rule.pop("sample_count", 0)
+            console.print(
+                f"\n  [bold]{rule['id']}[/bold] "
+                f"({count} files, {conf:.0%} confidence)"
+            )
+            console.print(f"    match: {rule['match']}")
+            console.print(f"    file_to: {rule['file_to']}")
+            console.print(f"    template: {rule['filename_template']}")
+
+    if result["inferred_entities"]:
+        console.print("\n[bold]Inferred Entities:[/bold]")
+        for entity in result["inferred_entities"]:
+            console.print(f"  - {entity['name']} (type: {entity['type']}, dir: {entity['directory']})")
+
+    # Write draft config
+    config_path = ctx.obj["config_path"]
+    draft_path = config_path.parent / "inferred_config.yaml"
+    draft = {
+        "archive_root": str(archive_path),
+        "filing_rules": result["inferred_rules"],
+        "entities": result["inferred_entities"],
+    }
+    with open(draft_path, "w") as f:
+        yaml.dump(draft, f, default_flow_style=False, sort_keys=False)
+    console.print(f"\n[green]Draft config written to: {draft_path}[/green]")
+    console.print("[dim]Review and merge into your user_config.yaml.[/dim]")
+
+
+@cli.command("validate")
+@click.pass_context
+def validate(ctx) -> None:
+    """Validate the configuration file."""
+    from rich.console import Console
+    from src.config.validator import validate_config
+
+    console = Console()
+    config_path = ctx.obj["config_path"]
+    if not config_path.exists():
+        config_path = Path(__file__).parent / "config" / "default_config.yaml"
+
+    console.rule("[bold blue]Config Validation")
+    console.print(f"Config: {config_path}\n")
+
+    results = validate_config(config_path)
+    passed = sum(1 for r in results if r["passed"])
+    failed = sum(1 for r in results if not r["passed"])
+
+    for r in results:
+        icon = "[green]PASS[/green]" if r["passed"] else "[red]FAIL[/red]"
+        console.print(f"  {icon}  {r['message']}")
+
+    console.print()
+    if failed:
+        console.print(f"[red bold]{failed} check(s) failed[/red bold]")
+    else:
+        console.print(f"[green bold]All {passed} checks passed[/green bold]")
+
+
+@cli.command("batch")
+@click.pass_context
+@click.argument("input_dir", type=click.Path(exists=True, file_okay=False, path_type=Path))
+def batch(ctx, input_dir: Path) -> None:
+    """Process all PDFs in a directory."""
+    from rich.console import Console
+
+    console = Console()
+    config_path = ctx.obj["config_path"]
+    pdfs = sorted(input_dir.glob("*.pdf"))
+
+    if not pdfs:
+        console.print(f"[yellow]No PDFs found in {input_dir}[/yellow]")
+        return
+
+    console.rule(f"[bold blue]Batch processing: {len(pdfs)} PDFs")
+    succeeded, failed = 0, 0
+
+    for i, pdf in enumerate(pdfs, 1):
+        console.print(f"\n[bold]({i}/{len(pdfs)}) {pdf.name}[/bold]")
+        try:
+            _run_pipeline(pdf, config_path)
+            succeeded += 1
+        except Exception as exc:
+            console.print(f"[red]Error: {exc}[/red]")
+            failed += 1
+
+    console.rule("[bold green]Batch complete")
+    console.print(f"  Processed: {succeeded}  |  Failed: {failed}")
+
+
 @cli.command()
 @click.pass_context
 @click.option("--interval", default=60, type=int, help="Poll interval in seconds.")

@@ -117,17 +117,27 @@ def _normalise_period(period: str | None) -> str:
     if not period:
         return ""
     # Already in good shape like "February2026"
-    if re.match(r"[A-Z][a-z]+\d{4}", period):
+    if re.match(r"[A-Z][a-z]+\d{4}$", period):
         return period
-    # Try to parse
+    # Just a year like "2025"
+    if re.match(r"20\d{2}$", period):
+        return period
+    # Try to parse MM/YYYY or MM-YYYY
     m = re.search(r"(\d{1,2})[/\-](\d{4})", period)
     if m:
         try:
-            month_name = calendar.month_name[int(m.group(1))]
-            return f"{month_name}{m.group(2)}"
+            month_int = int(m.group(1))
+            if 1 <= month_int <= 12:
+                month_name = calendar.month_name[month_int]
+                return f"{month_name}{m.group(2)}"
         except (ValueError, IndexError):
             pass
-    return period
+    # Extract just the year as a fallback
+    m = re.search(r"(20\d{2})", period)
+    if m:
+        return m.group(1)
+    # Last resort: strip anything that isn't alphanumeric
+    return re.sub(r"[^a-zA-Z0-9]", "", period)
 
 
 def _generate_filename(template: str, candidate: DocumentCandidate) -> str:
