@@ -71,6 +71,10 @@ test_output/
 # Logs
 logs/
 
+# Personal notes
+.howtolaunch
+LaunchAgentInstructions.md
+
 # Misc
 .python-version
 *.bak
