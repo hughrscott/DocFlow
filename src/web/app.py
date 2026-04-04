@@ -389,8 +389,12 @@ async def archive_logs():
 
 @app.get("/api/settings")
 async def get_settings():
-    """Return current config (without sensitive data)."""
-    safe = {k: v for k, v in _config.items() if k not in ("openrouter_api_key",)}
+    """Return current config (mask sensitive data)."""
+    safe = dict(_config)
+    # Mask API key — just indicate if one is set
+    if safe.get("llm_api_key"):
+        safe["llm_api_key"] = "••••••••"
+    safe.pop("openrouter_api_key", None)
     return safe
 
 
@@ -398,12 +402,18 @@ async def get_settings():
 async def update_settings(request: Request):
     """Update config values."""
     body = await request.json()
-    # Only allow updating specific safe fields
-    allowed = {"confidence_threshold", "archive_root", "scan_watch_folder", "openrouter_model"}
+    allowed = {
+        "confidence_threshold", "archive_root", "scan_watch_folder",
+        "llm_provider", "llm_model", "llm_base_url", "llm_api_key",
+        "openrouter_model",
+    }
     for key in body:
         if key in allowed:
             _config[key] = body[key]
-    return {"status": "updated", "config": {k: _config.get(k) for k in allowed}}
+    # Keep openrouter_model in sync with llm_model for backwards compat
+    if "llm_model" in body:
+        _config["openrouter_model"] = body["llm_model"]
+    return {"status": "updated"}
 
 
 @app.get("/api/settings/rules")

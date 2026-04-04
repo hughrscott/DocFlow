@@ -74,28 +74,45 @@
                             <span class="material-symbols-outlined text-secondary-fixed">auto_awesome</span>
                             <h3 class="font-headline text-2xl font-bold">AI Processing Engine</h3>
                         </div>
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-10">
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                            <!-- Provider -->
                             <div>
-                                <label class="block text-[11px] font-bold tracking-widest uppercase text-primary-fixed-dim mb-3">LLM Model</label>
-                                <select id="llm-model" class="w-full bg-white/10 border-white/20 text-white rounded-lg py-3 px-4 focus:ring-secondary-fixed/50">
-                                    <option value="google/gemini-2.0-flash-001">Gemini 2.0 Flash</option>
-                                    <option value="google/gemini-2.5-flash-preview">Gemini 2.5 Flash</option>
-                                    <option value="anthropic/claude-3.5-haiku">Claude 3.5 Haiku</option>
-                                    <option value="anthropic/claude-sonnet-4">Claude Sonnet 4</option>
-                                    <option value="openai/gpt-4o-mini">GPT-4o Mini</option>
+                                <label class="block text-[11px] font-bold tracking-widest uppercase text-primary-fixed-dim mb-3">Provider</label>
+                                <select id="llm-provider" onchange="onProviderChange()" class="w-full bg-white/10 border-white/20 text-white rounded-lg py-3 px-4 focus:ring-secondary-fixed/50">
+                                    <option value="openrouter">OpenRouter</option>
+                                    <option value="openai">OpenAI</option>
+                                    <option value="groq">Groq</option>
+                                    <option value="ollama">Ollama (Local)</option>
                                 </select>
-                                <p class="text-xs text-primary-fixed-dim mt-3">Gemini 2.0 Flash recommended for best cost/accuracy.</p>
                             </div>
+                            <!-- Model -->
                             <div>
-                                <div class="flex justify-between items-center mb-3">
-                                    <label class="block text-[11px] font-bold tracking-widest uppercase text-primary-fixed-dim">Confidence Threshold</label>
-                                    <span id="threshold-display" class="text-secondary-fixed font-bold">75%</span>
-                                </div>
-                                <input id="threshold-slider" class="w-full h-2 bg-white/20 rounded-lg appearance-none cursor-pointer accent-secondary-fixed" max="100" min="50" type="range" value="75"/>
-                                <div class="flex justify-between mt-2">
-                                    <span class="text-[10px] text-white/40">More auto-filing</span>
-                                    <span class="text-[10px] text-white/40">More review</span>
-                                </div>
+                                <label class="block text-[11px] font-bold tracking-widest uppercase text-primary-fixed-dim mb-3">Model</label>
+                                <input id="llm-model" class="w-full bg-white/10 border-white/20 text-white rounded-lg py-3 px-4 placeholder-white/30 focus:ring-secondary-fixed/50" type="text" placeholder="google/gemini-2.0-flash-001"/>
+                            </div>
+                            <!-- API Endpoint -->
+                            <div>
+                                <label class="block text-[11px] font-bold tracking-widest uppercase text-primary-fixed-dim mb-3">API Endpoint</label>
+                                <input id="llm-base-url" class="w-full bg-white/10 border-white/20 text-white rounded-lg py-3 px-4 font-mono text-xs placeholder-white/30 focus:ring-secondary-fixed/50" type="text" placeholder="https://openrouter.ai/api/v1"/>
+                                <p class="text-xs text-primary-fixed-dim mt-2">Override the default endpoint for your provider.</p>
+                            </div>
+                            <!-- API Key -->
+                            <div>
+                                <label class="block text-[11px] font-bold tracking-widest uppercase text-primary-fixed-dim mb-3">API Key</label>
+                                <input id="llm-api-key" class="w-full bg-white/10 border-white/20 text-white rounded-lg py-3 px-4 font-mono text-xs placeholder-white/30 focus:ring-secondary-fixed/50" type="password" placeholder="sk-or-v1-..."/>
+                                <p class="text-xs text-primary-fixed-dim mt-2">Stored in config. Leave blank to use .env file.</p>
+                            </div>
+                        </div>
+                        <!-- Confidence threshold -->
+                        <div class="mt-8 max-w-md">
+                            <div class="flex justify-between items-center mb-3">
+                                <label class="block text-[11px] font-bold tracking-widest uppercase text-primary-fixed-dim">Confidence Threshold</label>
+                                <span id="threshold-display" class="text-secondary-fixed font-bold">75%</span>
+                            </div>
+                            <input id="threshold-slider" class="w-full h-2 bg-white/20 rounded-lg appearance-none cursor-pointer accent-secondary-fixed" max="100" min="50" type="range" value="75"/>
+                            <div class="flex justify-between mt-2">
+                                <span class="text-[10px] text-white/40">More auto-filing</span>
+                                <span class="text-[10px] text-white/40">More review</span>
                             </div>
                         </div>
                         <button onclick="saveSettings()" class="mt-8 bg-white/10 text-white border border-white/20 px-6 py-3 rounded-lg font-bold text-sm hover:bg-white/20 transition-all">
@@ -166,9 +183,12 @@
             const threshold = Math.round((settings.confidence_threshold || 0.75) * 100);
             document.getElementById('threshold-slider').value = threshold;
             document.getElementById('threshold-display').textContent = `${threshold}%`;
-            const modelSelect = document.getElementById('llm-model');
-            if (settings.openrouter_model) {
-                modelSelect.value = settings.openrouter_model;
+            document.getElementById('llm-provider').value = settings.llm_provider || 'openrouter';
+            document.getElementById('llm-model').value = settings.llm_model || settings.openrouter_model || 'google/gemini-2.0-flash-001';
+            document.getElementById('llm-base-url').value = settings.llm_base_url || '';
+            // Don't show the actual key, just indicate if one is set
+            if (settings.llm_api_key) {
+                document.getElementById('llm-api-key').placeholder = '••••••• (configured)';
             }
 
             // Threshold slider live update
@@ -218,13 +238,41 @@
             }
         }
 
+        const PROVIDER_DEFAULTS = {
+            openrouter: { url: 'https://openrouter.ai/api/v1', model: 'google/gemini-2.0-flash-001' },
+            openai: { url: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
+            groq: { url: 'https://api.groq.com/openai/v1', model: 'llama-3.3-70b-versatile' },
+            ollama: { url: 'http://localhost:11434/v1', model: 'llama3.2' },
+        };
+
+        function onProviderChange() {
+            const provider = document.getElementById('llm-provider').value;
+            const defaults = PROVIDER_DEFAULTS[provider] || PROVIDER_DEFAULTS.openrouter;
+            document.getElementById('llm-base-url').placeholder = defaults.url;
+            document.getElementById('llm-model').placeholder = defaults.model;
+            // Only overwrite if the field is empty or was a default
+            const modelInput = document.getElementById('llm-model');
+            const isDefault = Object.values(PROVIDER_DEFAULTS).some(d => d.model === modelInput.value);
+            if (!modelInput.value || isDefault) {
+                modelInput.value = defaults.model;
+            }
+        }
+
         async function saveSettings() {
             const body = {
                 confidence_threshold: parseInt(document.getElementById('threshold-slider').value) / 100,
-                openrouter_model: document.getElementById('llm-model').value,
+                llm_provider: document.getElementById('llm-provider').value,
+                llm_model: document.getElementById('llm-model').value,
                 archive_root: document.getElementById('archive-root').value,
                 scan_watch_folder: document.getElementById('watch-folder').value,
             };
+            // Only send base_url if user explicitly set one
+            const baseUrl = document.getElementById('llm-base-url').value.trim();
+            if (baseUrl) body.llm_base_url = baseUrl;
+            // Only send API key if user entered one
+            const apiKey = document.getElementById('llm-api-key').value.trim();
+            if (apiKey) body.llm_api_key = apiKey;
+
             await fetch('/api/settings', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
