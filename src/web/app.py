@@ -118,6 +118,20 @@ async def process_pdf(request: Request):
     return {"job_id": job_id}
 
 
+@app.get("/api/process/active")
+async def active_job():
+    """Return the most recent active or completed job."""
+    # Find most recent non-error job
+    for job_id, state in sorted(_processing_state.items(), reverse=True):
+        if state.get("status") in ("starting", "processing"):
+            return {"job_id": job_id, "pdf": state.get("pdf"), "status": state["status"]}
+    # Return most recent completed job if nothing is active
+    for job_id, state in sorted(_processing_state.items(), reverse=True):
+        if state.get("status") == "completed":
+            return {"job_id": job_id, "pdf": state.get("pdf"), "status": "completed"}
+    return {"job_id": None}
+
+
 @app.get("/api/process/status/{job_id}")
 async def process_status(job_id: str):
     """Get processing status for a job."""

@@ -125,6 +125,49 @@
     <script>
         initPage('Dashboard');
 
+        // Check for active job on page load (handles navigation away and back)
+        (async function checkActiveJob() {
+            const savedJobId = sessionStorage.getItem('docflow_active_job');
+            if (savedJobId) {
+                try {
+                    const resp = await fetch(`/api/process/status/${savedJobId}`);
+                    if (resp.ok) {
+                        const state = await resp.json();
+                        if (state.status === 'processing' || state.status === 'starting') {
+                            // Re-attach to active job
+                            document.getElementById('processing-section').classList.remove('hidden');
+                            document.getElementById('recent-section').classList.add('hidden');
+                            document.getElementById('batch-name').textContent = state.pdf?.split('/').pop() || 'Processing...';
+                            pollStatus(savedJobId);
+                            return;
+                        } else if (state.status === 'completed') {
+                            // Show completed results
+                            document.getElementById('processing-section').classList.remove('hidden');
+                            document.getElementById('recent-section').classList.add('hidden');
+                            document.getElementById('batch-name').textContent = state.pdf?.split('/').pop() || 'Completed';
+                            updateProcessingUI(state);
+                            return;
+                        }
+                    }
+                } catch (e) { /* job gone, that's fine */ }
+                sessionStorage.removeItem('docflow_active_job');
+            }
+            // Also check for any active jobs on the server
+            try {
+                const resp = await fetch('/api/process/active');
+                if (resp.ok) {
+                    const data = await resp.json();
+                    if (data.job_id) {
+                        sessionStorage.setItem('docflow_active_job', data.job_id);
+                        document.getElementById('processing-section').classList.remove('hidden');
+                        document.getElementById('recent-section').classList.add('hidden');
+                        document.getElementById('batch-name').textContent = data.pdf?.split('/').pop() || 'Processing...';
+                        pollStatus(data.job_id);
+                    }
+                }
+            } catch (e) { /* no active jobs */ }
+        })();
+
         // Drop zone handling
         const dropZone = document.getElementById('drop-zone');
         const fileInput = document.getElementById('upload-input');
@@ -156,6 +199,9 @@
                     body: JSON.stringify({ path: upload.path }),
                 });
                 const proc = await procResp.json();
+
+                // Save job ID for reconnection after navigation
+                sessionStorage.setItem('docflow_active_job', proc.job_id);
 
                 // Show processing UI
                 document.getElementById('processing-section').classList.remove('hidden');

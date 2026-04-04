@@ -76,9 +76,17 @@ def generate_summary(
         ws.append(row)
 
     # Auto-size columns (approximate)
-    for col in ws.columns:
-        max_len = max(len(str(cell.value or "")) for cell in col)
-        ws.column_dimensions[col[0].column_letter].width = min(max_len + 2, 50)
+    try:
+        for col in ws.columns:
+            cells = list(col)
+            if not cells:
+                continue
+            max_len = max(len(str(cell.value or "")) for cell in cells)
+            letter = cells[0].column_letter
+            ws.column_dimensions[letter].width = min(max_len + 2, 50)
+    except Exception:
+        # Column sizing is cosmetic — don't let it crash the pipeline
+        logger.warning("Could not auto-size columns in summary spreadsheet")
 
     wb.save(xlsx_path)
     logger.info("Summary XLSX written: %s", xlsx_path)
