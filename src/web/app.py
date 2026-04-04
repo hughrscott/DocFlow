@@ -197,30 +197,8 @@ async def _run_pipeline_async(job_id: str, pdf_path: Path) -> None:
 
         # 5. Confidence gate
         auto_file, review_queue = gate_decisions(decisions, _config)
-        state.update({
-            "step": "Filing documents",
-            "progress": 80,
-            "auto_filed": len(auto_file),
-            "review_queue": len(review_queue),
-        })
 
-        # 6. Extract
-        state.update({"step": "Writing files", "progress": 85})
-        await asyncio.to_thread(extract_documents, pdf_path, auto_file, _config)
-
-        # 7. Summary
-        state.update({"step": "Generating summary", "progress": 90})
-        await asyncio.to_thread(generate_summary, auto_file, review_queue, _config)
-
-        # 8. Archive
-        state.update({"step": "Archiving original", "progress": 95})
-        archived_path = await asyncio.to_thread(archive_original, pdf_path, _config)
-
-        # Save review queue
-        if review_queue:
-            save_review_queue(review_queue, archived_path, _config)
-
-        # Build document list for UI
+        # Build document list immediately so it's available even if later steps fail
         documents = []
         for d in auto_file + review_queue:
             documents.append({
@@ -236,6 +214,33 @@ async def _run_pipeline_async(job_id: str, pdf_path: Path) -> None:
                 "notes": d.notes,
                 "reasoning": d.candidate.raw_signals.get("llm_reasoning", ""),
             })
+
+        state.update({
+            "step": "Filing documents",
+            "progress": 80,
+            "auto_filed": len(auto_file),
+            "review_queue": len(review_queue),
+            "documents": documents,
+        })
+
+        # 6. Extract
+        state.update({"step": "Writing files", "progress": 85})
+        await asyncio.to_thread(extract_documents, pdf_path, auto_file, _config)
+
+        # 7. Summary (non-fatal — cosmetic step)
+        state.update({"step": "Generating summary", "progress": 90})
+        try:
+            await asyncio.to_thread(generate_summary, auto_file, review_queue, _config)
+        except Exception as exc:
+            logger.warning("Summary generation failed (non-fatal): %s", exc)
+
+        # 8. Archive
+        state.update({"step": "Archiving original", "progress": 95})
+        archived_path = await asyncio.to_thread(archive_original, pdf_path, _config)
+
+        # Save review queue
+        if review_queue:
+            save_review_queue(review_queue, archived_path, _config)
 
         state.update({
             "status": "completed",

@@ -236,8 +236,11 @@
             updateStep('step-cluster', progress >= 60 ? 'done' : progress >= 40 ? 'active' : 'waiting');
             updateStep('step-classify', progress >= 80 ? 'done' : progress >= 60 ? 'active' : 'waiting');
 
-            if (state.status === 'completed') {
+            // Show documents when completed OR when errored but we have documents
+            if (state.status === 'completed' || (state.status === 'error' && state.documents && state.documents.length > 0)) {
                 showDocuments(state.documents, state.auto_filed, state.review_queue);
+            } else if (state.status === 'error') {
+                document.getElementById('progress-bar').classList.add('bg-red-500');
             }
         }
 

@@ -62,6 +62,15 @@ def generate_summary(
     if xlsx_path.exists():
         wb = load_workbook(xlsx_path)
         ws = wb.active
+        # Unmerge any merged cells from previous versions to avoid
+        # MergedCell errors when iterating columns
+        for merge_range in list(ws.merged_cells.ranges):
+            ws.unmerge_cells(str(merge_range))
+        # Ensure headers exist (in case of a corrupted file)
+        if ws.max_row == 0 or ws.cell(1, 1).value != HEADERS[0]:
+            ws.insert_rows(1)
+            for i, h in enumerate(HEADERS, 1):
+                ws.cell(1, i, h)
     else:
         wb = Workbook()
         ws = wb.active
