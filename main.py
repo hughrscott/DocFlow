@@ -2,9 +2,10 @@ import click
 from pathlib import Path
 
 
-@click.command()
+@click.group(invoke_without_command=True)
+@click.pass_context
 @click.option(
-    "--input", "input_pdf", required=True,
+    "--input", "input_pdf",
     type=click.Path(exists=True, path_type=Path),
     help="Path to the scanned PDF to process.",
 )
@@ -15,8 +16,91 @@ from pathlib import Path
     show_default=True,
     help="Path to user config YAML.",
 )
-def main(input_pdf: Path, config_path: Path) -> None:
-    """Mail Archiver — ingests a scanned PDF and files each document."""
+def cli(ctx, input_pdf: Path | None, config_path: Path) -> None:
+    """Mail Archiver — ingests scanned PDFs and files each document."""
+    ctx.ensure_object(dict)
+    ctx.obj["config_path"] = config_path
+
+    if ctx.invoked_subcommand is not None:
+        return
+
+    if input_pdf is None:
+        click.echo(ctx.get_help())
+        return
+
+    _run_pipeline(input_pdf, config_path)
+
+
+@cli.command()
+@click.pass_context
+@click.option("--host", default="127.0.0.1", help="Server host.")
+@click.option("--port", default=8765, type=int, help="Server port.")
+def review(ctx, host: str, port: int) -> None:
+    """Launch the review queue web UI."""
+    import yaml
+    import uvicorn
+    from src.review.server import app, configure
+
+    config_path = ctx.obj["config_path"]
+    if not config_path.exists():
+        config_path = Path(__file__).parent / "config" / "default_config.yaml"
+    with open(config_path) as f:
+        config = yaml.safe_load(f)
+
+    configure(config)
+    click.echo(f"Review queue: http://{host}:{port}")
+    uvicorn.run(app, host=host, port=port, log_level="warning")
+
+
+@cli.command()
+@click.pass_context
+@click.option("--interval", default=60, type=int, help="Poll interval in seconds.")
+def watch(ctx, interval: int) -> None:
+    """Watch the scan folder and process new PDFs automatically."""
+    import time
+    import yaml
+    from rich.console import Console
+
+    console = Console()
+    config_path = ctx.obj["config_path"]
+    if not config_path.exists():
+        config_path = Path(__file__).parent / "config" / "default_config.yaml"
+    with open(config_path) as f:
+        config = yaml.safe_load(f)
+
+    import os
+    watch_dir = Path(os.path.expanduser(
+        config.get("scan_watch_folder", "~/ElectronicFiles/ToBeOrganized")
+    ))
+    processed_file = watch_dir / ".processed"
+    processed: set[str] = set()
+    if processed_file.exists():
+        processed = set(processed_file.read_text().splitlines())
+
+    console.print(f"[bold]Watching:[/bold] {watch_dir}")
+    console.print(f"[bold]Interval:[/bold] {interval}s")
+    console.print("Press Ctrl+C to stop.\n")
+
+    try:
+        while True:
+            if watch_dir.exists():
+                for pdf in sorted(watch_dir.glob("*.pdf")):
+                    if pdf.name in processed:
+                        continue
+                    console.rule(f"[bold blue]New scan: {pdf.name}")
+                    try:
+                        _run_pipeline(pdf, config_path)
+                        processed.add(pdf.name)
+                        processed_file.write_text("\n".join(sorted(processed)))
+                    except Exception as exc:
+                        console.print(f"[red]Error processing {pdf.name}: {exc}[/red]")
+            time.sleep(interval)
+    except KeyboardInterrupt:
+        console.print("\n[bold]Watch stopped.[/bold]")
+
+
+def _run_pipeline(input_pdf: Path, config_path: Path) -> None:
+    """Execute the full mail archiver pipeline."""
     from src.ingestion.loader import load_pdf
     from src.ocr.analyzer import analyze_pages
     from src.clustering.clusterer import cluster_pages
@@ -25,6 +109,7 @@ def main(input_pdf: Path, config_path: Path) -> None:
     from src.extraction.extractor import extract_documents
     from src.summary.generator import generate_summary
     from src.ingestion.archiver import archive_original
+    from src.review.queue import save_review_queue
     import yaml
     from rich.console import Console
 
@@ -73,10 +158,11 @@ def main(input_pdf: Path, config_path: Path) -> None:
 
     # 8. Archive original
     console.print("\n[bold]8. Archiving original scan...[/bold]")
-    archive_original(input_pdf, config)
+    archived_path = archive_original(input_pdf, config)
 
-    # Print review queue to console
+    # Save review queue with the archived path so the review server can find the PDF
     if review_queue:
+        queue_path = save_review_queue(review_queue, archived_path, config)
         console.rule("[bold yellow]Review Required")
         for decision in review_queue:
             console.print(
@@ -84,9 +170,14 @@ def main(input_pdf: Path, config_path: Path) -> None:
                 f"{decision.candidate.institution or 'Unknown'} — "
                 f"pages {decision.candidate.pages} — {decision.notes or 'no notes'}"
             )
+        console.print(
+            f"\n  [bold]{len(review_queue)} item(s) need review.[/bold]\n"
+            f"  Run: [cyan]python main.py review --config {config_path}[/cyan]\n"
+            f"  Or open: [cyan]http://127.0.0.1:8765[/cyan]"
+        )
 
     console.rule("[bold green]Done")
 
 
 if __name__ == "__main__":
-    main()
+    cli()
