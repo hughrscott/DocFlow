@@ -65,7 +65,7 @@ def _get_client(config: dict | None = None) -> OpenAI:
     if not api_key:
         api_key = "ollama"
 
-    return OpenAI(base_url=base_url, api_key=api_key)
+    return OpenAI(base_url=base_url, api_key=api_key, timeout=60.0)
 
 
 def chat_json(

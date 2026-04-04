@@ -140,24 +140,29 @@
                             document.getElementById('batch-name').textContent = state.pdf?.split('/').pop() || 'Processing...';
                             pollStatus(savedJobId);
                             return;
-                        } else if (state.status === 'completed') {
-                            // Show completed results
+                        } else if (state.status === 'completed' || state.status === 'error') {
+                            // Show completed results — force progress to 100% for completed
+                            if (state.status === 'completed') {
+                                state.progress = 100;
+                                state.step = 'Done';
+                            }
                             document.getElementById('processing-section').classList.remove('hidden');
                             document.getElementById('recent-section').classList.add('hidden');
                             document.getElementById('batch-name').textContent = state.pdf?.split('/').pop() || 'Completed';
                             updateProcessingUI(state);
+                            sessionStorage.removeItem('docflow_active_job');
                             return;
                         }
                     }
                 } catch (e) { /* job gone, that's fine */ }
                 sessionStorage.removeItem('docflow_active_job');
             }
-            // Also check for any active jobs on the server
+            // Check for actively processing jobs on the server (NOT completed ones)
             try {
                 const resp = await fetch('/api/process/active');
                 if (resp.ok) {
                     const data = await resp.json();
-                    if (data.job_id) {
+                    if (data.job_id && data.status !== 'completed') {
                         sessionStorage.setItem('docflow_active_job', data.job_id);
                         document.getElementById('processing-section').classList.remove('hidden');
                         document.getElementById('recent-section').classList.add('hidden');
