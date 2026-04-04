@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8"/>
+    <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+    <title>DocFlow — Archive Browser</title>
+    <script src="https://cdn.tailwindcss.com?plugins=forms"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@200..800&family=Inter:wght@100..900&display=swap" rel="stylesheet"/>
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+    <script>
+        tailwind.config = { theme: { extend: {
+            colors: {
+                "surface": "#f7f9fb", "on-surface": "#191c1e", "on-surface-variant": "#45474c",
+                "surface-container": "#eceef0", "surface-container-low": "#f2f4f6",
+                "surface-container-lowest": "#ffffff", "surface-variant": "#e0e3e5",
+                "primary": "#091426", "primary-container": "#1e293b",
+                "on-primary": "#ffffff", "on-primary-container": "#8590a6",
+                "secondary": "#006c49", "secondary-container": "#6cf8bb",
+                "on-secondary-container": "#00714d",
+                "tertiary-fixed": "#ffddb8", "on-tertiary-container": "#c88000",
+                "outline": "#75777d", "outline-variant": "#c5c6cd",
+                "primary-fixed": "#d8e3fb",
+            },
+            fontFamily: { headline: ["Manrope"], body: ["Inter"] },
+        }}}
+    </script>
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .font-headline { font-family: 'Manrope', sans-serif; }
+        .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
+    </style>
+</head>
+<body class="bg-surface text-on-surface">
+    <div id="nav"></div>
+    <div id="header"></div>
+
+    <main class="ml-64 p-8 min-h-screen pb-20">
+        <div class="max-w-6xl mx-auto flex gap-8">
+            <!-- Folder tree -->
+            <aside class="w-56 flex-shrink-0">
+                <h3 class="text-[11px] font-bold tracking-wider uppercase text-outline mb-4">File System</h3>
+                <div id="folder-tree" class="space-y-1 text-sm">
+                    <p class="text-on-surface-variant">Loading...</p>
+                </div>
+            </aside>
+
+            <!-- Main content -->
+            <section class="flex-1 space-y-6">
+                <div id="breadcrumb" class="flex items-center gap-2 text-sm text-outline"></div>
+
+                <div class="flex items-end justify-between">
+                    <div>
+                        <h2 class="text-2xl font-black font-headline text-slate-900">Filing History</h2>
+                        <p class="text-on-surface-variant mt-1" id="log-summary">Loading...</p>
+                    </div>
+                </div>
+
+                <!-- Filing log table -->
+                <div class="bg-surface-container-lowest rounded-xl shadow-sm overflow-hidden">
+                    <table class="w-full text-left">
+                        <thead>
+                            <tr class="bg-slate-50">
+                                <th class="px-6 py-4 text-[11px] font-bold uppercase tracking-widest text-outline">Document</th>
+                                <th class="px-6 py-4 text-[11px] font-bold uppercase tracking-widest text-outline">Filing Path</th>
+                                <th class="px-6 py-4 text-[11px] font-bold uppercase tracking-widest text-outline">Rule</th>
+                                <th class="px-6 py-4 text-[11px] font-bold uppercase tracking-widest text-outline">Confidence</th>
+                            </tr>
+                        </thead>
+                        <tbody id="log-table" class="divide-y divide-slate-100"></tbody>
+                    </table>
+                </div>
+            </section>
+        </div>
+    </main>
+
+    <div id="footer"></div>
+
+    <script src="/static/shared.js"></script>
+    <script>
+        initPage('Archive Browser');
+
+        let currentPath = '';
+
+        async function loadTree() {
+            const resp = await fetch('/api/archive/tree');
+            const data = await resp.json();
+            const container = document.getElementById('folder-tree');
+
+            if (!data.tree || data.tree.length === 0) {
+                container.innerHTML = '<p class="text-on-surface-variant text-xs">No archive folders found.</p>';
+                return;
+            }
+
+            container.innerHTML = renderTreeNodes(data.tree, 0);
+        }
+
+        function renderTreeNodes(nodes, depth) {
+            return nodes.map(node => {
+                const indent = depth * 16;
+                const icon = 'folder';
+                return `
+                    <div class="flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer hover:bg-surface-container transition-colors"
+                         style="padding-left: ${indent + 8}px"
+                         onclick="browseTo('${node.path}')">
+                        <span class="material-symbols-outlined text-primary-container text-sm">${icon}</span>
+                        <span class="text-on-surface-variant text-sm">${node.name}</span>
+                        <span class="text-outline text-[10px] ml-auto">${node.pdf_count}</span>
+                    </div>
+                    ${node.children ? renderTreeNodes(node.children, depth + 1) : ''}
+                `;
+            }).join('');
+        }
+
+        async function browseTo(path) {
+            currentPath = path;
+            const resp = await fetch(`/api/archive/files?path=${encodeURIComponent(path)}`);
+            const data = await resp.json();
+
+            // Update breadcrumb
+            const parts = path.split('/').filter(Boolean);
+            document.getElementById('breadcrumb').innerHTML = [
+                '<span class="cursor-pointer hover:text-primary" onclick="browseTo(\'\')">Archive</span>',
+                ...parts.map((p, i) => {
+                    const subpath = parts.slice(0, i + 1).join('/');
+                    return `<span class="material-symbols-outlined text-xs">chevron_right</span>
+                            <span class="cursor-pointer hover:text-primary" onclick="browseTo('${subpath}')">${p}</span>`;
+                })
+            ].join('');
+
+            // Show files in table
+            const table = document.getElementById('log-table');
+            if (data.files.length === 0) {
+                table.innerHTML = '<tr><td colspan="4" class="px-6 py-8 text-center text-on-surface-variant">No files in this folder</td></tr>';
+            } else {
+                table.innerHTML = data.files.map(f => `
+                    <tr class="hover:bg-slate-50/50 transition-colors">
+                        <td class="px-6 py-4">
+                            <div class="flex items-center gap-3">
+                                <span class="material-symbols-outlined text-slate-400">description</span>
+                                <span class="font-medium text-slate-900 text-sm">${f.name}</span>
+                            </div>
+                        </td>
+                        <td class="px-6 py-4 text-sm text-slate-600">${f.path}</td>
+                        <td class="px-6 py-4 text-sm text-slate-600">—</td>
+                        <td class="px-6 py-4 text-sm text-slate-600">${(f.size / 1024).toFixed(0)} KB</td>
+                    </tr>
+                `).join('');
+            }
+            document.getElementById('log-summary').textContent = `${data.files.length} files in ${path || 'root'}`;
+        }
+
+        async function loadLogs() {
+            const resp = await fetch('/api/archive/logs');
+            const data = await resp.json();
+
+            const entries = data.logs.flatMap(log => log.entries || []);
+            document.getElementById('log-summary').textContent = `${entries.length} documents filed across ${data.logs.length} sessions`;
+
+            const table = document.getElementById('log-table');
+            if (entries.length === 0) {
+                table.innerHTML = '<tr><td colspan="4" class="px-6 py-8 text-center text-on-surface-variant">No filing history yet. Process a scan to see results here.</td></tr>';
+                return;
+            }
+
+            table.innerHTML = entries.slice(0, 50).map(e => `
+                <tr class="hover:bg-slate-50/50 transition-colors group">
+                    <td class="px-6 py-4">
+                        <div class="flex items-center gap-3">
+                            <span class="material-symbols-outlined text-slate-400">description</span>
+                            <span class="font-medium text-slate-900 text-sm">${e.filename}</span>
+                        </div>
+                    </td>
+                    <td class="px-6 py-4 text-sm text-slate-600">${e.target_directory.split('/').slice(-2).join('/')}</td>
+                    <td class="px-6 py-4">${ruleBadge(e.rule_matched)}</td>
+                    <td class="px-6 py-4">${confidenceBadge(e.confidence)}</td>
+                </tr>
+            `).join('');
+        }
+
+        loadTree();
+        loadLogs();
+    </script>
+</body>
+</html>

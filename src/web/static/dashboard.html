@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8"/>
+    <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+    <title>DocFlow — Dashboard</title>
+    <script src="https://cdn.tailwindcss.com?plugins=forms"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@200..800&family=Inter:wght@100..900&display=swap" rel="stylesheet"/>
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+    <script>
+        tailwind.config = {
+            theme: { extend: {
+                colors: {
+                    "surface": "#f7f9fb", "on-surface": "#191c1e", "on-surface-variant": "#45474c",
+                    "surface-container": "#eceef0", "surface-container-low": "#f2f4f6",
+                    "surface-container-lowest": "#ffffff", "surface-variant": "#e0e3e5",
+                    "primary": "#091426", "primary-container": "#1e293b",
+                    "on-primary": "#ffffff", "on-primary-container": "#8590a6",
+                    "secondary": "#006c49", "secondary-container": "#6cf8bb",
+                    "on-secondary-container": "#00714d",
+                    "tertiary-fixed": "#ffddb8", "tertiary-fixed-dim": "#ffb95f",
+                    "on-tertiary-container": "#c88000", "on-tertiary-fixed-variant": "#653e00",
+                    "outline": "#75777d", "outline-variant": "#c5c6cd",
+                    "primary-fixed": "#d8e3fb",
+                },
+                fontFamily: { headline: ["Manrope"], body: ["Inter"] },
+            }}
+        }
+    </script>
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .font-headline { font-family: 'Manrope', sans-serif; }
+        .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
+    </style>
+</head>
+<body class="bg-surface text-on-surface">
+    <div id="nav"></div>
+    <div id="header"></div>
+
+    <main class="ml-64 p-8 mb-8">
+        <!-- Drop Zone -->
+        <section class="mb-10">
+            <div id="drop-zone" class="border-2 border-dashed border-outline-variant bg-surface-container-lowest rounded-xl p-12 text-center group cursor-pointer hover:border-primary/30 hover:bg-white transition-all">
+                <input type="file" id="upload-input" accept=".pdf" multiple class="hidden" />
+                <div class="mx-auto w-16 h-16 bg-surface-container-low rounded-full flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+                    <span class="material-symbols-outlined text-primary text-3xl">upload_file</span>
+                </div>
+                <h3 class="text-xl font-headline font-extrabold text-primary mb-1">Upload Scanned Documents</h3>
+                <p class="text-on-surface-variant text-sm">Drag and drop PDF files here, or click to browse</p>
+                <div class="mt-4 flex justify-center gap-4">
+                    <span class="text-[10px] font-bold tracking-widest uppercase bg-surface-container text-outline px-2 py-1 rounded">PDF Only</span>
+                    <span class="text-[10px] font-bold tracking-widest uppercase bg-surface-container text-outline px-2 py-1 rounded">Batch Enabled</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- Processing Section (hidden until upload) -->
+        <section id="processing-section" class="mb-10 hidden">
+            <div class="flex items-end justify-between mb-4">
+                <div>
+                    <span class="text-[10px] font-bold tracking-widest uppercase text-on-tertiary-fixed-variant bg-tertiary-fixed px-2 py-0.5 rounded mb-2 inline-block">Processing Live</span>
+                    <h2 class="text-2xl font-headline font-black text-primary" id="batch-name">Processing...</h2>
+                </div>
+                <div class="text-right">
+                    <p class="text-sm font-bold text-primary" id="progress-pct">0%</p>
+                    <p class="text-xs text-on-surface-variant" id="progress-step">Starting...</p>
+                </div>
+            </div>
+            <div class="bg-surface-container-low rounded-xl p-6 shadow-sm border border-white/50">
+                <div class="w-full bg-surface-variant rounded-full h-2 mb-8 overflow-hidden">
+                    <div id="progress-bar" class="bg-gradient-to-r from-primary to-primary-container h-full rounded-full transition-all duration-500" style="width: 0%"></div>
+                </div>
+                <div class="grid grid-cols-3 gap-6">
+                    <div class="flex items-center gap-3" id="step-ocr">
+                        <div class="w-8 h-8 rounded-full bg-surface-variant flex items-center justify-center">
+                            <span class="material-symbols-outlined text-outline text-sm">text_fields</span>
+                        </div>
+                        <div>
+                            <p class="text-[11px] font-bold tracking-widest uppercase text-outline">OCR Engine</p>
+                            <p class="text-sm font-bold text-outline">Waiting</p>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-3" id="step-cluster">
+                        <div class="w-8 h-8 rounded-full bg-surface-variant flex items-center justify-center">
+                            <span class="material-symbols-outlined text-outline text-sm">auto_awesome</span>
+                        </div>
+                        <div>
+                            <p class="text-[11px] font-bold tracking-widest uppercase text-outline">Clustering</p>
+                            <p class="text-sm font-bold text-outline">Waiting</p>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-3" id="step-classify">
+                        <div class="w-8 h-8 rounded-full bg-surface-variant flex items-center justify-center">
+                            <span class="material-symbols-outlined text-outline text-sm">category</span>
+                        </div>
+                        <div>
+                            <p class="text-[11px] font-bold tracking-widest uppercase text-outline">Classification</p>
+                            <p class="text-sm font-bold text-outline">Waiting</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Documents List -->
+        <section id="documents-section" class="hidden">
+            <div class="flex items-center justify-between mb-6">
+                <h3 class="text-lg font-headline font-bold text-primary" id="doc-count">Identified Documents</h3>
+            </div>
+            <div class="space-y-3" id="documents-list"></div>
+        </section>
+
+        <!-- Recent Activity (shown when idle) -->
+        <section id="recent-section">
+            <h3 class="text-lg font-headline font-bold text-primary mb-6">Recent Activity</h3>
+            <div id="recent-logs" class="space-y-3">
+                <p class="text-on-surface-variant text-sm">Loading recent activity...</p>
+            </div>
+        </section>
+    </main>
+
+    <div id="footer"></div>
+
+    <script src="/static/shared.js"></script>
+    <script>
+        initPage('Dashboard');
+
+        // Drop zone handling
+        const dropZone = document.getElementById('drop-zone');
+        const fileInput = document.getElementById('upload-input');
+
+        dropZone.addEventListener('click', () => fileInput.click());
+        dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('border-primary', 'bg-white'); });
+        dropZone.addEventListener('dragleave', () => { dropZone.classList.remove('border-primary', 'bg-white'); });
+        dropZone.addEventListener('drop', e => {
+            e.preventDefault();
+            dropZone.classList.remove('border-primary', 'bg-white');
+            handleFiles(e.dataTransfer.files);
+        });
+        fileInput.addEventListener('change', e => handleFiles(e.target.files));
+
+        async function handleFiles(files) {
+            for (const file of files) {
+                if (!file.name.toLowerCase().endsWith('.pdf')) continue;
+
+                // Upload
+                const formData = new FormData();
+                formData.append('file', file);
+                const uploadResp = await fetch('/api/upload', { method: 'POST', body: formData });
+                const upload = await uploadResp.json();
+
+                // Start processing
+                const procResp = await fetch('/api/process', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ path: upload.path }),
+                });
+                const proc = await procResp.json();
+
+                // Show processing UI
+                document.getElementById('processing-section').classList.remove('hidden');
+                document.getElementById('recent-section').classList.add('hidden');
+                document.getElementById('batch-name').textContent = file.name;
+
+                // Poll for updates
+                pollStatus(proc.job_id);
+            }
+        }
+
+        async function pollStatus(jobId) {
+            const poll = async () => {
+                const resp = await fetch(`/api/process/status/${jobId}`);
+                const state = await resp.json();
+                updateProcessingUI(state);
+                if (state.status !== 'completed' && state.status !== 'error') {
+                    setTimeout(poll, 500);
+                }
+            };
+            poll();
+        }
+
+        function updateProcessingUI(state) {
+            document.getElementById('progress-pct').textContent = `${state.progress}%`;
+            document.getElementById('progress-step').textContent = state.step;
+            document.getElementById('progress-bar').style.width = `${state.progress}%`;
+
+            // Update step indicators
+            const progress = state.progress;
+            updateStep('step-ocr', progress >= 40 ? 'done' : progress >= 15 ? 'active' : 'waiting');
+            updateStep('step-cluster', progress >= 60 ? 'done' : progress >= 40 ? 'active' : 'waiting');
+            updateStep('step-classify', progress >= 80 ? 'done' : progress >= 60 ? 'active' : 'waiting');
+
+            if (state.status === 'completed') {
+                showDocuments(state.documents, state.auto_filed, state.review_queue);
+            }
+        }
+
+        function updateStep(id, status) {
+            const el = document.getElementById(id);
+            const icon = el.querySelector('.w-8');
+            const label = el.querySelectorAll('p')[1];
+
+            if (status === 'done') {
+                icon.className = 'w-8 h-8 rounded-full bg-secondary-container flex items-center justify-center';
+                icon.innerHTML = '<span class="material-symbols-outlined text-on-secondary-container text-sm" style="font-variation-settings: \'FILL\' 1;">check_circle</span>';
+                label.textContent = 'Complete';
+                label.className = 'text-sm font-bold text-on-surface';
+            } else if (status === 'active') {
+                icon.className = 'w-8 h-8 rounded-full bg-primary-container/10 flex items-center justify-center relative';
+                icon.innerHTML = '<div class="absolute inset-0 rounded-full border-2 border-primary border-t-transparent animate-spin opacity-20"></div>' + icon.querySelector('.material-symbols-outlined').outerHTML;
+                label.textContent = 'Processing...';
+                label.className = 'text-sm font-bold text-on-surface';
+            }
+        }
+
+        function showDocuments(documents, autoFiled, reviewCount) {
+            document.getElementById('documents-section').classList.remove('hidden');
+            document.getElementById('doc-count').textContent = `Identified Documents (${documents.length})`;
+
+            const list = document.getElementById('documents-list');
+            list.innerHTML = documents.map(doc => {
+                const isReview = !doc.auto_filed;
+                const reviewClass = isReview ? 'ring-1 ring-tertiary-fixed border-l-4 border-tertiary-fixed-dim' : '';
+                const icon = isReview
+                    ? '<div class="w-12 h-12 bg-tertiary-fixed rounded-lg flex items-center justify-center mr-4"><span class="material-symbols-outlined text-on-tertiary-container">help_center</span></div>'
+                    : '<div class="w-12 h-12 bg-surface-container rounded-lg flex items-center justify-center mr-4"><span class="material-symbols-outlined text-slate-400">description</span></div>';
+                const action = isReview
+                    ? `<a href="/review" class="bg-primary-container text-on-primary-container px-3 py-1 rounded-lg text-xs font-bold hover:bg-primary hover:text-on-primary transition-colors">Review</a>`
+                    : '<span class="material-symbols-outlined text-outline">more_vert</span>';
+
+                return `
+                <div class="flex items-center bg-surface-container-lowest p-4 rounded-xl shadow-sm ${reviewClass} hover:translate-x-1 transition-transform cursor-pointer group">
+                    ${icon}
+                    <div class="flex-1">
+                        <p class="text-sm font-bold text-primary">${doc.filename}</p>
+                        <p class="text-xs text-on-surface-variant flex items-center gap-1">
+                            <span class="material-symbols-outlined text-[14px]">folder_open</span>
+                            ${doc.directory.split('/').slice(-2).join(' / ')}
+                        </p>
+                        ${doc.reasoning ? `<p class="text-xs text-on-surface-variant mt-1 italic">${doc.reasoning}</p>` : ''}
+                    </div>
+                    <div class="flex items-center gap-6">
+                        <div class="text-right">
+                            <p class="text-[10px] font-bold tracking-widest uppercase text-outline mb-1">Confidence</p>
+                            ${confidenceBadge(doc.confidence)}
+                        </div>
+                        <div class="text-right">
+                            ${ruleBadge(doc.rule)}
+                        </div>
+                        ${action}
+                    </div>
+                </div>`;
+            }).join('');
+        }
+
+        // Load recent filing logs
+        async function loadRecentActivity() {
+            try {
+                const resp = await fetch('/api/archive/logs');
+                const data = await resp.json();
+                const container = document.getElementById('recent-logs');
+
+                if (!data.logs || data.logs.length === 0) {
+                    container.innerHTML = '<p class="text-on-surface-variant text-sm">No recent activity. Upload a scan to get started.</p>';
+                    return;
+                }
+
+                const entries = data.logs.flatMap(log => log.entries || []).slice(0, 10);
+                container.innerHTML = entries.map(e => `
+                    <div class="flex items-center bg-surface-container-lowest p-3 rounded-lg shadow-sm">
+                        <span class="material-symbols-outlined text-slate-400 mr-3">description</span>
+                        <div class="flex-1">
+                            <p class="text-sm font-medium">${e.filename}</p>
+                            <p class="text-xs text-on-surface-variant">${e.target_directory.split('/').slice(-2).join('/')}</p>
+                        </div>
+                        <div>${confidenceBadge(e.confidence)}</div>
+                    </div>
+                `).join('');
+            } catch (e) {
+                document.getElementById('recent-logs').innerHTML = '<p class="text-on-surface-variant text-sm">Could not load recent activity.</p>';
+            }
+        }
+
+        loadRecentActivity();
+    </script>
+</body>
+</html>

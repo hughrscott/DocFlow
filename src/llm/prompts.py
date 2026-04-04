@@ -7,45 +7,70 @@ def build_clustering_prompt(page_summaries: list[dict]) -> str:
 
     Args:
         page_summaries: List of dicts with keys:
-            page_number, first_lines, institution_hint, period_hint, doc_type_hint
+            page_number, first_lines, institution_hint, account_hint,
+            period_hint, doc_type_hint, page_of_n
     """
-    pages_text = "\n".join(
-        f"  Page {p['page_number']}: "
-        f"institution={p.get('institution_hint', 'unknown')} | "
-        f"doc_type={p.get('doc_type_hint', 'unknown')} | "
-        f"period={p.get('period_hint', 'unknown')}\n"
-        f"    Text preview: {p.get('first_lines', '(blank)')}"
-        for p in page_summaries
-    )
+    pages_text = ""
+    for p in page_summaries:
+        signals = []
+        if p.get('institution_hint'):
+            signals.append(f"institution={p['institution_hint']}")
+        if p.get('account_hint'):
+            signals.append(f"account={p['account_hint']}")
+        if p.get('doc_type_hint'):
+            signals.append(f"doc_type={p['doc_type_hint']}")
+        if p.get('period_hint'):
+            signals.append(f"period={p['period_hint']}")
+        if p.get('page_of_n'):
+            signals.append(f"pagination={p['page_of_n']}")
 
-    return f"""Analyze these scanned pages from a multi-document PDF. This is a batch of
-unrelated mail that was scanned together. Each page was OCR'd separately.
-Your job is to identify where one document ends and the next begins.
+        signal_str = " | ".join(signals) if signals else "no signals detected"
+        text = p.get('first_lines', '(blank)')
 
-PAGES:
+        pages_text += f"""
+--- PAGE {p['page_number']} ---
+Signals: {signal_str}
+Text:
+{text}
+"""
+
+    return f"""You are a document boundary detection system. You are analyzing a scanned PDF
+that contains MULTIPLE unrelated pieces of mail that were batch-scanned together.
+
+Your task: determine where one document ends and the next begins.
+
+Each page below has been OCR'd. You also see extracted "signals" (institution name,
+account number, document type, date period, pagination) that were detected by keyword
+matching — these are helpful hints but can be wrong or missing.
+
 {pages_text}
 
-CRITICAL RULES:
-- Each page must belong to exactly one document group.
-- This is a batch of SEPARATE mail items scanned together. Expect MANY distinct documents
-  (typically 1-3 pages each). A group of 5+ pages should be rare — only for long statements.
-- A blank page (empty text) should be assigned to the document it immediately follows.
-- Look for clues: same letterhead, same institution, "Page X of Y", continuation of content.
-- Different institutions or different document types almost always mean different documents.
-- Two pages from the same institution CAN be different documents (e.g., two separate statements).
-- W-2 tax forms often come as multiple copies (Copy A, B, C, D) — these are ONE document.
-- A tax bill and a payment stub are ONE document even if they look different.
-- When in doubt, SPLIT rather than merge. It's better to over-split than to merge unrelated docs.
+RULES FOR GROUPING:
+1. Each page must belong to exactly one document. No page left unassigned.
+2. This is batch-scanned mail — expect MANY separate documents (typically 1-3 pages each).
+3. A group of 5+ pages is unusual — only for long statements with explicit "Page X of Y".
+4. "Page 1 of N" ALWAYS starts a new document. "Page 2 of 3" continues the current one.
+5. Blank pages (no/minimal text) belong to the document immediately before them.
+6. Same letterhead/header on consecutive pages = same document (continuation).
+7. Different institution or completely different content = different document.
+8. Two documents from the SAME institution CAN appear in the same scan (e.g., two
+   separate PNC statements for different accounts). Look at account numbers and dates.
+9. W-2 tax forms come as multiple copies (Copy A, B, C, D) — group ALL copies together.
+10. A tax bill with an attached payment stub or comparison table = one document.
+11. A letter followed by a reply envelope page = one document.
+12. Court filings: an affidavit + the business record it's attached to = one document.
+13. When genuinely uncertain, prefer SPLITTING over merging.
 
 Respond with JSON:
 {{
   "documents": [
     {{
       "pages": [1, 2],
-      "institution": "best guess institution name or null",
-      "doc_type": "best guess type (statement, invoice, letter, form, legal, eob, receipt, notice, w2, tax_bill, etc.) or null",
-      "period": "time period if found (e.g. March2026) or null",
-      "reasoning": "brief explanation of why these pages belong together"
+      "institution": "institution name or null",
+      "doc_type": "statement | invoice | letter | form | legal | eob | receipt | notice | w2 | tax_bill | insurance | mortgage | payroll | other",
+      "period": "MonthYYYY or YYYY or null",
+      "confidence": 0.9,
+      "reasoning": "one sentence explaining why these pages belong together"
     }}
   ]
 }}"""

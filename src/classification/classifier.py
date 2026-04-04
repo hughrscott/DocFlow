@@ -142,8 +142,13 @@ def _normalise_period(period: str | None) -> str:
 
 def _generate_filename(template: str, candidate: DocumentCandidate) -> str:
     """Fill a filename template with candidate fields."""
-    period = _normalise_period(candidate.period)
-    year = _extract_year(candidate.period)
+    # Clean up LLM artifacts: "null", "None", "unknown" → treat as empty
+    raw_period = candidate.period
+    if raw_period and raw_period.lower() in ("null", "none", "unknown"):
+        raw_period = None
+
+    period = _normalise_period(raw_period)
+    year = _extract_year(raw_period)
 
     # Doc type — capitalise for display
     doc_type = (candidate.doc_type or "").replace("_", " ").title().replace(" ", "")

@@ -36,7 +36,7 @@ def cli(ctx, input_pdf: Path | None, config_path: Path) -> None:
 @click.option("--host", default="127.0.0.1", help="Server host.")
 @click.option("--port", default=8765, type=int, help="Server port.")
 def review(ctx, host: str, port: int) -> None:
-    """Launch the review queue web UI."""
+    """Launch the review queue web UI (legacy)."""
     import yaml
     import uvicorn
     from src.review.server import app, configure
@@ -50,6 +50,27 @@ def review(ctx, host: str, port: int) -> None:
     configure(config)
     click.echo(f"Review queue: http://{host}:{port}")
     uvicorn.run(app, host=host, port=port, log_level="warning")
+
+
+@cli.command()
+@click.pass_context
+@click.option("--host", default="127.0.0.1", help="Server host.")
+@click.option("--port", default=8765, type=int, help="Server port.")
+def ui(ctx, host: str, port: int) -> None:
+    """Launch the full DocFlow web UI."""
+    import yaml
+    import uvicorn
+    from src.web.app import app, configure
+
+    config_path = ctx.obj["config_path"]
+    if not config_path.exists():
+        config_path = Path(__file__).parent / "config" / "default_config.yaml"
+    with open(config_path) as f:
+        config = yaml.safe_load(f)
+
+    configure(config)
+    click.echo(f"\n  DocFlow UI: http://{host}:{port}\n")
+    uvicorn.run(app, host=host, port=port, log_level="info")
 
 
 @cli.command("learn")

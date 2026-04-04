@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8"/>
+    <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+    <title>DocFlow — Review Queue</title>
+    <script src="https://cdn.tailwindcss.com?plugins=forms"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@200..800&family=Inter:wght@100..900&display=swap" rel="stylesheet"/>
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+    <script>
+        tailwind.config = { theme: { extend: {
+            colors: {
+                "surface": "#f7f9fb", "on-surface": "#191c1e", "on-surface-variant": "#45474c",
+                "surface-container": "#eceef0", "surface-container-low": "#f2f4f6",
+                "surface-container-lowest": "#ffffff", "surface-variant": "#e0e3e5",
+                "primary": "#091426", "primary-container": "#1e293b",
+                "on-primary": "#ffffff", "on-primary-container": "#8590a6",
+                "secondary": "#006c49", "secondary-container": "#6cf8bb",
+                "on-secondary-container": "#00714d",
+                "tertiary-fixed": "#ffddb8", "tertiary-fixed-dim": "#ffb95f",
+                "on-tertiary-container": "#c88000", "on-tertiary-fixed": "#2a1700",
+                "outline": "#75777d", "outline-variant": "#c5c6cd",
+                "primary-fixed": "#d8e3fb", "error": "#ba1a1a",
+            },
+            fontFamily: { headline: ["Manrope"], body: ["Inter"] },
+        }}}
+    </script>
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .font-headline { font-family: 'Manrope', sans-serif; }
+        .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
+    </style>
+</head>
+<body class="bg-surface text-on-surface flex overflow-hidden h-screen">
+    <div id="nav"></div>
+
+    <main class="ml-64 flex-1 flex flex-col h-screen relative bg-surface overflow-hidden">
+        <div id="header"></div>
+
+        <!-- Empty state -->
+        <div id="empty-state" class="flex-1 flex items-center justify-center hidden">
+            <div class="text-center">
+                <div class="w-20 h-20 bg-secondary-container/30 rounded-full flex items-center justify-center mx-auto mb-6">
+                    <span class="material-symbols-outlined text-secondary text-4xl">check_circle</span>
+                </div>
+                <h2 class="text-2xl font-headline font-bold text-primary mb-2">All Clear!</h2>
+                <p class="text-on-surface-variant">No items pending review. Nice work.</p>
+                <a href="/" class="inline-block mt-6 bg-primary text-on-primary px-6 py-3 rounded-lg font-bold text-sm hover:opacity-90 transition-all">Back to Dashboard</a>
+            </div>
+        </div>
+
+        <!-- Split-pane workspace -->
+        <section id="review-workspace" class="flex-1 flex gap-0 h-full overflow-hidden hidden">
+            <!-- Left: Document preview -->
+            <div class="w-3/5 bg-surface-container-low p-8 flex items-center justify-center relative">
+                <div id="doc-preview" class="relative w-full h-full max-w-2xl bg-white shadow-2xl rounded-lg overflow-hidden">
+                    <div class="absolute inset-0 bg-white p-12 flex flex-col overflow-y-auto">
+                        <pre id="preview-text" class="text-sm text-slate-700 whitespace-pre-wrap font-mono leading-relaxed"></pre>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right: Metadata & actions -->
+            <div class="w-2/5 flex flex-col bg-surface border-l border-slate-200/20 shadow-[-10px_0_30px_rgba(0,0,0,0.02)] z-10">
+                <!-- Confidence header -->
+                <div id="confidence-header" class="bg-tertiary-fixed text-on-tertiary-fixed px-6 py-4 flex items-center gap-3">
+                    <span class="material-symbols-outlined text-on-tertiary-container">warning</span>
+                    <span class="text-sm font-bold font-headline uppercase tracking-tight">Low Confidence — Human Review Required</span>
+                </div>
+
+                <div class="flex-1 overflow-y-auto p-8 space-y-6">
+                    <!-- LLM Reasoning -->
+                    <div class="bg-surface-container-low rounded-xl p-5 border border-outline-variant/10">
+                        <div class="flex items-center gap-2 mb-3">
+                            <span class="material-symbols-outlined text-primary-container text-sm">psychology</span>
+                            <span class="text-xs font-bold uppercase tracking-wider text-on-surface-variant">Archivist Reasoning</span>
+                        </div>
+                        <p id="reasoning-text" class="text-sm text-on-surface leading-relaxed italic"></p>
+                    </div>
+
+                    <!-- Form fields -->
+                    <div class="space-y-5">
+                        <div class="space-y-2">
+                            <label class="text-[10px] font-bold text-outline uppercase tracking-widest px-1">Suggested Filename</label>
+                            <input id="edit-filename" class="w-full bg-surface-container-low border-none rounded-lg py-3 px-4 text-sm font-medium text-primary focus:ring-2 focus:ring-primary/5" type="text" />
+                        </div>
+                        <div class="space-y-2">
+                            <label class="text-[10px] font-bold text-outline uppercase tracking-widest px-1">Filing Location</label>
+                            <input id="edit-directory" class="w-full bg-surface-container-low border-none rounded-lg py-3 px-4 text-sm font-medium text-primary focus:ring-2 focus:ring-primary/5" type="text" />
+                        </div>
+                        <div class="grid grid-cols-3 gap-3">
+                            <div class="space-y-2">
+                                <label class="text-[10px] font-bold text-outline uppercase tracking-widest px-1">Type</label>
+                                <div id="doc-type-badge" class="bg-surface-container-low px-3 py-2 rounded-lg text-xs font-bold text-primary text-center"></div>
+                            </div>
+                            <div class="space-y-2">
+                                <label class="text-[10px] font-bold text-outline uppercase tracking-widest px-1">Period</label>
+                                <div id="doc-period" class="bg-surface-container-low px-3 py-2 rounded-lg text-xs font-bold text-primary text-center"></div>
+                            </div>
+                            <div class="space-y-2">
+                                <label class="text-[10px] font-bold text-outline uppercase tracking-widest px-1">Pages</label>
+                                <div id="doc-pages" class="bg-surface-container-low px-3 py-2 rounded-lg text-xs font-bold text-primary text-center"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Actions -->
+                <div class="p-6 bg-surface-container-lowest border-t border-slate-100 flex flex-col gap-3">
+                    <button id="btn-correct" class="w-full py-4 rounded-xl font-bold bg-gradient-to-r from-primary to-primary-container text-on-primary flex items-center justify-center gap-2 hover:shadow-xl hover:-translate-y-0.5 transition-all active:scale-95">
+                        <span class="material-symbols-outlined">verified</span>
+                        Correct & File
+                    </button>
+                    <div class="grid grid-cols-2 gap-3">
+                        <button id="btn-approve" class="py-3.5 rounded-xl font-bold bg-surface-container-high text-on-surface hover:bg-surface-variant transition-colors active:scale-95">
+                            Approve As-Is
+                        </button>
+                        <button id="btn-skip" class="py-3.5 rounded-xl font-bold text-on-surface-variant hover:bg-slate-50 transition-colors active:scale-95">
+                            Skip
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Pending queue strip -->
+        <section id="queue-strip" class="absolute bottom-12 left-8 right-[42%] z-30 hidden">
+            <div class="bg-white/70 backdrop-blur-xl rounded-2xl shadow-2xl p-4 flex items-center gap-4 border border-white/40">
+                <div class="flex items-center gap-2 px-3 border-r border-slate-200">
+                    <span class="text-[10px] font-black uppercase text-primary/40">Pending</span>
+                </div>
+                <div id="queue-items" class="flex-1 flex gap-3 overflow-x-auto py-1"></div>
+            </div>
+        </section>
+
+        <div id="footer"></div>
+    </main>
+
+    <script src="/static/shared.js"></script>
+    <script>
+        initPage('Review Queue');
+
+        let queueItems = [];
+        let currentIndex = 0;
+
+        async function loadQueue() {
+            const resp = await fetch('/api/queue');
+            const data = await resp.json();
+            queueItems = data.items;
+
+            if (queueItems.length === 0) {
+                document.getElementById('empty-state').classList.remove('hidden');
+                document.getElementById('review-workspace').classList.add('hidden');
+                document.getElementById('queue-strip').classList.add('hidden');
+                return;
+            }
+
+            document.getElementById('empty-state').classList.add('hidden');
+            document.getElementById('review-workspace').classList.remove('hidden');
+            document.getElementById('queue-strip').classList.remove('hidden');
+            renderQueueStrip();
+            selectItem(0);
+        }
+
+        function renderQueueStrip() {
+            const strip = document.getElementById('queue-items');
+            strip.innerHTML = queueItems.map((item, i) => {
+                const isActive = i === currentIndex;
+                const cls = isActive
+                    ? 'flex-shrink-0 w-44 bg-primary rounded-xl p-3 flex gap-3 shadow-lg ring-4 ring-primary/10'
+                    : 'flex-shrink-0 w-44 bg-white/50 rounded-xl p-3 flex gap-3 hover:bg-white/80 transition-colors cursor-pointer';
+                const textCls = isActive ? 'text-white' : 'text-primary';
+                const subCls = isActive ? 'text-white/60' : 'text-outline';
+
+                return `<div class="${cls}" onclick="selectItem(${i})">
+                    <div class="flex flex-col min-w-0">
+                        <span class="text-[10px] font-bold ${subCls} truncate uppercase">${item.institution || 'Unknown'}</span>
+                        <span class="text-xs font-bold ${textCls} truncate">${item.doc_type || 'Document'}</span>
+                        <div class="mt-1 h-1 w-full bg-${isActive ? 'white/20' : 'slate-100'} rounded-full overflow-hidden">
+                            <div class="bg-${isActive ? 'tertiary-fixed-dim' : 'secondary'} h-full" style="width:${Math.round(item.confidence * 100)}%"></div>
+                        </div>
+                    </div>
+                </div>`;
+            }).join('');
+        }
+
+        function selectItem(index) {
+            currentIndex = index;
+            const item = queueItems[index];
+            if (!item) return;
+
+            renderQueueStrip();
+
+            // Fill preview
+            document.getElementById('preview-text').textContent = item.raw_text_preview || '(No text available)';
+
+            // Fill metadata
+            document.getElementById('reasoning-text').textContent = item.notes || 'No reasoning available.';
+            document.getElementById('edit-filename').value = item.suggested_filename || '';
+            document.getElementById('edit-directory').value = item.suggested_directory || '';
+            document.getElementById('doc-type-badge').textContent = item.doc_type || 'Unknown';
+            document.getElementById('doc-period').textContent = item.period || '—';
+            document.getElementById('doc-pages').textContent = (item.pages || []).join(', ');
+        }
+
+        async function doAction(action) {
+            const item = queueItems[currentIndex];
+            if (!item) return;
+
+            let url, body;
+            if (action === 'approve') {
+                url = `/api/queue/approve/${item.id}`;
+            } else if (action === 'skip') {
+                url = `/api/queue/skip/${item.id}`;
+            } else if (action === 'correct') {
+                url = `/api/queue/correct/${item.id}`;
+                body = JSON.stringify({
+                    filename: document.getElementById('edit-filename').value,
+                    directory: document.getElementById('edit-directory').value,
+                });
+            }
+
+            await fetch(url, {
+                method: 'POST',
+                headers: body ? { 'Content-Type': 'application/json' } : {},
+                body,
+            });
+
+            // Reload queue
+            await loadQueue();
+        }
+
+        document.getElementById('btn-approve').addEventListener('click', () => doAction('approve'));
+        document.getElementById('btn-skip').addEventListener('click', () => doAction('skip'));
+        document.getElementById('btn-correct').addEventListener('click', () => doAction('correct'));
+
+        loadQueue();
+    </script>
+</body>
+</html>
