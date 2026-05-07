@@ -7,40 +7,21 @@
     <script src="https://cdn.tailwindcss.com?plugins=forms"></script>
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@200..800&family=Inter:wght@100..900&display=swap" rel="stylesheet"/>
     <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
-    <script>
-        tailwind.config = {
-            theme: { extend: {
-                colors: {
-                    "surface": "#f7f9fb", "on-surface": "#191c1e", "on-surface-variant": "#45474c",
-                    "surface-container": "#eceef0", "surface-container-low": "#f2f4f6",
-                    "surface-container-lowest": "#ffffff", "surface-variant": "#e0e3e5",
-                    "primary": "#091426", "primary-container": "#1e293b",
-                    "on-primary": "#ffffff", "on-primary-container": "#8590a6",
-                    "secondary": "#006c49", "secondary-container": "#6cf8bb",
-                    "on-secondary-container": "#00714d",
-                    "tertiary-fixed": "#ffddb8", "tertiary-fixed-dim": "#ffb95f",
-                    "on-tertiary-container": "#c88000", "on-tertiary-fixed-variant": "#653e00",
-                    "outline": "#75777d", "outline-variant": "#c5c6cd",
-                    "primary-fixed": "#d8e3fb",
-                },
-                fontFamily: { headline: ["Manrope"], body: ["Inter"] },
-            }}
-        }
-    </script>
+    <script src="/static/config.js"></script>
     <style>
         body { font-family: 'Inter', sans-serif; }
         .font-headline { font-family: 'Manrope', sans-serif; }
         .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
     </style>
 </head>
-<body class="bg-surface text-on-surface">
+<body class="bg-surface text-on-surface dark:bg-slate-900 dark:text-slate-100">
     <div id="nav"></div>
     <div id="header"></div>
 
-    <main class="ml-64 p-8 mb-8">
+    <main class="ml-16 lg:ml-64 p-8 mb-8 transition-all duration-200">
         <!-- Drop Zone -->
         <section class="mb-10">
-            <div id="drop-zone" class="border-2 border-dashed border-outline-variant bg-surface-container-lowest rounded-xl p-12 text-center group cursor-pointer hover:border-primary/30 hover:bg-white transition-all">
+            <div id="drop-zone" role="button" aria-label="Upload scanned documents" class="border-2 border-dashed border-outline-variant bg-surface-container-lowest rounded-xl p-12 text-center group cursor-pointer hover:border-primary/30 hover:bg-white transition-all">
                 <input type="file" id="upload-input" accept=".pdf" multiple class="hidden" />
                 <div class="mx-auto w-16 h-16 bg-surface-container-low rounded-full flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
                     <span class="material-symbols-outlined text-primary text-3xl">upload_file</span>
@@ -63,40 +44,61 @@
                 </div>
                 <div class="text-right">
                     <p class="text-sm font-bold text-primary" id="progress-pct">0%</p>
-                    <p class="text-xs text-on-surface-variant" id="progress-step">Starting...</p>
+                    <p class="text-xs text-on-surface-variant" id="progress-step" role="status" aria-live="polite">Starting...</p>
                 </div>
             </div>
             <div class="bg-surface-container-low rounded-xl p-6 shadow-sm border border-white/50">
                 <div class="w-full bg-surface-variant rounded-full h-2 mb-8 overflow-hidden">
-                    <div id="progress-bar" class="bg-gradient-to-r from-primary to-primary-container h-full rounded-full transition-all duration-500" style="width: 0%"></div>
+                    <div id="progress-bar" role="progressbar" aria-valuenow="0" aria-valuemax="100" aria-label="Processing progress" class="bg-gradient-to-r from-primary to-primary-container h-full rounded-full transition-all duration-500" style="width: 0%"></div>
                 </div>
-                <div class="grid grid-cols-3 gap-6">
-                    <div class="flex items-center gap-3" id="step-ocr">
+                <div class="grid grid-cols-4 lg:grid-cols-8 gap-3">
+                    <div class="flex flex-col items-center gap-1.5 text-center" id="step-load">
+                        <div class="w-8 h-8 rounded-full bg-surface-variant flex items-center justify-center">
+                            <span class="material-symbols-outlined text-outline text-sm">upload_file</span>
+                        </div>
+                        <p class="text-[9px] font-bold tracking-wider uppercase text-outline leading-tight">Load</p>
+                    </div>
+                    <div class="flex flex-col items-center gap-1.5 text-center" id="step-ocr">
                         <div class="w-8 h-8 rounded-full bg-surface-variant flex items-center justify-center">
                             <span class="material-symbols-outlined text-outline text-sm">text_fields</span>
                         </div>
-                        <div>
-                            <p class="text-[11px] font-bold tracking-widest uppercase text-outline">OCR Engine</p>
-                            <p class="text-sm font-bold text-outline">Waiting</p>
-                        </div>
+                        <p class="text-[9px] font-bold tracking-wider uppercase text-outline leading-tight">OCR</p>
                     </div>
-                    <div class="flex items-center gap-3" id="step-cluster">
+                    <div class="flex flex-col items-center gap-1.5 text-center" id="step-cluster">
                         <div class="w-8 h-8 rounded-full bg-surface-variant flex items-center justify-center">
                             <span class="material-symbols-outlined text-outline text-sm">auto_awesome</span>
                         </div>
-                        <div>
-                            <p class="text-[11px] font-bold tracking-widest uppercase text-outline">Clustering</p>
-                            <p class="text-sm font-bold text-outline">Waiting</p>
-                        </div>
+                        <p class="text-[9px] font-bold tracking-wider uppercase text-outline leading-tight">Cluster</p>
                     </div>
-                    <div class="flex items-center gap-3" id="step-classify">
+                    <div class="flex flex-col items-center gap-1.5 text-center" id="step-classify">
                         <div class="w-8 h-8 rounded-full bg-surface-variant flex items-center justify-center">
                             <span class="material-symbols-outlined text-outline text-sm">category</span>
                         </div>
-                        <div>
-                            <p class="text-[11px] font-bold tracking-widest uppercase text-outline">Classification</p>
-                            <p class="text-sm font-bold text-outline">Waiting</p>
+                        <p class="text-[9px] font-bold tracking-wider uppercase text-outline leading-tight">Classify</p>
+                    </div>
+                    <div class="flex flex-col items-center gap-1.5 text-center" id="step-gate">
+                        <div class="w-8 h-8 rounded-full bg-surface-variant flex items-center justify-center">
+                            <span class="material-symbols-outlined text-outline text-sm">verified_user</span>
                         </div>
+                        <p class="text-[9px] font-bold tracking-wider uppercase text-outline leading-tight">Gate</p>
+                    </div>
+                    <div class="flex flex-col items-center gap-1.5 text-center" id="step-file">
+                        <div class="w-8 h-8 rounded-full bg-surface-variant flex items-center justify-center">
+                            <span class="material-symbols-outlined text-outline text-sm">drive_file_move</span>
+                        </div>
+                        <p class="text-[9px] font-bold tracking-wider uppercase text-outline leading-tight">File</p>
+                    </div>
+                    <div class="flex flex-col items-center gap-1.5 text-center" id="step-summary">
+                        <div class="w-8 h-8 rounded-full bg-surface-variant flex items-center justify-center">
+                            <span class="material-symbols-outlined text-outline text-sm">summarize</span>
+                        </div>
+                        <p class="text-[9px] font-bold tracking-wider uppercase text-outline leading-tight">Summary</p>
+                    </div>
+                    <div class="flex flex-col items-center gap-1.5 text-center" id="step-archive">
+                        <div class="w-8 h-8 rounded-full bg-surface-variant flex items-center justify-center">
+                            <span class="material-symbols-outlined text-outline text-sm">archive</span>
+                        </div>
+                        <p class="text-[9px] font-bold tracking-wider uppercase text-outline leading-tight">Archive</p>
                     </div>
                 </div>
             </div>
@@ -106,6 +108,9 @@
         <section id="documents-section" class="hidden">
             <div class="flex items-center justify-between mb-6">
                 <h3 class="text-lg font-headline font-bold text-primary" id="doc-count">Identified Documents</h3>
+                <button onclick="reprocessJob()" class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-surface-container text-on-surface-variant hover:bg-surface-variant transition-colors">
+                    <span class="material-symbols-outlined text-sm">refresh</span> Re-process
+                </button>
             </div>
             <div class="space-y-3" id="documents-list"></div>
         </section>
@@ -124,6 +129,12 @@
     <script src="/static/shared.js"></script>
     <script>
         initPage('Dashboard');
+
+        const stepIcons = {
+            'step-load': 'upload_file', 'step-ocr': 'text_fields', 'step-cluster': 'auto_awesome',
+            'step-classify': 'category', 'step-gate': 'verified_user', 'step-file': 'drive_file_move',
+            'step-summary': 'summarize', 'step-archive': 'archive',
+        };
 
         // Check for active job on page load (handles navigation away and back)
         (async function checkActiveJob() {
@@ -187,89 +198,241 @@
         });
         fileInput.addEventListener('change', e => handleFiles(e.target.files));
 
-        async function handleFiles(files) {
-            for (const file of files) {
-                if (!file.name.toLowerCase().endsWith('.pdf')) continue;
+        let _batchQueue = [];
+        let _batchCurrent = 0;
 
+        function updateBatchIndicator() {
+            let el = document.getElementById('batch-indicator');
+            if (_batchQueue.length <= 1) {
+                if (el) el.classList.add('hidden');
+                return;
+            }
+            if (!el) {
+                const section = document.getElementById('processing-section');
+                section.insertAdjacentHTML('afterbegin',
+                    '<div id="batch-indicator" class="flex gap-2 mb-4 overflow-x-auto pb-2"></div>');
+                el = document.getElementById('batch-indicator');
+            }
+            el.classList.remove('hidden');
+            el.innerHTML = _batchQueue.map((f, i) => {
+                const isCurrent = i === _batchCurrent;
+                const isDone = i < _batchCurrent;
+                const cls = isCurrent
+                    ? 'bg-primary text-on-primary'
+                    : isDone ? 'bg-secondary-container text-on-secondary-container' : 'bg-surface-container text-outline';
+                const icon = isDone ? 'check_circle' : isCurrent ? 'pending' : 'description';
+                return `<span class="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap ${cls}">
+                    <span class="material-symbols-outlined text-sm">${icon}</span>${f}
+                </span>`;
+            }).join('');
+        }
+
+        async function handleFiles(files) {
+            const pdfs = Array.from(files).filter(f => f.name.toLowerCase().endsWith('.pdf'));
+            if (pdfs.length === 0 && files.length > 0) {
+                showToast('Only PDF files are supported', 'warning');
+                return;
+            }
+            if (pdfs.length === 0) return;
+
+            _batchQueue = pdfs.map(f => f.name);
+            _batchCurrent = 0;
+
+            for (const file of pdfs) {
                 // Upload
-                const formData = new FormData();
-                formData.append('file', file);
-                const uploadResp = await fetch('/api/upload', { method: 'POST', body: formData });
-                const upload = await uploadResp.json();
+                let upload;
+                try {
+                    const formData = new FormData();
+                    formData.append('file', file);
+                    const uploadResp = await fetch('/api/upload', { method: 'POST', body: formData });
+                    if (!uploadResp.ok) {
+                        const err = await uploadResp.json().catch(() => ({}));
+                        showToast(err.detail || `Upload failed: ${file.name}`, 'error');
+                        continue;
+                    }
+                    upload = await uploadResp.json();
+                } catch (e) {
+                    showToast(`Network error uploading ${file.name}`, 'error');
+                    continue;
+                }
 
                 // Start processing
-                const procResp = await fetch('/api/process', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ path: upload.path }),
-                });
-                const proc = await procResp.json();
+                let proc;
+                try {
+                    const procResp = await fetch('/api/process', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ path: upload.path }),
+                    });
+                    if (!procResp.ok) {
+                        const err = await procResp.json().catch(() => ({}));
+                        showToast(err.detail || `Failed to start processing: ${file.name}`, 'error');
+                        continue;
+                    }
+                    proc = await procResp.json();
+                } catch (e) {
+                    showToast(`Failed to start processing: ${file.name}`, 'error');
+                    continue;
+                }
 
                 // Save job ID for reconnection after navigation
                 sessionStorage.setItem('docflow_active_job', proc.job_id);
 
-                // Show processing UI
+                // Reset and show processing UI
                 document.getElementById('processing-section').classList.remove('hidden');
                 document.getElementById('recent-section').classList.add('hidden');
+                document.getElementById('documents-section').classList.add('hidden');
+                document.getElementById('documents-list').innerHTML = '';
                 document.getElementById('batch-name').textContent = file.name;
+                document.getElementById('progress-pct').textContent = '0%';
+                document.getElementById('progress-step').textContent = 'Starting...';
+                document.getElementById('progress-bar').style.width = '0%';
+                document.getElementById('progress-bar').classList.remove('bg-red-500');
+                resetSteps();
+                updateBatchIndicator();
 
-                // Poll for updates
-                pollStatus(proc.job_id);
+                // Start polling — wait for completion before processing next in batch
+                startPolling(proc.job_id);
+                if (pdfs.length > 1) {
+                    await new Promise(resolve => {
+                        const check = setInterval(() => {
+                            if (!_pollInterval) { clearInterval(check); resolve(); }
+                        }, 500);
+                    });
+                    _batchCurrent++;
+                    updateBatchIndicator();
+                }
             }
         }
 
-        async function pollStatus(jobId) {
-            const poll = async () => {
-                const resp = await fetch(`/api/process/status/${jobId}`);
-                const state = await resp.json();
-                updateProcessingUI(state);
-                if (state.status !== 'completed' && state.status !== 'error') {
-                    setTimeout(poll, 500);
+        // Active polling interval (cleared when job completes)
+        let _pollInterval = null;
+
+        function startPolling(jobId) {
+            // Clear any existing poll
+            if (_pollInterval) clearInterval(_pollInterval);
+            document.getElementById('progress-step').textContent = 'Connecting to job ' + jobId + '...';
+
+            _pollInterval = setInterval(async () => {
+                try {
+                    const resp = await fetch('/api/process/status/' + jobId);
+                    if (!resp.ok) {
+                        document.getElementById('progress-step').textContent = 'Poll error: HTTP ' + resp.status;
+                        return;
+                    }
+                    const state = await resp.json();
+                    document.getElementById('progress-pct').textContent = state.progress + '%';
+                    document.getElementById('progress-step').textContent = state.step || '';
+                    document.getElementById('progress-bar').style.width = state.progress + '%';
+
+                    // Step indicators (8 stages)
+                    updateSteps(state.progress);
+
+                    if (state.status === 'completed' || state.status === 'error') {
+                        clearInterval(_pollInterval);
+                        _pollInterval = null;
+                        sessionStorage.removeItem('docflow_active_job');
+
+                        if (state.status === 'completed' || (state.documents && state.documents.length > 0)) {
+                            showDocuments(state.documents, state.auto_filed, state.review_queue);
+                            if (state.status === 'completed') {
+                                const rc = state.review_queue || 0;
+                                showToast(rc > 0 ? rc + ' item(s) need review' : 'All documents filed successfully', rc > 0 ? 'warning' : 'success');
+                            }
+                        }
+                        if (state.status === 'error') {
+                            showToast(state.step || 'Processing failed', 'error', 0);
+                            document.getElementById('progress-bar').classList.add('bg-red-500');
+                        }
+                    }
+                } catch (e) {
+                    document.getElementById('progress-step').textContent = 'Poll error: ' + e.message;
                 }
-            };
-            poll();
+            }, 500);
         }
 
+        // Minimal step indicator update that won't throw
+        function setStep(id, status) {
+            try {
+                const el = document.getElementById(id);
+                if (!el) return;
+                const icon = el.querySelector('.w-8');
+                if (!icon) return;
+
+                if (status === 'done') {
+                    icon.className = 'w-8 h-8 rounded-full bg-secondary-container flex items-center justify-center';
+                    icon.innerHTML = '<span class="material-symbols-outlined text-on-secondary-container text-sm" style="font-variation-settings: \'FILL\' 1;">check_circle</span>';
+                } else if (status === 'active') {
+                    icon.className = 'w-8 h-8 rounded-full bg-primary-container/10 flex items-center justify-center';
+                    icon.innerHTML = '<span class="material-symbols-outlined text-primary text-sm">pending</span>';
+                } else {
+                    icon.className = 'w-8 h-8 rounded-full bg-surface-variant flex items-center justify-center';
+                    icon.innerHTML = '<span class="material-symbols-outlined text-outline text-sm">' + (stepIcons[id] || 'circle') + '</span>';
+                }
+            } catch (e) { /* never let step UI break polling */ }
+        }
+
+        // Map progress % to 8 pipeline stages
+        function updateSteps(p) {
+            setStep('step-load',    p >= 15 ? 'done' : p >= 5  ? 'active' : 'waiting');
+            setStep('step-ocr',     p >= 40 ? 'done' : p >= 15 ? 'active' : 'waiting');
+            setStep('step-cluster', p >= 60 ? 'done' : p >= 40 ? 'active' : 'waiting');
+            setStep('step-classify',p >= 75 ? 'done' : p >= 60 ? 'active' : 'waiting');
+            setStep('step-gate',    p >= 80 ? 'done' : p >= 75 ? 'active' : 'waiting');
+            setStep('step-file',    p >= 85 ? 'done' : p >= 80 ? 'active' : 'waiting');
+            setStep('step-summary', p >= 90 ? 'done' : p >= 85 ? 'active' : 'waiting');
+            setStep('step-archive', p >= 95 ? 'done' : p >= 90 ? 'active' : 'waiting');
+        }
+
+        function resetSteps() {
+            Object.keys(stepIcons).forEach(id => setStep(id, 'waiting'));
+        }
+
+        // Legacy — used by checkActiveJob
+        function pollStatus(jobId) { startPolling(jobId); }
         function updateProcessingUI(state) {
-            document.getElementById('progress-pct').textContent = `${state.progress}%`;
-            document.getElementById('progress-step').textContent = state.step;
-            document.getElementById('progress-bar').style.width = `${state.progress}%`;
-
-            // Update step indicators
-            const progress = state.progress;
-            updateStep('step-ocr', progress >= 40 ? 'done' : progress >= 15 ? 'active' : 'waiting');
-            updateStep('step-cluster', progress >= 60 ? 'done' : progress >= 40 ? 'active' : 'waiting');
-            updateStep('step-classify', progress >= 80 ? 'done' : progress >= 60 ? 'active' : 'waiting');
-
-            // Show documents when completed OR when errored but we have documents
+            document.getElementById('progress-pct').textContent = state.progress + '%';
+            document.getElementById('progress-step').textContent = state.step || '';
+            document.getElementById('progress-bar').style.width = state.progress + '%';
+            updateSteps(state.progress);
             if (state.status === 'completed' || (state.status === 'error' && state.documents && state.documents.length > 0)) {
                 showDocuments(state.documents, state.auto_filed, state.review_queue);
-            } else if (state.status === 'error') {
-                document.getElementById('progress-bar').classList.add('bg-red-500');
             }
         }
 
-        function updateStep(id, status) {
-            const el = document.getElementById(id);
-            const icon = el.querySelector('.w-8');
-            const label = el.querySelectorAll('p')[1];
-
-            if (status === 'done') {
-                icon.className = 'w-8 h-8 rounded-full bg-secondary-container flex items-center justify-center';
-                icon.innerHTML = '<span class="material-symbols-outlined text-on-secondary-container text-sm" style="font-variation-settings: \'FILL\' 1;">check_circle</span>';
-                label.textContent = 'Complete';
-                label.className = 'text-sm font-bold text-on-surface';
-            } else if (status === 'active') {
-                icon.className = 'w-8 h-8 rounded-full bg-primary-container/10 flex items-center justify-center relative';
-                icon.innerHTML = '<div class="absolute inset-0 rounded-full border-2 border-primary border-t-transparent animate-spin opacity-20"></div>' + icon.querySelector('.material-symbols-outlined').outerHTML;
-                label.textContent = 'Processing...';
-                label.className = 'text-sm font-bold text-on-surface';
+        // Re-process the current job's PDF
+        async function reprocessJob() {
+            const jobId = sessionStorage.getItem('docflow_active_job') || _lastJobId;
+            if (!jobId) { showToast('No job to re-process', 'warning'); return; }
+            try {
+                const resp = await fetch('/api/reprocess/' + jobId, { method: 'POST' });
+                if (!resp.ok) {
+                    const err = await resp.json().catch(() => ({}));
+                    showToast(err.detail || 'Re-process failed', 'error');
+                    return;
+                }
+                const data = await resp.json();
+                sessionStorage.setItem('docflow_active_job', data.job_id);
+                document.getElementById('documents-section').classList.add('hidden');
+                document.getElementById('documents-list').innerHTML = '';
+                document.getElementById('progress-pct').textContent = '0%';
+                document.getElementById('progress-step').textContent = 'Re-processing...';
+                document.getElementById('progress-bar').style.width = '0%';
+                document.getElementById('progress-bar').classList.remove('bg-red-500');
+                resetSteps();
+                startPolling(data.job_id);
+                showToast('Re-processing started', 'info', 3000);
+            } catch (e) {
+                showToast('Network error', 'error');
             }
         }
+        let _lastJobId = null;
 
         function showDocuments(documents, autoFiled, reviewCount) {
             document.getElementById('documents-section').classList.remove('hidden');
             document.getElementById('doc-count').textContent = `Identified Documents (${documents.length})`;
+            // Track last job for re-process
+            _lastJobId = sessionStorage.getItem('docflow_active_job') || _lastJobId;
 
             const list = document.getElementById('documents-list');
             list.innerHTML = documents.map(doc => {
@@ -315,7 +478,14 @@
                 const container = document.getElementById('recent-logs');
 
                 if (!data.logs || data.logs.length === 0) {
-                    container.innerHTML = '<p class="text-on-surface-variant text-sm">No recent activity. Upload a scan to get started.</p>';
+                    container.innerHTML = `
+                        <div class="text-center py-12">
+                            <div class="w-16 h-16 bg-surface-container rounded-full flex items-center justify-center mx-auto mb-4">
+                                <span class="material-symbols-outlined text-outline text-2xl">scan</span>
+                            </div>
+                            <p class="text-on-surface-variant font-medium mb-1">No documents processed yet</p>
+                            <p class="text-outline text-sm">Drop a scanned PDF above to get started</p>
+                        </div>`;
                     return;
                 }
 

@@ -7,34 +7,17 @@
     <script src="https://cdn.tailwindcss.com?plugins=forms"></script>
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@200..800&family=Inter:wght@100..900&display=swap" rel="stylesheet"/>
     <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
-    <script>
-        tailwind.config = { theme: { extend: {
-            colors: {
-                "surface": "#f7f9fb", "on-surface": "#191c1e", "on-surface-variant": "#45474c",
-                "surface-container": "#eceef0", "surface-container-low": "#f2f4f6",
-                "surface-container-lowest": "#ffffff", "surface-variant": "#e0e3e5",
-                "primary": "#091426", "primary-container": "#1e293b",
-                "on-primary": "#ffffff", "on-primary-container": "#8590a6",
-                "secondary": "#006c49", "secondary-container": "#6cf8bb",
-                "on-secondary-container": "#00714d",
-                "tertiary-fixed": "#ffddb8", "tertiary-fixed-dim": "#ffb95f",
-                "on-tertiary-container": "#c88000", "on-tertiary-fixed": "#2a1700",
-                "outline": "#75777d", "outline-variant": "#c5c6cd",
-                "primary-fixed": "#d8e3fb", "error": "#ba1a1a",
-            },
-            fontFamily: { headline: ["Manrope"], body: ["Inter"] },
-        }}}
-    </script>
+    <script src="/static/config.js"></script>
     <style>
         body { font-family: 'Inter', sans-serif; }
         .font-headline { font-family: 'Manrope', sans-serif; }
         .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
     </style>
 </head>
-<body class="bg-surface text-on-surface flex overflow-hidden h-screen">
+<body class="bg-surface text-on-surface dark:bg-slate-900 dark:text-slate-100 flex overflow-hidden h-screen">
     <div id="nav"></div>
 
-    <main class="ml-64 flex-1 flex flex-col h-screen relative bg-surface overflow-hidden">
+    <main class="ml-16 lg:ml-64 flex-1 flex flex-col h-screen relative bg-surface overflow-hidden transition-all duration-200">
         <div id="header"></div>
 
         <!-- Empty state -->
@@ -52,9 +35,32 @@
         <!-- Split-pane workspace -->
         <section id="review-workspace" class="flex-1 flex gap-0 h-full overflow-hidden hidden">
             <!-- Left: Document preview -->
-            <div class="w-3/5 bg-surface-container-low p-8 flex items-center justify-center relative">
-                <div id="doc-preview" class="relative w-full h-full max-w-2xl bg-white shadow-2xl rounded-lg overflow-hidden">
-                    <div class="absolute inset-0 bg-white p-12 flex flex-col overflow-y-auto">
+            <div class="w-3/5 bg-surface-container-low p-8 flex flex-col relative">
+                <!-- View toggle -->
+                <div class="flex items-center gap-2 mb-4">
+                    <button id="btn-view-image" onclick="setPreviewMode('image')" class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-primary text-on-primary transition-colors">
+                        <span class="material-symbols-outlined text-sm">image</span> Page Image
+                    </button>
+                    <button id="btn-view-text" onclick="setPreviewMode('text')" class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-surface-container text-outline transition-colors">
+                        <span class="material-symbols-outlined text-sm">text_fields</span> OCR Text
+                    </button>
+                    <!-- Page navigation (for multi-page docs) -->
+                    <div id="page-nav" class="ml-auto flex items-center gap-2 hidden">
+                        <button onclick="prevPage()" class="w-8 h-8 rounded-lg bg-surface-container flex items-center justify-center hover:bg-surface-variant transition-colors">
+                            <span class="material-symbols-outlined text-sm">chevron_left</span>
+                        </button>
+                        <span id="page-indicator" class="text-xs font-bold text-on-surface-variant"></span>
+                        <button onclick="nextPage()" class="w-8 h-8 rounded-lg bg-surface-container flex items-center justify-center hover:bg-surface-variant transition-colors">
+                            <span class="material-symbols-outlined text-sm">chevron_right</span>
+                        </button>
+                    </div>
+                </div>
+                <!-- Preview area -->
+                <div id="doc-preview" aria-label="Document preview" class="relative flex-1 max-w-2xl w-full mx-auto bg-white shadow-2xl rounded-lg overflow-hidden">
+                    <div id="preview-image-container" class="absolute inset-0 overflow-y-auto flex items-start justify-center p-4 bg-surface-container-low">
+                        <img id="preview-image" class="max-w-full rounded shadow-sm" alt="Page preview" />
+                    </div>
+                    <div id="preview-text-container" class="absolute inset-0 bg-white p-12 overflow-y-auto hidden">
                         <pre id="preview-text" class="text-sm text-slate-700 whitespace-pre-wrap font-mono leading-relaxed"></pre>
                     </div>
                 </div>
@@ -63,7 +69,7 @@
             <!-- Right: Metadata & actions -->
             <div class="w-2/5 flex flex-col bg-surface border-l border-slate-200/20 shadow-[-10px_0_30px_rgba(0,0,0,0.02)] z-10">
                 <!-- Confidence header -->
-                <div id="confidence-header" class="bg-tertiary-fixed text-on-tertiary-fixed px-6 py-4 flex items-center gap-3">
+                <div id="confidence-header" role="status" class="bg-tertiary-fixed text-on-tertiary-fixed px-6 py-4 flex items-center gap-3">
                     <span class="material-symbols-outlined text-on-tertiary-container">warning</span>
                     <span class="text-sm font-bold font-headline uppercase tracking-tight">Low Confidence — Human Review Required</span>
                 </div>
@@ -107,16 +113,16 @@
 
                 <!-- Actions -->
                 <div class="p-6 bg-surface-container-lowest border-t border-slate-100 flex flex-col gap-3">
-                    <button id="btn-correct" class="w-full py-4 rounded-xl font-bold bg-gradient-to-r from-primary to-primary-container text-on-primary flex items-center justify-center gap-2 hover:shadow-xl hover:-translate-y-0.5 transition-all active:scale-95">
+                    <button id="btn-correct" aria-label="Correct and file document" class="w-full py-4 rounded-xl font-bold bg-gradient-to-r from-primary to-primary-container text-on-primary flex items-center justify-center gap-2 hover:shadow-xl hover:-translate-y-0.5 transition-all active:scale-95">
                         <span class="material-symbols-outlined">verified</span>
-                        Correct & File
+                        Correct & File <span class="text-xs opacity-60 ml-1">[C then Enter]</span>
                     </button>
                     <div class="grid grid-cols-2 gap-3">
-                        <button id="btn-approve" class="py-3.5 rounded-xl font-bold bg-surface-container-high text-on-surface hover:bg-surface-variant transition-colors active:scale-95">
-                            Approve As-Is
+                        <button id="btn-approve" aria-label="Approve document as-is" class="py-3.5 rounded-xl font-bold bg-surface-container-high text-on-surface hover:bg-surface-variant transition-colors active:scale-95">
+                            Approve As-Is <span class="text-xs opacity-50 ml-1">[A]</span>
                         </button>
-                        <button id="btn-skip" class="py-3.5 rounded-xl font-bold text-on-surface-variant hover:bg-slate-50 transition-colors active:scale-95">
-                            Skip
+                        <button id="btn-skip" aria-label="Skip document" class="py-3.5 rounded-xl font-bold text-on-surface-variant hover:bg-slate-50 transition-colors active:scale-95">
+                            Skip <span class="text-xs opacity-50 ml-1">[S]</span>
                         </button>
                     </div>
                 </div>
@@ -142,6 +148,8 @@
 
         let queueItems = [];
         let currentIndex = 0;
+        let previewMode = 'image';
+        let currentPageIdx = 0;  // index into the item's pages array
 
         async function loadQueue() {
             const resp = await fetch('/api/queue');
@@ -186,6 +194,7 @@
 
         function selectItem(index) {
             currentIndex = index;
+            currentPageIdx = 0;
             const item = queueItems[index];
             if (!item) return;
 
@@ -193,6 +202,7 @@
 
             // Fill preview
             document.getElementById('preview-text').textContent = item.raw_text_preview || '(No text available)';
+            loadPagePreview();
 
             // Fill metadata
             document.getElementById('reasoning-text').textContent = item.notes || 'No reasoning available.';
@@ -220,11 +230,23 @@
                 });
             }
 
-            await fetch(url, {
-                method: 'POST',
-                headers: body ? { 'Content-Type': 'application/json' } : {},
-                body,
-            });
+            try {
+                const resp = await fetch(url, {
+                    method: 'POST',
+                    headers: body ? { 'Content-Type': 'application/json' } : {},
+                    body,
+                });
+                if (!resp.ok) {
+                    const err = await resp.json().catch(() => ({}));
+                    showToast(err.detail || `Action failed`, 'error');
+                    return;
+                }
+                const messages = { approve: 'Approved and filed', skip: 'Skipped', correct: 'Corrected and filed' };
+                showToast(messages[action] || 'Done', 'success', 3000);
+            } catch (e) {
+                showToast('Network error — could not complete action', 'error');
+                return;
+            }
 
             // Reload queue
             await loadQueue();
@@ -233,6 +255,108 @@
         document.getElementById('btn-approve').addEventListener('click', () => doAction('approve'));
         document.getElementById('btn-skip').addEventListener('click', () => doAction('skip'));
         document.getElementById('btn-correct').addEventListener('click', () => doAction('correct'));
+
+        function setPreviewMode(mode) {
+            previewMode = mode;
+            const imgBtn = document.getElementById('btn-view-image');
+            const txtBtn = document.getElementById('btn-view-text');
+            const imgContainer = document.getElementById('preview-image-container');
+            const txtContainer = document.getElementById('preview-text-container');
+
+            if (mode === 'image') {
+                imgBtn.className = 'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-primary text-on-primary transition-colors';
+                txtBtn.className = 'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-surface-container text-outline transition-colors';
+                imgContainer.classList.remove('hidden');
+                txtContainer.classList.add('hidden');
+            } else {
+                txtBtn.className = 'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-primary text-on-primary transition-colors';
+                imgBtn.className = 'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-surface-container text-outline transition-colors';
+                txtContainer.classList.remove('hidden');
+                imgContainer.classList.add('hidden');
+            }
+        }
+
+        function loadPagePreview() {
+            const item = queueItems[currentIndex];
+            if (!item || !item.pages || item.pages.length === 0) return;
+
+            const pages = item.pages;
+            const pageNav = document.getElementById('page-nav');
+            const indicator = document.getElementById('page-indicator');
+
+            if (pages.length > 1) {
+                pageNav.classList.remove('hidden');
+                indicator.textContent = `Page ${currentPageIdx + 1} of ${pages.length}`;
+            } else {
+                pageNav.classList.add('hidden');
+            }
+
+            const pageNum = pages[currentPageIdx];
+            const img = document.getElementById('preview-image');
+            img.src = '';
+            img.alt = 'Loading page preview...';
+            img.src = `/api/preview/${item.id}/${pageNum}`;
+            img.onerror = () => {
+                img.alt = 'Preview unavailable';
+                img.src = '';
+            };
+        }
+
+        function prevPage() {
+            const item = queueItems[currentIndex];
+            if (!item) return;
+            currentPageIdx = Math.max(0, currentPageIdx - 1);
+            loadPagePreview();
+        }
+
+        function nextPage() {
+            const item = queueItems[currentIndex];
+            if (!item) return;
+            currentPageIdx = Math.min(item.pages.length - 1, currentPageIdx + 1);
+            loadPagePreview();
+        }
+
+        // Keyboard shortcuts
+        document.addEventListener('keydown', (e) => {
+            // Don't trigger shortcuts when typing in input fields
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
+                if (e.key === 'Escape') e.target.blur();
+                return;
+            }
+            if (queueItems.length === 0) return;
+
+            switch (e.key.toLowerCase()) {
+                case 'a':
+                    doAction('approve');
+                    break;
+                case 's':
+                    doAction('skip');
+                    break;
+                case 'c':
+                    document.getElementById('edit-filename').focus();
+                    document.getElementById('edit-filename').select();
+                    break;
+                case 'enter':
+                    // If filename/directory was just edited, submit correction
+                    if (document.activeElement === document.getElementById('edit-filename') ||
+                        document.activeElement === document.getElementById('edit-directory')) {
+                        document.activeElement.blur();
+                        doAction('correct');
+                    }
+                    break;
+                case 'arrowleft':
+                    e.preventDefault();
+                    if (e.shiftKey) { prevPage(); } else { selectItem(Math.max(0, currentIndex - 1)); }
+                    break;
+                case 'arrowright':
+                    e.preventDefault();
+                    if (e.shiftKey) { nextPage(); } else { selectItem(Math.min(queueItems.length - 1, currentIndex + 1)); }
+                    break;
+                case 'v':
+                    setPreviewMode(previewMode === 'image' ? 'text' : 'image');
+                    break;
+            }
+        });
 
         loadQueue();
     </script>

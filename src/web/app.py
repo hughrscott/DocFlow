@@ -33,6 +33,18 @@ _static_dir = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=str(_static_dir)), name="static")
 
 
+@app.middleware("http")
+async def no_cache_html_js(request: Request, call_next):
+    """Prevent browser caching of HTML and JS files during development."""
+    response = await call_next(request)
+    path = request.url.path
+    if path.endswith((".html", ".js")) or path in ("/", "/review", "/archive", "/settings"):
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+    return response
+
+
 def configure(config: dict) -> None:
     """Set the config for the web app."""
     global _config
@@ -145,14 +157,24 @@ async def process_status(job_id: str):
 async def process_stream(job_id: str):
     """SSE stream for live processing updates."""
     async def event_generator():
-        last_status = None
+        last_json = None
+        keepalive_counter = 0
         while True:
             state = _processing_state.get(job_id)
             if not state:
                 break
-            if state != last_status:
-                yield {"event": "update", "data": json.dumps(state)}
-                last_status = state.copy()
+            current_json = json.dumps(state, sort_keys=True)
+            if current_json != last_json:
+                yield {"event": "update", "data": current_json}
+                last_json = current_json
+                keepalive_counter = 0
+            else:
+                keepalive_counter += 1
+                # Send a keepalive comment every ~3s (10 * 0.3s) to prevent
+                # browsers/proxies from silently dropping the connection
+                if keepalive_counter >= 10:
+                    yield {"comment": "keepalive"}
+                    keepalive_counter = 0
             if state.get("status") in ("completed", "error"):
                 break
             await asyncio.sleep(0.3)
@@ -237,6 +259,16 @@ async def _run_pipeline_async(job_id: str, pdf_path: Path) -> None:
         # 8. Archive
         state.update({"step": "Archiving original", "progress": 95})
         archived_path = await asyncio.to_thread(archive_original, pdf_path, _config)
+
+        # If the original also exists in the watch folder (user uploaded a copy),
+        # remove it so it doesn't get processed again
+        watch_folder = Path(os.path.expanduser(
+            _config.get("scan_watch_folder", "~/ElectronicFiles/ToBeOrganized")
+        ))
+        watch_copy = watch_folder / pdf_path.name
+        if watch_copy.exists() and watch_copy != pdf_path:
+            watch_copy.unlink()
+            logger.info("Removed watch folder copy: %s", watch_copy)
 
         # Save review queue
         if review_queue:
@@ -332,6 +364,99 @@ def _extract_review_item(item: dict, filename: str, target_dir: str) -> None:
         writer.add_page(reader.pages[page_num - 1])
     with open(output, "wb") as f:
         writer.write(f)
+
+
+# ---------------------------------------------------------------------------
+# API: Page Preview
+# ---------------------------------------------------------------------------
+
+@app.get("/api/preview/{item_id}/{page_num}")
+async def preview_page(item_id: str, page_num: int):
+    """Render a single PDF page as a PNG thumbnail for the review UI."""
+    items = load_review_queue(_config)
+    item = next((i for i in items if i["id"] == item_id), None)
+    if not item:
+        raise HTTPException(404, f"Item {item_id} not found")
+    if page_num not in item["pages"]:
+        raise HTTPException(400, f"Page {page_num} not in this item")
+
+    source = Path(item["source_pdf"])
+    if not source.exists():
+        raise HTTPException(404, "Source PDF not found")
+
+    # Cache rendered pages to avoid repeated conversions
+    cache_dir = _archive_root() / "_cache" / "previews"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    cache_key = f"{source.stem}_{page_num}.png"
+    cached = cache_dir / cache_key
+    if cached.exists():
+        return FileResponse(str(cached), media_type="image/png")
+
+    from pdf2image import convert_from_path
+    images = await asyncio.to_thread(
+        convert_from_path, str(source),
+        first_page=page_num, last_page=page_num, dpi=150,
+    )
+    if not images:
+        raise HTTPException(500, "Failed to render page")
+
+    await asyncio.to_thread(images[0].save, str(cached), "PNG")
+    return FileResponse(str(cached), media_type="image/png")
+
+
+# ---------------------------------------------------------------------------
+# API: Search
+# ---------------------------------------------------------------------------
+
+@app.get("/api/search")
+async def search_archive(q: str = ""):
+    """Search filing logs and archived filenames."""
+    query = q.strip().lower()
+    if len(query) < 2:
+        return {"results": []}
+
+    results = []
+    root = _archive_root()
+
+    # Search filing logs
+    for log_file in root.glob("filing_log_*.json"):
+        try:
+            with open(log_file) as fh:
+                data = json.load(fh)
+            for entry in data.get("entries", []):
+                filename = entry.get("filename", "")
+                directory = entry.get("target_directory", "")
+                rule = entry.get("rule_matched", "")
+                if query in filename.lower() or query in directory.lower() or query in rule.lower():
+                    results.append({
+                        "filename": filename,
+                        "directory": "/".join(directory.split("/")[-2:]) if "/" in directory else directory,
+                        "confidence": entry.get("confidence"),
+                        "rule": rule,
+                        "icon": "description",
+                        "url": f"/archive",
+                    })
+        except (json.JSONDecodeError, KeyError):
+            continue
+
+    # Search archive files by name
+    if root.exists():
+        for pdf in root.rglob("*.pdf"):
+            if pdf.name.startswith(".") or "/_" in str(pdf):
+                continue
+            if query in pdf.name.lower():
+                # Avoid duplicates from log search
+                if not any(r["filename"] == pdf.name for r in results):
+                    rel = str(pdf.relative_to(root))
+                    results.append({
+                        "filename": pdf.name,
+                        "directory": str(pdf.parent.relative_to(root)),
+                        "icon": "folder_open",
+                        "url": f"/archive",
+                    })
+
+    # Limit results
+    return {"results": results[:20]}
 
 
 # ---------------------------------------------------------------------------
@@ -468,3 +593,93 @@ async def health():
         "model": _config.get("openrouter_model", "google/gemini-2.0-flash-001"),
         "threshold": _config.get("confidence_threshold", 0.75),
     }
+
+
+@app.post("/api/settings/test-connection")
+async def test_connection():
+    """Test LLM connectivity with a trivial prompt."""
+    try:
+        from src.classification.llm_client import get_llm_client
+        client = get_llm_client(_config)
+        # Send a trivial prompt to verify connectivity
+        response = await asyncio.to_thread(
+            client.chat.completions.create,
+            model=_config.get("openrouter_model", _config.get("llm_model", "google/gemini-2.0-flash-001")),
+            messages=[{"role": "user", "content": "Reply with OK"}],
+            max_tokens=5,
+        )
+        reply = response.choices[0].message.content.strip() if response.choices else ""
+        return {"status": "connected", "reply": reply, "model": response.model}
+    except Exception as exc:
+        return JSONResponse(
+            status_code=200,
+            content={"status": "error", "error": str(exc)},
+        )
+
+
+@app.post("/api/settings/validate-paths")
+async def validate_paths():
+    """Validate that configured paths exist and are writable."""
+    results = {}
+    for key, label in [("archive_root", "Archive Root"), ("scan_watch_folder", "Watch Folder")]:
+        path_str = _config.get(key, "")
+        if not path_str:
+            results[key] = {"status": "not_set", "label": label}
+            continue
+        path = Path(os.path.expanduser(path_str))
+        if not path.exists():
+            results[key] = {"status": "missing", "label": label, "path": str(path)}
+        elif not os.access(str(path), os.W_OK):
+            results[key] = {"status": "not_writable", "label": label, "path": str(path)}
+        else:
+            results[key] = {"status": "ok", "label": label, "path": str(path)}
+    return results
+
+
+# ---------------------------------------------------------------------------
+# API: Re-process
+# ---------------------------------------------------------------------------
+
+@app.post("/api/reprocess/{job_id}")
+async def reprocess_job(job_id: str):
+    """Re-process a previously completed job's PDF."""
+    state = _processing_state.get(job_id)
+    if not state:
+        raise HTTPException(404, "Job not found")
+    pdf_path = state.get("pdf")
+    if not pdf_path:
+        raise HTTPException(400, "No PDF path for this job")
+
+    # The original might have been archived — check BeenOrganized folders
+    source = Path(pdf_path)
+    if not source.exists():
+        # Search in BeenOrganized folders
+        watch_folder = Path(os.path.expanduser(
+            _config.get("scan_watch_folder", "~/ElectronicFiles/ToBeOrganized")
+        ))
+        for been_dir in watch_folder.glob("BeenOrganized*"):
+            candidate = been_dir / source.name
+            if candidate.exists():
+                source = candidate
+                break
+        if not source.exists():
+            raise HTTPException(404, f"PDF not found: {source.name}")
+
+    # Copy back to uploads for reprocessing
+    upload_path = _upload_dir() / source.name
+    shutil.copy2(str(source), str(upload_path))
+
+    # Start new job
+    new_job_id = str(uuid.uuid4())[:8]
+    _processing_state[new_job_id] = {
+        "status": "starting",
+        "pdf": str(upload_path),
+        "progress": 0,
+        "step": "Initializing (re-process)",
+        "documents": [],
+        "auto_filed": 0,
+        "review_queue": 0,
+        "started": datetime.now().isoformat(),
+    }
+    asyncio.create_task(_run_pipeline_async(new_job_id, upload_path))
+    return {"job_id": new_job_id}
