@@ -457,10 +457,10 @@ async def suggest_classification(request: Request):
         raw_text = await asyncio.to_thread(pytesseract.image_to_string, images[0])
 
     from src.llm.client import chat_json
-    from src.llm.prompts import build_classification_prompt
+    from src.config.rules_manager import load_rules_md
 
     document_summary = {
-        "pages": list(range(1, PdfReader(str(source)).pages.__len__() + 1)),
+        "pages": list(range(1, len(PdfReader(str(source)).pages) + 1)),
         "institution": "unknown",
         "doc_type": "unknown",
         "period": "unknown",
@@ -468,13 +468,25 @@ async def suggest_classification(request: Request):
         "raw_text_preview": raw_text[:500],
     }
 
-    prompt = build_classification_prompt(
-        document_summary,
-        _config.get("filing_rules", []),
-        _config.get("entities", []),
-        _config.get("family", []),
-        _config.get("user", {}),
-    )
+    rules_md = load_rules_md(_config)
+    if rules_md:
+        from src.llm.prompts import build_rules_md_classification_prompt
+        prompt = build_rules_md_classification_prompt(
+            document_summary,
+            rules_md,
+            _config.get("entities", []),
+            _config.get("family", []),
+            _config.get("user", {}),
+        )
+    else:
+        from src.llm.prompts import build_classification_prompt
+        prompt = build_classification_prompt(
+            document_summary,
+            _config.get("filing_rules", []),
+            _config.get("entities", []),
+            _config.get("family", []),
+            _config.get("user", {}),
+        )
 
     try:
         result = await asyncio.to_thread(chat_json, prompt, config=_config)

@@ -179,9 +179,12 @@
                     <button onclick="closeReclassifyModal()" class="text-slate-400 hover:text-slate-600"><span class="material-symbols-outlined text-sm">close</span></button>
                 </div>
                 <div class="flex-1 overflow-y-auto p-6 space-y-5">
-                    <!-- Preview -->
-                    <div class="bg-slate-50 rounded-xl overflow-hidden max-h-64 flex items-center justify-center">
+                    <!-- Preview (click to enlarge) -->
+                    <div class="bg-slate-50 rounded-xl overflow-hidden max-h-64 flex items-center justify-center cursor-pointer group relative" onclick="openFullPreview()">
                         <img id="reclassify-preview" class="max-h-64 max-w-full" alt="Preview" />
+                        <div class="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors flex items-center justify-center">
+                            <span class="material-symbols-outlined text-white opacity-0 group-hover:opacity-100 transition-opacity text-3xl drop-shadow-lg">zoom_in</span>
+                        </div>
                     </div>
                     <!-- LLM suggestion -->
                     <div id="reclassify-suggestion" class="bg-blue-50 border border-blue-200 rounded-xl p-4 hidden">
@@ -217,6 +220,23 @@
                     <button onclick="submitReclassify()" class="px-6 py-2.5 rounded-xl font-bold bg-primary text-on-primary hover:shadow-xl transition-all text-sm">File</button>
                 </div>
             </div>
+        </div>
+
+        <!-- Full-screen document preview -->
+        <div id="fullscreen-preview" class="fixed inset-0 z-[300] bg-black/90 backdrop-blur-md hidden flex items-center justify-center cursor-pointer" onclick="closeFullPreview()">
+            <button class="absolute top-6 right-6 text-white/70 hover:text-white transition-colors z-10" onclick="closeFullPreview()">
+                <span class="material-symbols-outlined text-3xl">close</span>
+            </button>
+            <div class="absolute top-6 left-6 flex items-center gap-3 z-10">
+                <button onclick="event.stopPropagation(); fullPreviewPrevPage()" class="w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-colors">
+                    <span class="material-symbols-outlined">chevron_left</span>
+                </button>
+                <span id="fullscreen-page-indicator" class="text-white/70 text-sm font-bold"></span>
+                <button onclick="event.stopPropagation(); fullPreviewNextPage()" class="w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-colors">
+                    <span class="material-symbols-outlined">chevron_right</span>
+                </button>
+            </div>
+            <img id="fullscreen-image" class="max-h-[90vh] max-w-[90vw] rounded-lg shadow-2xl" alt="Full preview" onclick="event.stopPropagation()" />
         </div>
 
         <div id="footer"></div>
@@ -302,6 +322,55 @@
         function closeReclassifyModal() {
             document.getElementById('reclassify-modal').classList.add('hidden');
         }
+
+        // Full-screen preview
+        let fullPreviewCurrentPage = 1;
+        let fullPreviewTotalPages = 1;
+
+        function openFullPreview() {
+            const f = unmatchedFiles.find(f => f.path === reclassifyPath);
+            fullPreviewTotalPages = f ? f.pages : 1;
+            fullPreviewCurrentPage = 1;
+            _updateFullPreview();
+            document.getElementById('fullscreen-preview').classList.remove('hidden');
+        }
+
+        function closeFullPreview() {
+            document.getElementById('fullscreen-preview').classList.add('hidden');
+        }
+
+        function _updateFullPreview() {
+            document.getElementById('fullscreen-image').src =
+                `/api/preview/file?path=${encodeURIComponent(reclassifyPath)}&page=${fullPreviewCurrentPage}`;
+            document.getElementById('fullscreen-page-indicator').textContent =
+                fullPreviewTotalPages > 1 ? `Page ${fullPreviewCurrentPage} of ${fullPreviewTotalPages}` : '';
+        }
+
+        function fullPreviewPrevPage() {
+            if (fullPreviewCurrentPage > 1) {
+                fullPreviewCurrentPage--;
+                _updateFullPreview();
+            }
+        }
+
+        function fullPreviewNextPage() {
+            if (fullPreviewCurrentPage < fullPreviewTotalPages) {
+                fullPreviewCurrentPage++;
+                _updateFullPreview();
+            }
+        }
+
+        // Keyboard support for fullscreen
+        document.addEventListener('keydown', (e) => {
+            const fs = document.getElementById('fullscreen-preview');
+            if (fs && !fs.classList.contains('hidden')) {
+                if (e.key === 'Escape') closeFullPreview();
+                if (e.key === 'ArrowLeft') fullPreviewPrevPage();
+                if (e.key === 'ArrowRight') fullPreviewNextPage();
+                e.preventDefault();
+                return;
+            }
+        });
 
         async function suggestClassification() {
             const btn = document.getElementById('reclassify-suggest-btn');
