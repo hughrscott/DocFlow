@@ -10,6 +10,7 @@ from pypdf import PdfReader, PdfWriter
 
 from src.classification.classifier import FilingDecision
 from src.filing.filer import ensure_directory
+from src.filing.dedup import is_duplicate, register_file
 
 logger = logging.getLogger(__name__)
 
@@ -93,6 +94,18 @@ def extract_documents(
         with open(output_path, "wb") as f:
             writer.write(f)
 
+        # Check content hash for duplicates
+        dup, existing = is_duplicate(output_path)
+        if dup:
+            output_path.unlink()
+            logger.info(
+                "Duplicate detected (hash match): pages %s already filed as %s",
+                decision.candidate.pages, existing,
+            )
+            written_files.append(Path(existing))
+            continue
+
+        register_file(output_path)
         written_files.append(output_path)
         logger.info(
             "Extracted: pages %s → %s",

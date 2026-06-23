@@ -300,6 +300,18 @@ def _run_pipeline(input_pdf: Path, config_path: Path) -> None:
     console.print(f"Input:  {input_pdf}")
     console.print(f"Config: {config_path}")
 
+    # 0. Build dedup index on first run
+    from src.filing.dedup import is_empty, build_initial_index
+    if is_empty():
+        console.print("\n[bold]Building duplicate index (first run)...[/bold]")
+        count = build_initial_index(
+            config.get("archive_root", "~/ElectronicFiles"),
+            progress_callback=lambda done, total: console.print(
+                f"   Indexed {done}/{total} files", end="\r"
+            ) if done % 50 == 0 or done == total else None,
+        )
+        console.print(f"   Indexed {count} existing files")
+
     # 1. Ingestion
     console.print("\n[bold]1. Ingesting PDF...[/bold]")
     page_images = load_pdf(input_pdf)

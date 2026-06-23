@@ -197,6 +197,15 @@ async def _run_pipeline_async(job_id: str, pdf_path: Path) -> None:
         from src.summary.generator import generate_summary
         from src.ingestion.archiver import archive_original
 
+        # 0. Build dedup index on first run
+        from src.filing.dedup import is_empty, build_initial_index
+        if is_empty():
+            state.update({"step": "Building duplicate index (first run)", "progress": 2, "status": "processing"})
+            await asyncio.to_thread(
+                build_initial_index,
+                _config.get("archive_root", "~/ElectronicFiles"),
+            )
+
         # 1. Ingestion
         state.update({"step": "Loading PDF", "progress": 5, "status": "processing"})
         page_images = await asyncio.to_thread(load_pdf, pdf_path)
