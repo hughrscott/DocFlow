@@ -367,6 +367,156 @@ def _extract_review_item(item: dict, filename: str, target_dir: str) -> None:
 
 
 # ---------------------------------------------------------------------------
+# API: Unmatched / Skipped Files
+# ---------------------------------------------------------------------------
+
+@app.get("/api/unmatched")
+async def get_unmatched():
+    """List all PDFs in _Unmatched and _Skipped folders."""
+    root = _archive_root()
+    files = []
+    for folder_name in ("_Unmatched", "_Skipped"):
+        folder = root / folder_name
+        if not folder.exists():
+            continue
+        for pdf in sorted(folder.glob("*.pdf")):
+            try:
+                reader = PdfReader(str(pdf))
+                page_count = len(reader.pages)
+            except Exception:
+                page_count = 0
+            files.append({
+                "name": pdf.name,
+                "path": str(pdf),
+                "folder": folder_name,
+                "size": pdf.stat().st_size,
+                "modified": datetime.fromtimestamp(pdf.stat().st_mtime).isoformat(),
+                "pages": page_count,
+            })
+    files.sort(key=lambda f: f["modified"], reverse=True)
+    return {"files": files, "count": len(files)}
+
+
+@app.post("/api/unmatched/reclassify")
+async def reclassify_unmatched(request: Request):
+    """Manually reclassify an unmatched/skipped file."""
+    body = await request.json()
+    source_path = body.get("path", "").strip()
+    filename = body.get("filename", "").strip()
+    directory = body.get("directory", "").strip()
+
+    if not source_path or not filename or not directory:
+        raise HTTPException(400, "path, filename, and directory are required")
+
+    source = Path(source_path)
+    if not source.exists():
+        raise HTTPException(404, f"File not found: {source_path}")
+
+    target_dir = _archive_root() / directory
+    ensure_directory(target_dir)
+    target = target_dir / filename
+    if target.exists():
+        stem, suffix = target.stem, target.suffix
+        counter = 2
+        while target.exists():
+            target = target_dir / f"{stem}_{counter}{suffix}"
+            counter += 1
+
+    shutil.move(str(source), str(target))
+
+    from src.config.learner import record_correction
+    record_correction(
+        {"suggested_filename": source.name, "suggested_directory": str(source.parent)},
+        filename, str(target_dir), _config,
+    )
+
+    return {"status": "reclassified", "target": str(target)}
+
+
+@app.post("/api/unmatched/suggest")
+async def suggest_classification(request: Request):
+    """Ask the LLM to suggest classification for an unmatched file."""
+    body = await request.json()
+    source_path = body.get("path", "").strip()
+    if not source_path:
+        raise HTTPException(400, "path is required")
+
+    source = Path(source_path)
+    if not source.exists():
+        raise HTTPException(404, f"File not found: {source_path}")
+
+    # OCR the first page
+    from pdf2image import convert_from_path
+    import pytesseract
+
+    images = await asyncio.to_thread(
+        convert_from_path, str(source), first_page=1, last_page=1, dpi=150,
+    )
+    raw_text = ""
+    if images:
+        raw_text = await asyncio.to_thread(pytesseract.image_to_string, images[0])
+
+    from src.llm.client import chat_json
+    from src.llm.prompts import build_classification_prompt
+
+    document_summary = {
+        "pages": list(range(1, PdfReader(str(source)).pages.__len__() + 1)),
+        "institution": "unknown",
+        "doc_type": "unknown",
+        "period": "unknown",
+        "account": "unknown",
+        "raw_text_preview": raw_text[:500],
+    }
+
+    prompt = build_classification_prompt(
+        document_summary,
+        _config.get("filing_rules", []),
+        _config.get("entities", []),
+        _config.get("family", []),
+        _config.get("user", {}),
+    )
+
+    try:
+        result = await asyncio.to_thread(chat_json, prompt, config=_config)
+        return result
+    except Exception as exc:
+        logger.exception("LLM suggestion failed")
+        raise HTTPException(500, f"LLM error: {str(exc)}")
+
+
+@app.get("/api/preview/file")
+async def preview_file(path: str, page: int = 1):
+    """Render any PDF page as PNG (for unmatched file preview)."""
+    source = Path(path)
+    if not source.exists():
+        raise HTTPException(404, "File not found")
+
+    # Security: only allow files under archive root
+    try:
+        source.resolve().relative_to(_archive_root().resolve())
+    except ValueError:
+        raise HTTPException(403, "Access denied")
+
+    cache_dir = _archive_root() / "_cache" / "previews"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    cache_key = f"{source.stem}_{page}.png"
+    cached = cache_dir / cache_key
+    if cached.exists():
+        return FileResponse(str(cached), media_type="image/png")
+
+    from pdf2image import convert_from_path
+    images = await asyncio.to_thread(
+        convert_from_path, str(source),
+        first_page=page, last_page=page, dpi=150,
+    )
+    if not images:
+        raise HTTPException(500, "Failed to render page")
+
+    await asyncio.to_thread(images[0].save, str(cached), "PNG")
+    return FileResponse(str(cached), media_type="image/png")
+
+
+# ---------------------------------------------------------------------------
 # API: Page Preview
 # ---------------------------------------------------------------------------
 
@@ -563,6 +713,26 @@ async def update_settings(request: Request):
 @app.get("/api/settings/rules")
 async def get_rules():
     return {"rules": _config.get("filing_rules", [])}
+
+
+@app.get("/api/settings/rules-md")
+async def get_rules_md():
+    """Return the rules.md content for viewing/editing."""
+    from src.config.rules_manager import load_rules_md, rules_path
+    content = load_rules_md(_config)
+    return {"content": content, "path": str(rules_path(_config))}
+
+
+@app.post("/api/settings/rules-md")
+async def update_rules_md(request: Request):
+    """Save updated rules.md content."""
+    from src.config.rules_manager import rules_path
+    body = await request.json()
+    content = body.get("content", "")
+    path = rules_path(_config)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content)
+    return {"status": "saved", "path": str(path)}
 
 
 @app.get("/api/settings/entities")

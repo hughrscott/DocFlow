@@ -6,13 +6,8 @@
     <string>com.docflow.ui</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/Users/hughscott/Documents/Coding/DocFlow/.venv/bin/python</string>
-        <string>/Users/hughscott/Documents/Coding/DocFlow/main.py</string>
-        <string>--config</string>
-        <string>/Users/hughscott/Documents/Coding/DocFlow/config/user_config.yaml</string>
-        <string>ui</string>
-        <string>--port</string>
-        <string>8765</string>
+        <string>/bin/bash</string>
+        <string>/Users/hughscott/Documents/Coding/DocFlow/scripts/start-docflow.sh</string>
     </array>
     <key>WorkingDirectory</key>
     <string>/Users/hughscott/Documents/Coding/DocFlow</string>
@@ -20,6 +15,8 @@
     <true/>
     <key>KeepAlive</key>
     <true/>
+    <key>ThrottleInterval</key>
+    <integer>5</integer>
     <key>StandardOutPath</key>
     <string>/Users/hughscott/Documents/Coding/DocFlow/logs/docflow.log</string>
     <key>StandardErrorPath</key>

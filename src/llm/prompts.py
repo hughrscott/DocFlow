@@ -76,6 +76,81 @@ Respond with JSON:
 }}"""
 
 
+def build_rules_md_classification_prompt(
+    document_summary: dict,
+    rules_md: str,
+    entities: list[dict],
+    family: list[dict],
+    user: dict,
+) -> str:
+    """Build a classification prompt using the human-readable rules.md file.
+
+    This is the primary classification prompt. The LLM reads the rules.md
+    as natural language and decides where to file the document.
+    """
+    entities_text = "\n".join(
+        f"  - {e['name']} (type: {e.get('type', '?')}, dir: {e.get('directory', '?')})"
+        for e in entities
+    )
+    family_text = "\n".join(
+        f"  - {f['name']} ({f.get('relation', '?')})"
+        for f in family
+    )
+
+    return f"""You are classifying a scanned document for filing into a personal/business archive.
+
+DOCUMENT TO CLASSIFY:
+  Pages: {document_summary['pages']}
+  Institution (from OCR signals): {document_summary.get('institution', 'unknown')}
+  Document type (from OCR signals): {document_summary.get('doc_type', 'unknown')}
+  Period: {document_summary.get('period', 'unknown')}
+  Account hint: {document_summary.get('account', 'unknown')}
+
+  Text preview (first ~500 chars of page 1):
+  {document_summary.get('raw_text_preview', '(no text)')}
+
+USER CONTEXT:
+  Name: {user.get('name', 'Unknown')}
+  Address: {user.get('address', 'Unknown')}
+  Family: {family_text or '  (none)'}
+  Business entities: {entities_text or '  (none)'}
+
+FILING RULES:
+The following rules describe known document types and where they should be filed.
+Read them carefully and match the document to the best rule. If no rule fits,
+suggest a new sensible filing location.
+
+---
+{rules_md}
+---
+
+INSTRUCTIONS:
+1. Read the document's text preview carefully. Determine its TRUE nature — do NOT
+   rely solely on the OCR signal hints (they use simple keyword matching and can be wrong).
+2. Match the document to the most appropriate rule from the Filing Rules above.
+   If a rule matches, use its "File to" path and "Filename" template.
+3. Fill in template variables: {{period}} = MonthYYYY format (e.g., "March2026"),
+   {{year}} = 4-digit year, {{doc_type}} = document type, {{person}} = family member name.
+4. If NO existing rule matches, suggest a sensible filing directory and filename.
+   Use the same conventions as the existing rules.
+5. Assess your confidence (0.0 to 1.0) in the filing decision.
+6. The "rule_matched" field should be the rule heading (e.g., "Pnc Sulis Solar Checking")
+   if you matched an existing rule, or null if suggesting a new location.
+
+Respond with JSON:
+{{
+  "rule_matched": "rule heading from Filing Rules, or null if new",
+  "institution": "institution name (cleaned up from OCR)",
+  "doc_type": "document type",
+  "period": "time period in MonthYYYY format if found, otherwise null",
+  "person": "family member name if applicable, otherwise null",
+  "suggested_filename": "final filename with template variables filled in, e.g. PNCBankSulisSolarCheckingMarch2026.pdf",
+  "suggested_directory": "relative path under archive root from the rule's File to, e.g. SulisSolar/PNC",
+  "confidence": 0.85,
+  "reasoning": "brief explanation of the classification decision"
+}}"""
+
+
 def build_classification_prompt(
     document_summary: dict,
     filing_rules: list[dict],

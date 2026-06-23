@@ -379,6 +379,137 @@ function updateDarkModeUI(isDark) {
 }
 
 // ---------------------------------------------------------------------------
+// Directory Picker
+// ---------------------------------------------------------------------------
+let _dirTreeCache = null;
+
+async function openDirectoryPicker(callback) {
+    // Remove existing modal if any
+    const existing = document.getElementById('dir-picker-modal');
+    if (existing) existing.remove();
+
+    // Fetch tree (cache for session)
+    if (!_dirTreeCache) {
+        try {
+            const resp = await fetch('/api/archive/tree');
+            const data = await resp.json();
+            _dirTreeCache = data.tree || [];
+        } catch (e) {
+            showToast('Failed to load directory tree', 'error');
+            return;
+        }
+    }
+
+    // Build modal
+    const modal = document.createElement('div');
+    modal.id = 'dir-picker-modal';
+    modal.className = 'fixed inset-0 z-[200] flex items-center justify-center';
+    modal.innerHTML = `
+        <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" onclick="closeDirPicker()"></div>
+        <div class="relative bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-[420px] max-h-[70vh] flex flex-col overflow-hidden">
+            <div class="px-5 pt-5 pb-3 border-b border-slate-200 dark:border-slate-700">
+                <div class="flex items-center justify-between mb-3">
+                    <h3 class="text-sm font-bold font-headline text-slate-900 dark:text-slate-100">Choose Filing Location</h3>
+                    <button onclick="closeDirPicker()" class="text-slate-400 hover:text-slate-600 transition-colors">
+                        <span class="material-symbols-outlined text-sm">close</span>
+                    </button>
+                </div>
+                <div class="relative">
+                    <input id="dir-picker-search" type="text" placeholder="Filter folders..." autocomplete="off"
+                        class="w-full bg-slate-100 dark:bg-slate-700 border-none rounded-lg py-2 px-3 text-sm focus:ring-2 focus:ring-primary/20 outline-none dark:text-slate-200" />
+                    <span class="material-symbols-outlined absolute right-2.5 top-2 text-slate-400 text-sm">search</span>
+                </div>
+            </div>
+            <div id="dir-picker-tree" class="flex-1 overflow-y-auto p-3 space-y-0.5"></div>
+            <div class="px-5 py-3 border-t border-slate-200 dark:border-slate-700 flex items-center gap-2">
+                <span class="material-symbols-outlined text-slate-400 text-sm">subdirectory_arrow_right</span>
+                <input id="dir-picker-custom" type="text" placeholder="Or type a new path..."
+                    class="flex-1 bg-transparent border-none text-sm focus:ring-0 outline-none text-slate-700 dark:text-slate-200" />
+                <button onclick="dirPickerConfirmCustom()" class="px-3 py-1.5 bg-primary text-on-primary rounded-lg text-xs font-bold hover:opacity-90 transition-opacity">Use</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+
+    // Store callback
+    window._dirPickerCallback = callback;
+
+    // Render tree
+    _renderDirPickerTree(_dirTreeCache, '');
+
+    // Wire up search filter
+    const searchInput = document.getElementById('dir-picker-search');
+    searchInput.focus();
+    searchInput.addEventListener('input', () => {
+        _renderDirPickerTree(_dirTreeCache, searchInput.value.trim().toLowerCase());
+    });
+
+    // Enter on custom input
+    document.getElementById('dir-picker-custom').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') dirPickerConfirmCustom();
+    });
+
+    // Escape to close
+    modal.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') closeDirPicker();
+    });
+}
+
+function _renderDirPickerTree(nodes, filter, depth = 0) {
+    const container = document.getElementById('dir-picker-tree');
+    if (depth === 0) container.innerHTML = '';
+
+    for (const node of nodes) {
+        const matchesFilter = !filter || node.path.toLowerCase().includes(filter) || node.name.toLowerCase().includes(filter);
+        const childrenMatch = node.children && _treeHasMatch(node.children, filter);
+
+        if (!matchesFilter && !childrenMatch) continue;
+
+        const indent = depth * 16;
+        const item = document.createElement('div');
+        item.className = 'flex items-center gap-2 px-2 py-2 rounded-lg cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors group';
+        item.style.paddingLeft = `${indent + 8}px`;
+        item.innerHTML = `
+            <span class="material-symbols-outlined text-primary/60 text-sm group-hover:text-primary transition-colors">folder</span>
+            <span class="text-sm text-slate-700 dark:text-slate-300 group-hover:text-slate-900 dark:group-hover:text-slate-100 flex-1">${node.name}</span>
+            <span class="text-[10px] text-slate-400 font-medium">${node.pdf_count || ''}</span>
+        `;
+        item.addEventListener('click', () => {
+            if (window._dirPickerCallback) window._dirPickerCallback(node.path);
+            closeDirPicker();
+        });
+        container.appendChild(item);
+
+        if (node.children) {
+            _renderDirPickerTree(node.children, filter, depth + 1);
+        }
+    }
+}
+
+function _treeHasMatch(nodes, filter) {
+    if (!filter) return true;
+    for (const n of nodes) {
+        if (n.path.toLowerCase().includes(filter) || n.name.toLowerCase().includes(filter)) return true;
+        if (n.children && _treeHasMatch(n.children, filter)) return true;
+    }
+    return false;
+}
+
+function closeDirPicker() {
+    const modal = document.getElementById('dir-picker-modal');
+    if (modal) modal.remove();
+    window._dirPickerCallback = null;
+}
+
+function dirPickerConfirmCustom() {
+    const input = document.getElementById('dir-picker-custom');
+    const val = input ? input.value.trim() : '';
+    if (!val) return;
+    if (window._dirPickerCallback) window._dirPickerCallback(val);
+    closeDirPicker();
+}
+
+// ---------------------------------------------------------------------------
 // Initialize page shell
 // ---------------------------------------------------------------------------
 function initPage(title) {

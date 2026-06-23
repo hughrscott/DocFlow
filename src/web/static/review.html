@@ -20,6 +20,16 @@
     <main class="ml-16 lg:ml-64 flex-1 flex flex-col h-screen relative bg-surface overflow-hidden transition-all duration-200">
         <div id="header"></div>
 
+        <!-- Tab bar -->
+        <div class="flex items-center gap-1 px-8 pt-4 pb-0">
+            <button id="tab-pending" onclick="switchTab('pending')" class="px-4 py-2 rounded-t-lg text-sm font-bold bg-primary text-on-primary transition-colors">
+                Pending Review <span id="tab-pending-count" class="ml-1 opacity-70"></span>
+            </button>
+            <button id="tab-unmatched" onclick="switchTab('unmatched')" class="px-4 py-2 rounded-t-lg text-sm font-bold bg-surface-container text-outline hover:bg-surface-variant transition-colors">
+                Unmatched & Skipped <span id="tab-unmatched-count" class="ml-1 opacity-70"></span>
+            </button>
+        </div>
+
         <!-- Empty state -->
         <div id="empty-state" class="flex-1 flex items-center justify-center hidden">
             <div class="text-center">
@@ -92,7 +102,12 @@
                         </div>
                         <div class="space-y-2">
                             <label class="text-[10px] font-bold text-outline uppercase tracking-widest px-1">Filing Location</label>
-                            <input id="edit-directory" class="w-full bg-surface-container-low border-none rounded-lg py-3 px-4 text-sm font-medium text-primary focus:ring-2 focus:ring-primary/5" type="text" />
+                            <div class="flex gap-2">
+                                <input id="edit-directory" class="flex-1 bg-surface-container-low border-none rounded-lg py-3 px-4 text-sm font-medium text-primary focus:ring-2 focus:ring-primary/5" type="text" />
+                                <button onclick="openDirectoryPicker(path => document.getElementById('edit-directory').value = path)" class="px-3 bg-surface-container-low rounded-lg hover:bg-surface-container transition-colors flex items-center" title="Browse folders">
+                                    <span class="material-symbols-outlined text-primary text-sm">folder_open</span>
+                                </button>
+                            </div>
                         </div>
                         <div class="grid grid-cols-3 gap-3">
                             <div class="space-y-2">
@@ -139,6 +154,71 @@
             </div>
         </section>
 
+        <!-- Unmatched files view -->
+        <section id="unmatched-workspace" class="flex-1 flex flex-col overflow-hidden hidden">
+            <div id="unmatched-empty" class="flex-1 flex items-center justify-center hidden">
+                <div class="text-center">
+                    <div class="w-20 h-20 bg-secondary-container/30 rounded-full flex items-center justify-center mx-auto mb-6">
+                        <span class="material-symbols-outlined text-secondary text-4xl">check_circle</span>
+                    </div>
+                    <h2 class="text-2xl font-headline font-bold text-primary mb-2">No Unmatched Files</h2>
+                    <p class="text-on-surface-variant">All documents have been filed.</p>
+                </div>
+            </div>
+            <div id="unmatched-list" class="flex-1 overflow-y-auto p-8">
+                <div class="max-w-4xl mx-auto space-y-3" id="unmatched-items"></div>
+            </div>
+        </section>
+
+        <!-- Unmatched reclassify modal -->
+        <div id="reclassify-modal" class="fixed inset-0 z-[150] flex items-center justify-center hidden">
+            <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" onclick="closeReclassifyModal()"></div>
+            <div class="relative bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-[600px] max-h-[80vh] flex flex-col overflow-hidden">
+                <div class="px-6 pt-5 pb-3 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
+                    <h3 class="text-sm font-bold font-headline text-slate-900 dark:text-slate-100">Reclassify Document</h3>
+                    <button onclick="closeReclassifyModal()" class="text-slate-400 hover:text-slate-600"><span class="material-symbols-outlined text-sm">close</span></button>
+                </div>
+                <div class="flex-1 overflow-y-auto p-6 space-y-5">
+                    <!-- Preview -->
+                    <div class="bg-slate-50 rounded-xl overflow-hidden max-h-64 flex items-center justify-center">
+                        <img id="reclassify-preview" class="max-h-64 max-w-full" alt="Preview" />
+                    </div>
+                    <!-- LLM suggestion -->
+                    <div id="reclassify-suggestion" class="bg-blue-50 border border-blue-200 rounded-xl p-4 hidden">
+                        <div class="flex items-center gap-2 mb-2">
+                            <span class="material-symbols-outlined text-blue-600 text-sm">psychology</span>
+                            <span class="text-xs font-bold uppercase text-blue-700">AI Suggestion</span>
+                        </div>
+                        <p id="reclassify-reasoning" class="text-sm text-blue-800 mb-3 italic"></p>
+                    </div>
+                    <!-- Form -->
+                    <div class="space-y-4">
+                        <div class="space-y-2">
+                            <label class="text-[10px] font-bold text-outline uppercase tracking-widest px-1">Filename</label>
+                            <input id="reclassify-filename" class="w-full bg-surface-container-low border-none rounded-lg py-3 px-4 text-sm font-medium text-primary focus:ring-2 focus:ring-primary/5" type="text" />
+                        </div>
+                        <div class="space-y-2">
+                            <label class="text-[10px] font-bold text-outline uppercase tracking-widest px-1">Filing Location</label>
+                            <div class="flex gap-2">
+                                <input id="reclassify-directory" class="flex-1 bg-surface-container-low border-none rounded-lg py-3 px-4 text-sm font-medium text-primary focus:ring-2 focus:ring-primary/5" type="text" />
+                                <button onclick="openDirectoryPicker(path => document.getElementById('reclassify-directory').value = path)" class="px-3 bg-surface-container-low rounded-lg hover:bg-surface-container transition-colors flex items-center">
+                                    <span class="material-symbols-outlined text-primary text-sm">folder_open</span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="px-6 py-4 border-t border-slate-200 dark:border-slate-700 flex gap-3">
+                    <button id="reclassify-suggest-btn" onclick="suggestClassification()" class="px-4 py-2.5 rounded-xl font-bold bg-surface-container text-on-surface hover:bg-surface-variant transition-colors text-sm flex items-center gap-2">
+                        <span class="material-symbols-outlined text-sm">psychology</span> Ask AI
+                    </button>
+                    <div class="flex-1"></div>
+                    <button onclick="closeReclassifyModal()" class="px-4 py-2.5 rounded-xl font-bold text-on-surface-variant hover:bg-slate-50 transition-colors text-sm">Cancel</button>
+                    <button onclick="submitReclassify()" class="px-6 py-2.5 rounded-xl font-bold bg-primary text-on-primary hover:shadow-xl transition-all text-sm">File</button>
+                </div>
+            </div>
+        </div>
+
         <div id="footer"></div>
     </main>
 
@@ -149,12 +229,149 @@
         let queueItems = [];
         let currentIndex = 0;
         let previewMode = 'image';
-        let currentPageIdx = 0;  // index into the item's pages array
+        let currentPageIdx = 0;
+        let currentTab = 'pending';
+        let unmatchedFiles = [];
+        let reclassifyPath = '';
+
+        // Tab switching
+        function switchTab(tab) {
+            currentTab = tab;
+            const pendingBtn = document.getElementById('tab-pending');
+            const unmatchedBtn = document.getElementById('tab-unmatched');
+            const activeClass = 'px-4 py-2 rounded-t-lg text-sm font-bold bg-primary text-on-primary transition-colors';
+            const inactiveClass = 'px-4 py-2 rounded-t-lg text-sm font-bold bg-surface-container text-outline hover:bg-surface-variant transition-colors';
+
+            if (tab === 'pending') {
+                pendingBtn.className = activeClass;
+                unmatchedBtn.className = inactiveClass;
+                document.getElementById('unmatched-workspace').classList.add('hidden');
+                loadQueue();
+            } else {
+                unmatchedBtn.className = activeClass;
+                pendingBtn.className = inactiveClass;
+                document.getElementById('review-workspace').classList.add('hidden');
+                document.getElementById('queue-strip').classList.add('hidden');
+                document.getElementById('empty-state').classList.add('hidden');
+                document.getElementById('unmatched-workspace').classList.remove('hidden');
+                loadUnmatched();
+            }
+        }
+
+        // Unmatched files
+        async function loadUnmatched() {
+            const resp = await fetch('/api/unmatched');
+            const data = await resp.json();
+            unmatchedFiles = data.files;
+            document.getElementById('tab-unmatched-count').textContent = data.count > 0 ? `(${data.count})` : '';
+
+            if (unmatchedFiles.length === 0) {
+                document.getElementById('unmatched-empty').classList.remove('hidden');
+                document.getElementById('unmatched-list').classList.add('hidden');
+                return;
+            }
+
+            document.getElementById('unmatched-empty').classList.add('hidden');
+            document.getElementById('unmatched-list').classList.remove('hidden');
+            const container = document.getElementById('unmatched-items');
+            container.innerHTML = unmatchedFiles.map((f, i) => `
+                <div class="flex items-center gap-4 p-4 bg-surface-container-lowest rounded-xl hover:shadow-md transition-all group cursor-pointer" onclick="openReclassify(${i})">
+                    <span class="material-symbols-outlined text-slate-400 text-2xl">description</span>
+                    <div class="flex-1 min-w-0">
+                        <p class="text-sm font-bold text-slate-900 truncate">${f.name}</p>
+                        <p class="text-xs text-on-surface-variant">${f.folder} &middot; ${f.pages} pages &middot; ${(f.size / 1024).toFixed(0)} KB</p>
+                    </div>
+                    <span class="px-2 py-1 rounded-lg text-[10px] font-bold uppercase ${f.folder === '_Skipped' ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}">${f.folder === '_Skipped' ? 'Skipped' : 'Unmatched'}</span>
+                    <button class="opacity-0 group-hover:opacity-100 transition-opacity px-3 py-1.5 bg-primary text-on-primary rounded-lg text-xs font-bold">
+                        Reclassify
+                    </button>
+                </div>
+            `).join('');
+        }
+
+        function openReclassify(index) {
+            const f = unmatchedFiles[index];
+            reclassifyPath = f.path;
+            document.getElementById('reclassify-filename').value = f.name;
+            document.getElementById('reclassify-directory').value = '';
+            document.getElementById('reclassify-preview').src = `/api/preview/file?path=${encodeURIComponent(f.path)}&page=1`;
+            document.getElementById('reclassify-suggestion').classList.add('hidden');
+            document.getElementById('reclassify-modal').classList.remove('hidden');
+        }
+
+        function closeReclassifyModal() {
+            document.getElementById('reclassify-modal').classList.add('hidden');
+        }
+
+        async function suggestClassification() {
+            const btn = document.getElementById('reclassify-suggest-btn');
+            btn.disabled = true;
+            btn.innerHTML = '<span class="material-symbols-outlined text-sm animate-spin">progress_activity</span> Thinking...';
+
+            try {
+                const resp = await fetch('/api/unmatched/suggest', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ path: reclassifyPath }),
+                });
+                if (!resp.ok) throw new Error('LLM request failed');
+                const result = await resp.json();
+
+                if (result.suggested_filename) {
+                    document.getElementById('reclassify-filename').value = result.suggested_filename;
+                }
+                if (result.suggested_directory) {
+                    document.getElementById('reclassify-directory').value = result.suggested_directory;
+                }
+                if (result.reasoning) {
+                    document.getElementById('reclassify-reasoning').textContent = result.reasoning;
+                    document.getElementById('reclassify-suggestion').classList.remove('hidden');
+                }
+            } catch (e) {
+                showToast('AI suggestion failed', 'error');
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '<span class="material-symbols-outlined text-sm">psychology</span> Ask AI';
+            }
+        }
+
+        async function submitReclassify() {
+            const filename = document.getElementById('reclassify-filename').value.trim();
+            const directory = document.getElementById('reclassify-directory').value.trim();
+            if (!filename || !directory) {
+                showToast('Filename and directory are required', 'warning');
+                return;
+            }
+
+            try {
+                const resp = await fetch('/api/unmatched/reclassify', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ path: reclassifyPath, filename, directory }),
+                });
+                if (!resp.ok) {
+                    const err = await resp.json().catch(() => ({}));
+                    showToast(err.detail || 'Reclassify failed', 'error');
+                    return;
+                }
+                showToast('Document reclassified and filed', 'success', 3000);
+                closeReclassifyModal();
+                loadUnmatched();
+            } catch (e) {
+                showToast('Network error', 'error');
+            }
+        }
 
         async function loadQueue() {
             const resp = await fetch('/api/queue');
             const data = await resp.json();
             queueItems = data.items;
+            document.getElementById('tab-pending-count').textContent = queueItems.length > 0 ? `(${queueItems.length})` : '';
+
+            // Also fetch unmatched count for the tab badge
+            fetch('/api/unmatched').then(r => r.json()).then(d => {
+                document.getElementById('tab-unmatched-count').textContent = d.count > 0 ? `(${d.count})` : '';
+            }).catch(() => {});
 
             if (queueItems.length === 0) {
                 document.getElementById('empty-state').classList.remove('hidden');

@@ -239,9 +239,17 @@ def watch(ctx, interval: int) -> None:
     watch_dir = Path(os.path.expanduser(
         config.get("scan_watch_folder", "~/ElectronicFiles/ToBeOrganized")
     ))
-    processed_file = watch_dir / ".processed"
+    docflow_state_dir = Path.home() / ".docflow"
+    docflow_state_dir.mkdir(parents=True, exist_ok=True)
+    processed_file = docflow_state_dir / "processed.txt"
     processed: set[str] = set()
-    if processed_file.exists():
+    # Migrate old .processed file from watch folder if it exists
+    old_processed = watch_dir / ".processed"
+    if old_processed.exists():
+        processed = set(old_processed.read_text().splitlines())
+        processed_file.write_text("\n".join(sorted(processed)))
+        old_processed.unlink()
+    elif processed_file.exists():
         processed = set(processed_file.read_text().splitlines())
 
     console.print(f"[bold]Watching:[/bold] {watch_dir}")
