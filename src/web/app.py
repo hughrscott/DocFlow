@@ -790,8 +790,8 @@ async def health():
 async def test_connection():
     """Test LLM connectivity with a trivial prompt."""
     try:
-        from src.classification.llm_client import get_llm_client
-        client = get_llm_client(_config)
+        from src.llm.client import _get_client
+        client = _get_client(_config)
         # Send a trivial prompt to verify connectivity
         response = await asyncio.to_thread(
             client.chat.completions.create,
