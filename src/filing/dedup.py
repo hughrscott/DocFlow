@@ -100,11 +100,11 @@ def build_initial_index(archive_root: str | Path, progress_callback=None) -> int
     if not root.exists():
         return 0
 
-    # Collect all PDFs (skip system folders)
+    # Collect all PDFs (skip system folders like _Unmatched, _Skipped, _cache)
     pdfs = []
     for pdf in root.rglob("*.pdf"):
-        rel = str(pdf.relative_to(root))
-        if any(part.startswith("_") or part.startswith(".") for part in pdf.parts):
+        rel_parts = pdf.relative_to(root).parts
+        if any(part.startswith("_") or part.startswith(".") for part in rel_parts):
             continue
         pdfs.append(pdf)
 
