@@ -795,7 +795,7 @@ async def test_connection():
         # Send a trivial prompt to verify connectivity
         response = await asyncio.to_thread(
             client.chat.completions.create,
-            model=_config.get("openrouter_model", _config.get("llm_model", "google/gemini-2.0-flash-001")),
+            model=_config.get("llm_model") or _config.get("openrouter_model", "google/gemini-2.0-flash-001"),
             messages=[{"role": "user", "content": "Reply with OK"}],
             max_tokens=5,
         )
