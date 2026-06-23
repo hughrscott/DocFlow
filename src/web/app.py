@@ -802,7 +802,7 @@ async def test_connection():
             messages=[{"role": "user", "content": "Reply with OK"}],
             max_tokens=5,
         )
-        reply = response.choices[0].message.content.strip() if response.choices else ""
+        reply = (response.choices[0].message.content or "").strip() if response.choices else ""
         return {"status": "connected", "reply": reply, "model": response.model}
     except Exception as exc:
         return JSONResponse(
