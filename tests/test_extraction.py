@@ -16,8 +16,9 @@ from src.extraction.extractor import extract_documents
 def three_page_pdf(tmp_path: Path) -> Path:
     pdf_path = tmp_path / "source.pdf"
     writer = PdfWriter()
-    for _ in range(3):
-        writer.add_blank_page(width=612, height=792)
+    for i in range(3):
+        # Use unique dimensions so dedup hash doesn't collide with real archive files
+        writer.add_blank_page(width=612 + i, height=792 + i)
     with open(pdf_path, "wb") as f:
         writer.write(f)
     return pdf_path

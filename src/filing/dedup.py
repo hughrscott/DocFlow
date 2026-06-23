@@ -65,6 +65,21 @@ def hash_pdf_content(pdf_path: Path) -> str:
         return h.hexdigest()
 
 
+def hash_pages(reader, page_numbers: list[int]) -> str:
+    """Hash specific pages from a PdfReader without writing a file.
+
+    page_numbers are 1-indexed.
+    """
+    h = hashlib.sha256()
+    for pn in page_numbers:
+        page = reader.pages[pn - 1]
+        text = page.extract_text() or ""
+        h.update(text.encode("utf-8"))
+        box = page.mediabox
+        h.update(f"{box.width}x{box.height}".encode("utf-8"))
+    return h.hexdigest()
+
+
 def is_duplicate(pdf_path: Path) -> tuple[bool, str | None]:
     """Check if a PDF is a duplicate of an already-filed document.
 

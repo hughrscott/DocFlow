@@ -10,7 +10,7 @@ from pypdf import PdfReader, PdfWriter
 
 from src.classification.classifier import FilingDecision
 from src.filing.filer import ensure_directory
-from src.filing.dedup import is_duplicate, register_file
+from src.filing.dedup import is_duplicate, register_file, hash_pages, _load_hashes
 
 logger = logging.getLogger(__name__)
 
@@ -71,13 +71,26 @@ def extract_documents(
         target_dir = Path(decision.target_directory)
         ensure_directory(target_dir)
 
+        # Check content hash BEFORE writing — hash pages from source PDF
+        content_hash = hash_pages(reader, decision.candidate.pages)
+        hashes = _load_hashes()
+        if content_hash in hashes:
+            existing = Path(hashes[content_hash])
+            if existing.exists() and str(existing) != str(target_dir / decision.filename):
+                logger.info(
+                    "Duplicate detected: pages %s already filed as %s",
+                    decision.candidate.pages, existing,
+                )
+                decision.notes = f"Duplicate — already filed as {existing.name}"
+                written_files.append(existing)
+                continue
+
         page_count = len(decision.candidate.pages)
         output_path = _unique_path(
             target_dir / decision.filename, page_count=page_count
         )
 
         if output_path is None:
-            # Duplicate detected — skip extraction
             logger.info(
                 "Skipped duplicate: pages %s → %s",
                 decision.candidate.pages, decision.filename,
@@ -88,22 +101,10 @@ def extract_documents(
         writer = PdfWriter()
 
         for page_num in decision.candidate.pages:
-            # page_num is 1-indexed, pypdf uses 0-indexed
             writer.add_page(reader.pages[page_num - 1])
 
         with open(output_path, "wb") as f:
             writer.write(f)
-
-        # Check content hash for duplicates
-        dup, existing = is_duplicate(output_path)
-        if dup:
-            output_path.unlink()
-            logger.info(
-                "Duplicate detected (hash match): pages %s already filed as %s",
-                decision.candidate.pages, existing,
-            )
-            written_files.append(Path(existing))
-            continue
 
         register_file(output_path)
         written_files.append(output_path)
