@@ -132,12 +132,15 @@
                         <span class="material-symbols-outlined">verified</span>
                         Correct & File <span class="text-xs opacity-60 ml-1">[C then Enter]</span>
                     </button>
-                    <div class="grid grid-cols-2 gap-3">
+                    <div class="grid grid-cols-3 gap-3">
                         <button id="btn-approve" aria-label="Approve document as-is" class="py-3.5 rounded-xl font-bold bg-surface-container-high text-on-surface hover:bg-surface-variant transition-colors active:scale-95">
                             Approve As-Is <span class="text-xs opacity-50 ml-1">[A]</span>
                         </button>
                         <button id="btn-skip" aria-label="Skip document" class="py-3.5 rounded-xl font-bold text-on-surface-variant hover:bg-slate-50 transition-colors active:scale-95">
                             Skip <span class="text-xs opacity-50 ml-1">[S]</span>
+                        </button>
+                        <button id="btn-ask-ai" onclick="askAiForPending()" class="py-3.5 rounded-xl font-bold bg-surface-container text-on-surface hover:bg-surface-variant transition-colors active:scale-95 flex items-center justify-center gap-1.5">
+                            <span class="material-symbols-outlined text-sm">psychology</span> Ask AI
                         </button>
                     </div>
                 </div>
@@ -541,6 +544,41 @@
         document.getElementById('btn-approve').addEventListener('click', () => doAction('approve'));
         document.getElementById('btn-skip').addEventListener('click', () => doAction('skip'));
         document.getElementById('btn-correct').addEventListener('click', () => doAction('correct'));
+
+        async function askAiForPending() {
+            const item = queueItems[currentIndex];
+            if (!item) return;
+
+            const btn = document.getElementById('btn-ask-ai');
+            btn.disabled = true;
+            btn.innerHTML = '<span class="material-symbols-outlined text-sm animate-spin">progress_activity</span> Thinking...';
+
+            try {
+                const resp = await fetch('/api/unmatched/suggest', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ path: item.source_pdf }),
+                });
+                if (!resp.ok) throw new Error('LLM request failed');
+                const result = await resp.json();
+
+                if (result.suggested_filename) {
+                    document.getElementById('edit-filename').value = result.suggested_filename;
+                }
+                if (result.suggested_directory) {
+                    document.getElementById('edit-directory').value = result.suggested_directory;
+                }
+                if (result.reasoning) {
+                    document.getElementById('reasoning-text').textContent = result.reasoning;
+                }
+                showToast('AI suggestion applied', 'success', 3000);
+            } catch (e) {
+                showToast('AI suggestion failed', 'error');
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '<span class="material-symbols-outlined text-sm">psychology</span> Ask AI';
+            }
+        }
 
         function setPreviewMode(mode) {
             previewMode = mode;
