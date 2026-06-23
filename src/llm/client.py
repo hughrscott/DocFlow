@@ -48,6 +48,9 @@ def _get_client(config: dict | None = None) -> OpenAI:
 
     # API key: config > env var > provider-specific env var
     api_key = cfg.get("llm_api_key")
+    # Skip masked placeholder from settings UI
+    if api_key in ("", "••••••••", None):
+        api_key = None
     if not api_key and preset["env_key"]:
         api_key = os.environ.get(preset["env_key"])
     if not api_key:

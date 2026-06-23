@@ -724,6 +724,9 @@ async def update_settings(request: Request):
     }
     for key in body:
         if key in allowed:
+            # Don't overwrite a real API key with the masked placeholder
+            if key == "llm_api_key" and body[key] in ("", "••••••••"):
+                continue
             _config[key] = body[key]
     # Keep openrouter_model in sync with llm_model for backwards compat
     if "llm_model" in body:
