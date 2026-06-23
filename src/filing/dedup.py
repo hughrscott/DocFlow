@@ -38,16 +38,31 @@ def _save_hashes(hashes: dict[str, str]) -> None:
 
 
 def hash_pdf_content(pdf_path: Path) -> str:
-    """Compute a content hash for a PDF file.
+    """Compute a content hash for a PDF based on page content.
 
-    Uses SHA-256 of the raw file bytes. Fast and reliable for
-    detecting exact duplicates.
+    Extracts text and page dimensions from each page to produce a
+    content-stable hash that doesn't change when the same pages are
+    re-extracted (which produces different PDF metadata/timestamps).
+    Falls back to raw file hash if text extraction fails.
     """
-    h = hashlib.sha256()
-    with open(pdf_path, "rb") as f:
-        for chunk in iter(lambda: f.read(8192), b""):
-            h.update(chunk)
-    return h.hexdigest()
+    try:
+        from pypdf import PdfReader
+        reader = PdfReader(str(pdf_path))
+        h = hashlib.sha256()
+        for page in reader.pages:
+            text = page.extract_text() or ""
+            h.update(text.encode("utf-8"))
+            # Include page dimensions for non-text PDFs (scanned images)
+            box = page.mediabox
+            h.update(f"{box.width}x{box.height}".encode("utf-8"))
+        return h.hexdigest()
+    except Exception:
+        # Fallback to raw file hash
+        h = hashlib.sha256()
+        with open(pdf_path, "rb") as f:
+            for chunk in iter(lambda: f.read(8192), b""):
+                h.update(chunk)
+        return h.hexdigest()
 
 
 def is_duplicate(pdf_path: Path) -> tuple[bool, str | None]:
