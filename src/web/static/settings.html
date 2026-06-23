@@ -286,8 +286,10 @@
         async function testConnection() {
             const btn = document.getElementById('btn-test-conn');
             btn.disabled = true;
-            btn.innerHTML = '<span class="material-symbols-outlined text-sm animate-spin">progress_activity</span> Testing...';
+            btn.innerHTML = '<span class="material-symbols-outlined text-sm animate-spin">progress_activity</span> Saving & Testing...';
             try {
+                // Save current settings first so test uses the latest values
+                await saveSettings();
                 const resp = await fetch('/api/settings/test-connection', { method: 'POST' });
                 const data = await resp.json();
                 if (data.status === 'connected') {
