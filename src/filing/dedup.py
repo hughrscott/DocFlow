@@ -122,6 +122,9 @@ def build_initial_index(archive_root: str | Path, progress_callback=None) -> int
                 indexed += 1
             if progress_callback:
                 progress_callback(i + 1, len(pdfs))
+            # Save every 50 files so progress isn't lost
+            if indexed % 50 == 0 and indexed > 0:
+                _save_hashes(hashes)
         except Exception as exc:
             logger.warning("Failed to hash %s: %s", pdf, exc)
 
