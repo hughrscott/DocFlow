@@ -132,8 +132,19 @@ ACCOUNT_HINT_RE = re.compile(
 MIN_CONFIDENCE_FOR_USABLE = 0.30
 
 
+_COMMON_WORDS = frozenset([
+    "the", "and", "for", "you", "your", "this", "that", "with", "from",
+    "have", "are", "was", "not", "but", "will", "can", "all", "has",
+    "been", "may", "any", "our", "its", "per", "new", "one", "out",
+    "due", "date", "page", "total", "amount", "account", "number",
+    "bank", "statement", "payment", "balance", "name", "address",
+    "phone", "email", "please", "thank", "dear", "sincerely",
+    "invoice", "bill", "tax", "insurance", "policy", "claim",
+])
+
+
 def _estimate_confidence(text: str) -> float:
-    """Rough heuristic for OCR quality based on text characteristics."""
+    """Heuristic for OCR quality based on text characteristics and word recognition."""
     if not text or not text.strip():
         return 0.0
     total = len(text)
@@ -141,7 +152,20 @@ def _estimate_confidence(text: str) -> float:
     ratio = alpha_num / total if total else 0.0
     # Short texts are suspicious — real OCR pages have substantial content
     length_factor = min(total / 200, 1.0)
-    return min(round(ratio * 0.8 * length_factor, 3), 1.0)
+    char_score = ratio * 0.8 * length_factor
+
+    # Check for recognizable English words — this catches upside-down/mirrored text
+    # that still has high alphanumeric ratio but no real words
+    words = text.lower().split()
+    if words:
+        recognised = sum(1 for w in words[:100] if w in _COMMON_WORDS)
+        word_ratio = recognised / min(len(words), 100)
+        # Blend: char_score weighted by word recognition
+        # If no common words found, heavily penalise
+        word_factor = min(word_ratio * 5, 1.0)  # 20% common words → full score
+        return min(round(char_score * (0.3 + 0.7 * word_factor), 3), 1.0)
+
+    return min(round(char_score, 3), 1.0)
 
 
 # ---------------------------------------------------------------------------
@@ -273,9 +297,15 @@ def analyze_pages(page_images: list[Image.Image]) -> list[PageRecord]:
         text, confidence = _ocr_page(image, rotation=0)
         best_text, best_conf, best_rot = text, confidence, 0
 
-        # If confidence is too low, try rotations
+        # Always try 180° — upside-down scans are common and the confidence
+        # estimator may not catch them if the text is still alphanumeric
+        text_180, conf_180 = _ocr_page(image, rotation=180)
+        if conf_180 > best_conf:
+            best_text, best_conf, best_rot = text_180, conf_180, 180
+
+        # If still poor, try 90° and 270°
         if best_conf < MIN_CONFIDENCE_FOR_USABLE:
-            for rot in (180, 90, 270):
+            for rot in (90, 270):
                 text, confidence = _ocr_page(image, rotation=rot)
                 if confidence > best_conf:
                     best_text, best_conf, best_rot = text, confidence, rot
