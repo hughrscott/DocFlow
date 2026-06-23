@@ -489,17 +489,30 @@
                     return;
                 }
 
-                const entries = data.logs.flatMap(log => log.entries || []).slice(0, 10);
-                container.innerHTML = entries.map(e => `
+                const entries = data.logs.flatMap(log => {
+                    const logTime = log.timestamp || '';
+                    return (log.entries || []).map(e => ({...e, _logTime: logTime}));
+                }).slice(0, 15);
+                container.innerHTML = entries.map(e => {
+                    const ts = e.filed_at || e._logTime || '';
+                    let timeStr = '';
+                    if (ts) {
+                        try {
+                            const d = ts.includes('T') ? new Date(ts) : new Date(ts.replace(/(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})/, '$1-$2-$3T$4:$5:$6'));
+                            timeStr = d.toLocaleDateString('en-US', {month: 'short', day: 'numeric'}) + ' ' + d.toLocaleTimeString('en-US', {hour: 'numeric', minute: '2-digit'});
+                        } catch(_) {}
+                    }
+                    return `
                     <div class="flex items-center bg-surface-container-lowest p-3 rounded-lg shadow-sm">
                         <span class="material-symbols-outlined text-slate-400 mr-3">description</span>
-                        <div class="flex-1">
-                            <p class="text-sm font-medium">${e.filename}</p>
+                        <div class="flex-1 min-w-0">
+                            <p class="text-sm font-medium truncate">${e.filename}</p>
                             <p class="text-xs text-on-surface-variant">${e.target_directory.split('/').slice(-2).join('/')}</p>
                         </div>
+                        ${timeStr ? `<span class="text-[10px] text-on-surface-variant mr-3 whitespace-nowrap">${timeStr}</span>` : ''}
                         <div>${confidenceBadge(e.confidence)}</div>
-                    </div>
-                `).join('');
+                    </div>`;
+                }).join('');
             } catch (e) {
                 document.getElementById('recent-logs').innerHTML = '<p class="text-on-surface-variant text-sm">Could not load recent activity.</p>';
             }

@@ -68,7 +68,7 @@ def ui(ctx, host: str, port: int) -> None:
     with open(config_path) as f:
         config = yaml.safe_load(f)
 
-    configure(config)
+    configure(config, config_path=config_path)
     click.echo(f"\n  DocFlow UI: http://{host}:{port}\n")
     uvicorn.run(app, host=host, port=port, log_level="info")
 

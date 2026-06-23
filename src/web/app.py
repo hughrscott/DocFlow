@@ -45,10 +45,41 @@ async def no_cache_html_js(request: Request, call_next):
     return response
 
 
-def configure(config: dict) -> None:
+def configure(config: dict, config_path: Path | None = None) -> None:
     """Set the config for the web app."""
-    global _config
+    global _config, _config_path
     _config = config
+    if config_path:
+        _config_path = config_path
+
+
+_config_path: Path | None = None
+
+
+def _persist_config() -> None:
+    """Write current config back to the YAML file so changes survive restart."""
+    if not _config_path or not _config_path.exists():
+        return
+    try:
+        # Read existing file to preserve comments and structure
+        with open(_config_path) as f:
+            existing = yaml.safe_load(f) or {}
+
+        # Update only the keys we allow changing via settings
+        persist_keys = {
+            "confidence_threshold", "archive_root", "scan_watch_folder",
+            "llm_provider", "llm_model", "llm_base_url", "llm_api_key",
+        }
+        for key in persist_keys:
+            if key in _config and _config[key] not in ("", "••••••••", None):
+                existing[key] = _config[key]
+
+        with open(_config_path, "w") as f:
+            yaml.dump(existing, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
+
+        logger.info("Settings persisted to %s", _config_path)
+    except Exception as exc:
+        logger.warning("Failed to persist config: %s", exc)
 
 
 def _archive_root() -> Path:
@@ -731,6 +762,10 @@ async def update_settings(request: Request):
     # Keep openrouter_model in sync with llm_model for backwards compat
     if "llm_model" in body:
         _config["openrouter_model"] = body["llm_model"]
+
+    # Persist to YAML so changes survive restart
+    _persist_config()
+
     return {"status": "updated"}
 
 

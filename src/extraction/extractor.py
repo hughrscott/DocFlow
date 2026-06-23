@@ -134,12 +134,14 @@ def _write_filing_log(
     log_path = archive_root / f"filing_log_{timestamp}.json"
 
     entries = []
+    filed_at = datetime.now().isoformat()
     for decision, file_path in zip(decisions, written_files):
         entries.append({
             "filename": decision.filename,
             "target_directory": decision.target_directory,
             "rule_matched": decision.rule_matched,
             "confidence": decision.confidence,
+            "filed_at": filed_at,
             "pages_extracted": decision.candidate.pages,
             "institution": decision.candidate.institution,
             "doc_type": decision.candidate.doc_type,
