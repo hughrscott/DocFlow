@@ -7,7 +7,7 @@ import re
 from collections import Counter, defaultdict
 from pathlib import Path
 
-from src.ocr.analyzer import SIGNAL_LIBRARY
+from docflow.ocr.analyzer import SIGNAL_LIBRARY
 
 logger = logging.getLogger(__name__)
 

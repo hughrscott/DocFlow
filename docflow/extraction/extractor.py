@@ -8,9 +8,9 @@ from pathlib import Path
 
 from pypdf import PdfReader, PdfWriter
 
-from src.classification.classifier import FilingDecision
-from src.filing.filer import ensure_directory
-from src.filing.dedup import is_duplicate, register_file, hash_pages, _load_hashes
+from docflow.classification.classifier import FilingDecision
+from docflow.filing.filer import ensure_directory
+from docflow.filing.dedup import is_duplicate, register_file, hash_pages, _load_hashes
 
 logger = logging.getLogger(__name__)
 

@@ -8,7 +8,7 @@ from pathlib import Path
 
 from openpyxl import Workbook, load_workbook
 
-from src.classification.classifier import FilingDecision
+from docflow.classification.classifier import FilingDecision
 
 logger = logging.getLogger(__name__)
 

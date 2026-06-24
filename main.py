@@ -39,7 +39,7 @@ def review(ctx, host: str, port: int) -> None:
     """Launch the review queue web UI (legacy)."""
     import yaml
     import uvicorn
-    from src.review.server import app, configure
+    from docflow.review.server import app, configure
 
     config_path = ctx.obj["config_path"]
     if not config_path.exists():
@@ -60,7 +60,7 @@ def ui(ctx, host: str, port: int) -> None:
     """Launch the full DocFlow web UI."""
     import yaml
     import uvicorn
-    from src.web.app import app, configure
+    from docflow.web.app import app, configure
 
     config_path = ctx.obj["config_path"]
     if not config_path.exists():
@@ -79,7 +79,7 @@ def learn(ctx) -> None:
     """Review corrections and show suggested new filing rules."""
     import yaml
     from rich.console import Console
-    from src.config.learner import suggest_rules
+    from docflow.config.learner import suggest_rules
 
     console = Console()
     config_path = ctx.obj["config_path"]
@@ -112,7 +112,7 @@ def scan_archive(ctx, archive_path: Path) -> None:
     """Scan an existing archive and infer filing rules."""
     import yaml
     from rich.console import Console
-    from src.config.scanner import scan_existing_archive
+    from docflow.config.scanner import scan_existing_archive
 
     console = Console()
     console.rule("[bold blue]Archive Scanner")
@@ -163,7 +163,7 @@ def scan_archive(ctx, archive_path: Path) -> None:
 def validate(ctx) -> None:
     """Validate the configuration file."""
     from rich.console import Console
-    from src.config.validator import validate_config
+    from docflow.config.validator import validate_config
 
     console = Console()
     config_path = ctx.obj["config_path"]
@@ -276,15 +276,15 @@ def watch(ctx, interval: int) -> None:
 
 def _run_pipeline(input_pdf: Path, config_path: Path) -> None:
     """Execute the full mail archiver pipeline."""
-    from src.ingestion.loader import load_pdf
-    from src.ocr.analyzer import analyze_pages
-    from src.clustering.clusterer import cluster_pages
-    from src.classification.classifier import classify_candidates
-    from src.filing.confidence_gate import gate_decisions
-    from src.extraction.extractor import extract_documents
-    from src.summary.generator import generate_summary
-    from src.ingestion.archiver import archive_original
-    from src.review.queue import save_review_queue
+    from docflow.ingestion.loader import load_pdf
+    from docflow.ocr.analyzer import analyze_pages
+    from docflow.clustering.clusterer import cluster_pages
+    from docflow.classification.classifier import classify_candidates
+    from docflow.filing.confidence_gate import gate_decisions
+    from docflow.extraction.extractor import extract_documents
+    from docflow.summary.generator import generate_summary
+    from docflow.ingestion.archiver import archive_original
+    from docflow.review.queue import save_review_queue
     import yaml
     from rich.console import Console
 
@@ -301,7 +301,7 @@ def _run_pipeline(input_pdf: Path, config_path: Path) -> None:
     console.print(f"Config: {config_path}")
 
     # 0. Build dedup index on first run
-    from src.filing.dedup import is_empty, build_initial_index
+    from docflow.filing.dedup import is_empty, build_initial_index
     if is_empty():
         console.print("\n[bold]Building duplicate index (first run)...[/bold]")
         count = build_initial_index(

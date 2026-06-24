@@ -10,7 +10,7 @@ import logging
 from collections import Counter
 from dataclasses import dataclass, field
 
-from src.ocr.analyzer import PageRecord
+from docflow.ocr.analyzer import PageRecord
 
 logger = logging.getLogger(__name__)
 
@@ -155,8 +155,8 @@ def _llm_cluster(
     Sends all pages with their OCR text and extracted signals.
     Returns a list of DocumentCandidates, or None if the LLM call fails.
     """
-    from src.llm.client import chat_json
-    from src.llm.prompts import build_clustering_prompt
+    from docflow.llm.client import chat_json
+    from docflow.llm.prompts import build_clustering_prompt
 
     # Build rich page summaries for the prompt
     page_summaries = []

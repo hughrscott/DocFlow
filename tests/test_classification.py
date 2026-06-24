@@ -3,8 +3,8 @@ from __future__ import annotations
 
 import pytest
 
-from src.clustering.clusterer import DocumentCandidate
-from src.classification.classifier import (
+from docflow.clustering.clusterer import DocumentCandidate
+from docflow.classification.classifier import (
     classify_candidates,
     _match_rule,
     _generate_filename,
@@ -116,8 +116,8 @@ class TestClassifyCandidates:
     def test_unmatched_goes_to_review(self):
         from unittest.mock import patch
         candidate = _make_candidate(institution="unknown_bank", doc_type="receipt")
-        with patch("src.classification.classifier._llm_classify_with_rules_md", return_value=None), \
-             patch("src.classification.classifier._llm_classify_legacy", return_value=None):
+        with patch("docflow.classification.classifier._llm_classify_with_rules_md", return_value=None), \
+             patch("docflow.classification.classifier._llm_classify_legacy", return_value=None):
             decisions = classify_candidates([candidate], SAMPLE_CONFIG)
         assert len(decisions) == 1
         assert decisions[0].rule_matched == "none"

@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from src.ingestion.archiver import archive_original
+from docflow.ingestion.archiver import archive_original
 
 
 class TestArchiveOriginal:

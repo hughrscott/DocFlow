@@ -7,7 +7,7 @@ import os
 import re
 from dataclasses import dataclass
 
-from src.clustering.clusterer import DocumentCandidate
+from docflow.clustering.clusterer import DocumentCandidate
 
 logger = logging.getLogger(__name__)
 
@@ -164,7 +164,7 @@ def classify_candidates(
     2. Otherwise, use LLM classification with rules.md as context.
     3. Fall back to unmatched if both fail.
     """
-    from src.config.rules_manager import load_rules_md
+    from docflow.config.rules_manager import load_rules_md
 
     filing_rules = config.get("filing_rules", [])
     threshold = config.get("confidence_threshold", 0.75)
@@ -249,8 +249,8 @@ def _llm_classify_with_rules_md(
     threshold: float,
 ) -> FilingDecision | None:
     """Use LLM with rules.md context to classify a document."""
-    from src.llm.client import chat_json
-    from src.llm.prompts import build_rules_md_classification_prompt
+    from docflow.llm.client import chat_json
+    from docflow.llm.prompts import build_rules_md_classification_prompt
 
     raw_text_preview = ""
     raw_texts = candidate.raw_signals.get("raw_texts", [])
@@ -319,8 +319,8 @@ def _llm_classify_legacy(
     threshold: float,
 ) -> FilingDecision | None:
     """Use LLM with YAML rules context (legacy path)."""
-    from src.llm.client import chat_json
-    from src.llm.prompts import build_classification_prompt
+    from docflow.llm.client import chat_json
+    from docflow.llm.prompts import build_classification_prompt
 
     raw_text_preview = ""
     raw_texts = candidate.raw_signals.get("raw_texts", [])

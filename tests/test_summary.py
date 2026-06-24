@@ -6,9 +6,9 @@ from pathlib import Path
 import pytest
 from openpyxl import load_workbook
 
-from src.clustering.clusterer import DocumentCandidate
-from src.classification.classifier import FilingDecision
-from src.summary.generator import generate_summary
+from docflow.clustering.clusterer import DocumentCandidate
+from docflow.classification.classifier import FilingDecision
+from docflow.summary.generator import generate_summary
 
 
 def _make_decision(auto_file: bool = True) -> FilingDecision:

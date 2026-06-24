@@ -7,9 +7,9 @@ from pathlib import Path
 import pytest
 from pypdf import PdfWriter
 
-from src.clustering.clusterer import DocumentCandidate
-from src.classification.classifier import FilingDecision
-from src.extraction.extractor import extract_documents
+from docflow.clustering.clusterer import DocumentCandidate
+from docflow.classification.classifier import FilingDecision
+from docflow.extraction.extractor import extract_documents
 
 
 @pytest.fixture()

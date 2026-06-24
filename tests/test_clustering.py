@@ -3,8 +3,8 @@ from __future__ import annotations
 
 import pytest
 
-from src.ocr.analyzer import PageRecord
-from src.clustering.clusterer import cluster_pages, DocumentCandidate
+from docflow.ocr.analyzer import PageRecord
+from docflow.clustering.clusterer import cluster_pages, DocumentCandidate
 
 
 def _make_record(

@@ -1,9 +1,9 @@
 """Tests for src/filing/confidence_gate."""
 from __future__ import annotations
 
-from src.clustering.clusterer import DocumentCandidate
-from src.classification.classifier import FilingDecision
-from src.filing.confidence_gate import gate_decisions
+from docflow.clustering.clusterer import DocumentCandidate
+from docflow.classification.classifier import FilingDecision
+from docflow.filing.confidence_gate import gate_decisions
 
 
 def _make_decision(confidence: float, rule: str = "some_rule") -> FilingDecision:

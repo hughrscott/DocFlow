@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import pytest
 
-from src.ocr.analyzer import (
+from docflow.ocr.analyzer import (
     PageRecord,
     extract_account_hint,
     extract_doc_type,

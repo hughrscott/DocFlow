@@ -8,8 +8,8 @@ from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
 
-from src.classification.classifier import FilingDecision
-from src.clustering.clusterer import DocumentCandidate
+from docflow.classification.classifier import FilingDecision
+from docflow.clustering.clusterer import DocumentCandidate
 
 logger = logging.getLogger(__name__)
 

@@ -10,8 +10,8 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 from pypdf import PdfReader, PdfWriter
 
-from src.review.queue import load_review_queue, update_queue_item
-from src.filing.filer import ensure_directory
+from docflow.review.queue import load_review_queue, update_queue_item
+from docflow.filing.filer import ensure_directory
 
 logger = logging.getLogger(__name__)
 
@@ -77,7 +77,7 @@ async def correct(item_id: str, request: Request):
     _extract_item(item, filename, target_dir)
 
     # Record the correction for rule learning
-    from src.config.learner import record_correction
+    from docflow.config.learner import record_correction
     record_correction(item, filename, target_dir, _config)
 
     return {"status": "corrected", "filename": filename, "directory": target_dir}

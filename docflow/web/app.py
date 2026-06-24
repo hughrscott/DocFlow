@@ -17,8 +17,8 @@ from fastapi.staticfiles import StaticFiles
 from pypdf import PdfReader, PdfWriter
 from sse_starlette.sse import EventSourceResponse
 
-from src.review.queue import load_review_queue, update_queue_item, save_review_queue
-from src.filing.filer import ensure_directory
+from docflow.review.queue import load_review_queue, update_queue_item, save_review_queue
+from docflow.filing.filer import ensure_directory
 
 logger = logging.getLogger(__name__)
 
@@ -219,17 +219,17 @@ async def _run_pipeline_async(job_id: str, pdf_path: Path) -> None:
     state = _processing_state[job_id]
 
     try:
-        from src.ingestion.loader import load_pdf
-        from src.ocr.analyzer import analyze_pages
-        from src.clustering.clusterer import cluster_pages
-        from src.classification.classifier import classify_candidates
-        from src.filing.confidence_gate import gate_decisions
-        from src.extraction.extractor import extract_documents
-        from src.summary.generator import generate_summary
-        from src.ingestion.archiver import archive_original
+        from docflow.ingestion.loader import load_pdf
+        from docflow.ocr.analyzer import analyze_pages
+        from docflow.clustering.clusterer import cluster_pages
+        from docflow.classification.classifier import classify_candidates
+        from docflow.filing.confidence_gate import gate_decisions
+        from docflow.extraction.extractor import extract_documents
+        from docflow.summary.generator import generate_summary
+        from docflow.ingestion.archiver import archive_original
 
         # 0. Build dedup index on first run
-        from src.filing.dedup import is_empty, build_initial_index
+        from docflow.filing.dedup import is_empty, build_initial_index
         if is_empty():
             state.update({"step": "Building duplicate index (first run)", "progress": 2, "status": "processing"})
             await asyncio.to_thread(
@@ -367,7 +367,7 @@ async def correct_item(item_id: str, request: Request):
         raise HTTPException(404, f"Item {item_id} not found")
     _extract_review_item(item, filename, target_dir)
 
-    from src.config.learner import record_correction
+    from docflow.config.learner import record_correction
     record_correction(item, filename, target_dir, _config)
 
     return {"status": "corrected"}
@@ -464,7 +464,7 @@ async def reclassify_unmatched(request: Request):
 
     shutil.move(str(source), str(target))
 
-    from src.config.learner import record_correction
+    from docflow.config.learner import record_correction
     record_correction(
         {"suggested_filename": source.name, "suggested_directory": str(source.parent)},
         filename, str(target_dir), _config,
@@ -496,8 +496,8 @@ async def suggest_classification(request: Request):
     if images:
         raw_text = await asyncio.to_thread(pytesseract.image_to_string, images[0])
 
-    from src.llm.client import chat_json
-    from src.config.rules_manager import load_rules_md
+    from docflow.llm.client import chat_json
+    from docflow.config.rules_manager import load_rules_md
 
     document_summary = {
         "pages": list(range(1, len(PdfReader(str(source)).pages) + 1)),
@@ -510,7 +510,7 @@ async def suggest_classification(request: Request):
 
     rules_md = load_rules_md(_config)
     if rules_md:
-        from src.llm.prompts import build_rules_md_classification_prompt
+        from docflow.llm.prompts import build_rules_md_classification_prompt
         prompt = build_rules_md_classification_prompt(
             document_summary,
             rules_md,
@@ -519,7 +519,7 @@ async def suggest_classification(request: Request):
             _config.get("user", {}),
         )
     else:
-        from src.llm.prompts import build_classification_prompt
+        from docflow.llm.prompts import build_classification_prompt
         prompt = build_classification_prompt(
             document_summary,
             _config.get("filing_rules", []),
@@ -777,7 +777,7 @@ async def get_rules():
 @app.get("/api/settings/rules-md")
 async def get_rules_md():
     """Return the rules.md content for viewing/editing."""
-    from src.config.rules_manager import load_rules_md, rules_path
+    from docflow.config.rules_manager import load_rules_md, rules_path
     content = load_rules_md(_config)
     return {"content": content, "path": str(rules_path(_config))}
 
@@ -785,7 +785,7 @@ async def get_rules_md():
 @app.post("/api/settings/rules-md")
 async def update_rules_md(request: Request):
     """Save updated rules.md content."""
-    from src.config.rules_manager import rules_path
+    from docflow.config.rules_manager import rules_path
     body = await request.json()
     content = body.get("content", "")
     path = rules_path(_config)
@@ -828,7 +828,7 @@ async def health():
 async def test_connection():
     """Test LLM connectivity with a trivial prompt."""
     try:
-        from src.llm.client import _get_client
+        from docflow.llm.client import _get_client
         client = _get_client(_config)
         # Send a trivial prompt to verify connectivity
         response = await asyncio.to_thread(

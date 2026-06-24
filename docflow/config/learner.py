@@ -66,14 +66,14 @@ def record_correction(
 
 def _learn_rule_from_correction(correction: dict, config: dict) -> None:
     """Use the LLM to generate a new rule for rules.md based on a correction."""
-    from src.config.rules_manager import load_rules_md, append_rule
+    from docflow.config.rules_manager import load_rules_md, append_rule
 
     rules_md = load_rules_md(config)
     if not rules_md:
         return
 
     try:
-        from src.llm.client import chat_json
+        from docflow.llm.client import chat_json
     except Exception:
         logger.debug("LLM not available for rule learning")
         return

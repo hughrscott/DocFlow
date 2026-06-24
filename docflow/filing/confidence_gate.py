@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import logging
 
-from src.classification.classifier import FilingDecision
+from docflow.classification.classifier import FilingDecision
 
 logger = logging.getLogger(__name__)
 

@@ -7,9 +7,9 @@ import pytest
 import yaml
 from pathlib import Path
 
-from src.config.validator import validate_config
-from src.config.scanner import scan_existing_archive
-from src.config.learner import record_correction, suggest_rules
+from docflow.config.validator import validate_config
+from docflow.config.scanner import scan_existing_archive
+from docflow.config.learner import record_correction, suggest_rules
 
 
 class TestValidator:

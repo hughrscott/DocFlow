@@ -10,10 +10,10 @@ from fastapi.testclient import TestClient
 from unittest.mock import patch
 from pathlib import Path
 
-from src.review.queue import save_review_queue, load_review_queue, update_queue_item
-from src.review.server import app, configure
-from src.classification.classifier import FilingDecision
-from src.clustering.clusterer import DocumentCandidate
+from docflow.review.queue import save_review_queue, load_review_queue, update_queue_item
+from docflow.review.server import app, configure
+from docflow.classification.classifier import FilingDecision
+from docflow.clustering.clusterer import DocumentCandidate
 
 
 def _make_decision(
@@ -132,7 +132,7 @@ class TestReviewServer:
         item_id = items[0]["id"]
 
         # Mock extraction since we don't have a real PDF in tests
-        with patch("src.review.server._extract_item"):
+        with patch("docflow.review.server._extract_item"):
             resp = client.post(f"/skip/{item_id}")
             assert resp.status_code == 200
 

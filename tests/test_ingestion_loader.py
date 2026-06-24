@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
-from src.ingestion.loader import load_pdf
+from docflow.ingestion.loader import load_pdf
 
 
 def test_load_pdf_returns_correct_page_count(minimal_pdf: Path) -> None:
