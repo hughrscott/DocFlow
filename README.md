@@ -9,43 +9,53 @@ Local-first application that ingests multi-page scanned mail PDFs, identifies an
 - **Poppler** (PDF rendering): `brew install poppler`
 - **Ollama** (optional, for local LLM): `brew install ollama && ollama pull llama3.2`
 
-## Install
+## Quick Start
 
 ```bash
 git clone https://github.com/hughrscott/DocFlow.git
 cd DocFlow
+make start
+```
+
+That's it. `make start` creates the virtual environment, installs dependencies, and starts DocFlow. Open http://localhost:8765.
+
+### Make commands
+
+| Command | What it does |
+|---|---|
+| `make start` | Start DocFlow (auto-installs if needed) |
+| `make stop` | Stop DocFlow |
+| `make check` | Verify system dependencies |
+| `make setup` | Force-rebuild the virtual environment |
+| `make logs` | Tail the server log |
+
+### First-time setup
+
+On first run, configure your archive directory and LLM provider:
+
+```bash
+.venv/bin/docflow init
+```
+
+This creates `~/.docflow/config.yaml`. To use a cloud LLM (OpenRouter, OpenAI, Groq), copy `.env.example` to `.env` and add your API key.
+
+## Manual Install
+
+If you prefer not to use Make:
+
+```bash
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -e .
-```
-
-## First-time setup
-
-```bash
 docflow init
-```
-
-This creates `~/.docflow/config.yaml` and walks you through setting your archive directory and LLM provider.
-
-To use a cloud LLM (OpenRouter, OpenAI, Groq), copy `.env.example` to `.env` and add your API key.
-
-## Verify installation
-
-```bash
-docflow check
+docflow start
 ```
 
 ## Usage
 
-### Start the web UI
-
-```bash
-docflow start
-```
-
 Open http://localhost:8765. Upload scanned PDFs and DocFlow will OCR, classify, and file them.
 
-### Other commands
+### All CLI commands
 
 | Command | What it does |
 |---|---|

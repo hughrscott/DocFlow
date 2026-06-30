@@ -5,151 +5,164 @@
     <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
     <title>DocFlow — Settings</title>
     <script src="https://cdn.tailwindcss.com?plugins=forms"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@200..800&family=Inter:wght@100..900&display=swap" rel="stylesheet"/>
-    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+    <link rel="preconnect" href="https://fonts.googleapis.com"/>
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400..800&family=Inter:wght@400..700&family=JetBrains+Mono:wght@400..600&display=swap" rel="stylesheet"/>
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL@20..48,400..600,0..1&display=swap" rel="stylesheet"/>
     <script src="/static/config.js"></script>
     <style>
-        body { font-family: 'Inter', sans-serif; }
+        * { box-sizing: border-box; }
+        body { margin: 0; font-family: 'Inter', sans-serif; -webkit-font-smoothing: antialiased; }
         .font-headline { font-family: 'Manrope', sans-serif; }
-        .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
+        .font-mono { font-family: 'JetBrains Mono', monospace; }
     </style>
 </head>
-<body class="bg-surface text-on-surface dark:bg-slate-900 dark:text-slate-100">
+<body class="bg-canvas text-ink">
     <div id="nav"></div>
-    <div id="header"></div>
+    <div class="df-main">
+        <div id="header"></div>
+        <div class="df-body df-scroll">
 
-    <main class="ml-16 lg:ml-64 p-8 max-w-7xl transition-all duration-200">
-        <div class="grid grid-cols-12 gap-8">
-            <!-- Left column -->
-            <div class="col-span-12 lg:col-span-8 space-y-12">
+    <main class="p-[32px_34px] max-w-[1180px] min-w-[1020px] mx-auto flex gap-7 items-start">
+        <!-- Left column -->
+        <div class="flex-1 min-w-0 flex flex-col gap-[34px]">
 
-                <!-- Entities & Family -->
-                <section>
-                    <div class="flex justify-between items-end mb-6">
-                        <div>
-                            <h3 class="font-headline text-2xl font-bold text-primary">Entities & Family Members</h3>
-                            <p class="text-on-surface-variant text-sm mt-1">Profiles and business entities for automated filing.</p>
-                        </div>
+            <!-- Entities & Family -->
+            <section>
+                <div class="flex items-center justify-between mb-[18px]">
+                    <div>
+                        <h3 class="m-0 font-headline font-extrabold text-[22px] tracking-[-0.01em]">Entities &amp; Family Members</h3>
+                        <p class="m-0 mt-[5px] text-text-olive text-[13.5px]">Profiles and business entities the archivist uses to route filings.</p>
                     </div>
-                    <div id="entities-grid" class="grid grid-cols-1 md:grid-cols-2 gap-4"></div>
-                </section>
-
-                <!-- Storage Paths -->
-                <section>
-                    <h3 class="font-headline text-2xl font-bold text-primary mb-6">Storage & Paths</h3>
-                    <div class="space-y-4">
-                        <div>
-                            <label class="block text-[11px] font-bold tracking-widest uppercase text-outline mb-2">Archive Root Directory</label>
-                            <input id="archive-root" class="w-full bg-surface-container-low border-none rounded-lg py-3 px-4 focus:ring-2 focus:ring-primary/15 text-sm font-mono" type="text"/>
-                        </div>
-                        <div>
-                            <label class="block text-[11px] font-bold tracking-widest uppercase text-outline mb-2">Scan Watch Folder</label>
-                            <input id="watch-folder" class="w-full bg-surface-container-low border-none rounded-lg py-3 px-4 focus:ring-2 focus:ring-primary/15 text-sm font-mono" type="text"/>
-                        </div>
+                    <div class="flex gap-2">
+                        <button onclick="openAddFamily()" class="flex items-center gap-[6px] bg-white border border-border-primary rounded-btn py-[9px] px-[14px] text-[12.5px] font-bold text-ink cursor-pointer hover:bg-soft-hover transition-colors">
+                            <span class="ms" style="font-size:16px;">person_add</span> Add Person
+                        </button>
+                        <button onclick="openAddEntity()" class="flex items-center gap-[6px] bg-ink text-[#F4F1EA] border-none rounded-btn py-[9px] px-[14px] text-[12.5px] font-bold cursor-pointer hover:-translate-y-px transition-transform">
+                            <span class="ms" style="font-size:16px;">add</span> Add Entity
+                        </button>
                     </div>
-                </section>
+                </div>
+                <div id="entities-grid" class="grid grid-cols-2 gap-3"></div>
+            </section>
 
-                <!-- AI Engine -->
-                <section class="bg-primary p-8 rounded-xl text-white overflow-hidden relative">
-                    <div class="absolute inset-0 bg-gradient-to-br from-primary via-primary-container to-primary opacity-50"></div>
-                    <div class="relative z-10">
-                        <div class="flex items-center gap-3 mb-8">
-                            <span class="material-symbols-outlined text-secondary-fixed">auto_awesome</span>
-                            <h3 class="font-headline text-2xl font-bold">AI Processing Engine</h3>
-                        </div>
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
-                            <!-- Provider -->
-                            <div>
-                                <label class="block text-[11px] font-bold tracking-widest uppercase text-primary-fixed-dim mb-3">Provider</label>
-                                <select id="llm-provider" onchange="onProviderChange()" class="w-full bg-white/10 border-white/20 text-white rounded-lg py-3 px-4 focus:ring-secondary-fixed/50">
-                                    <option value="openrouter">OpenRouter</option>
-                                    <option value="openai">OpenAI</option>
-                                    <option value="groq">Groq</option>
-                                    <option value="ollama">Ollama (Local)</option>
-                                </select>
-                            </div>
-                            <!-- Model -->
-                            <div>
-                                <label class="block text-[11px] font-bold tracking-widest uppercase text-primary-fixed-dim mb-3">Model</label>
-                                <input id="llm-model" class="w-full bg-white/10 border-white/20 text-white rounded-lg py-3 px-4 placeholder-white/30 focus:ring-secondary-fixed/50" type="text" placeholder="google/gemini-2.0-flash-001"/>
-                            </div>
-                            <!-- API Endpoint -->
-                            <div>
-                                <label class="block text-[11px] font-bold tracking-widest uppercase text-primary-fixed-dim mb-3">API Endpoint</label>
-                                <input id="llm-base-url" class="w-full bg-white/10 border-white/20 text-white rounded-lg py-3 px-4 font-mono text-xs placeholder-white/30 focus:ring-secondary-fixed/50" type="text" placeholder="https://openrouter.ai/api/v1"/>
-                                <p class="text-xs text-primary-fixed-dim mt-2">Override the default endpoint for your provider.</p>
-                            </div>
-                            <!-- API Key -->
-                            <div>
-                                <label class="block text-[11px] font-bold tracking-widest uppercase text-primary-fixed-dim mb-3">API Key</label>
-                                <input id="llm-api-key" class="w-full bg-white/10 border-white/20 text-white rounded-lg py-3 px-4 font-mono text-xs placeholder-white/30 focus:ring-secondary-fixed/50" type="password" placeholder="sk-or-v1-..."/>
-                                <p class="text-xs text-primary-fixed-dim mt-2">Stored in config. Leave blank to use .env file.</p>
-                            </div>
-                        </div>
-                        <!-- Confidence threshold -->
-                        <div class="mt-8 max-w-md">
-                            <div class="flex justify-between items-center mb-3">
-                                <label class="block text-[11px] font-bold tracking-widest uppercase text-primary-fixed-dim">Confidence Threshold</label>
-                                <span id="threshold-display" class="text-secondary-fixed font-bold">75%</span>
-                            </div>
-                            <input id="threshold-slider" aria-label="Confidence threshold" class="w-full h-2 bg-white/20 rounded-lg appearance-none cursor-pointer accent-secondary-fixed" max="100" min="50" type="range" value="75"/>
-                            <div class="flex justify-between mt-2">
-                                <span class="text-[10px] text-white/40">More auto-filing</span>
-                                <span class="text-[10px] text-white/40">More review</span>
-                            </div>
-                        </div>
-                        <div class="mt-8 flex gap-3">
-                            <button onclick="saveSettings()" class="bg-white/10 text-white border border-white/20 px-6 py-3 rounded-lg font-bold text-sm hover:bg-white/20 transition-all">
-                                Save Settings
-                            </button>
-                            <button onclick="testConnection()" id="btn-test-conn" class="bg-white/10 text-white border border-white/20 px-6 py-3 rounded-lg font-bold text-sm hover:bg-white/20 transition-all flex items-center gap-2">
-                                <span class="material-symbols-outlined text-sm">cable</span>
-                                Test Connection
-                            </button>
-                            <button onclick="validatePaths()" class="bg-white/10 text-white border border-white/20 px-6 py-3 rounded-lg font-bold text-sm hover:bg-white/20 transition-all flex items-center gap-2">
-                                <span class="material-symbols-outlined text-sm">folder_open</span>
-                                Verify Paths
-                            </button>
-                        </div>
+            <!-- Storage & Paths -->
+            <section>
+                <h3 class="m-0 mb-4 font-headline font-extrabold text-[22px] tracking-[-0.01em]">Storage &amp; Paths</h3>
+                <div class="flex flex-col gap-[14px]">
+                    <div>
+                        <label class="block text-[10px] font-bold tracking-[.1em] uppercase text-text-label mb-[7px]">Archive Root Directory</label>
+                        <input id="archive-root" class="w-full bg-white border border-border-primary rounded-[11px] py-3 px-[14px] font-mono font-medium text-[12.5px] text-ink outline-none" type="text"/>
                     </div>
-                </section>
+                    <div>
+                        <label class="block text-[10px] font-bold tracking-[.1em] uppercase text-text-label mb-[7px]">Scan Watch Folder</label>
+                        <input id="watch-folder" class="w-full bg-white border border-border-primary rounded-[11px] py-3 px-[14px] font-mono font-medium text-[12.5px] text-ink outline-none" type="text"/>
+                    </div>
+                </div>
+            </section>
+
+            <!-- AI Processing Engine (dark card) -->
+            <section class="bg-ink rounded-[18px] p-7 text-[#F4F1EA]">
+                <div class="flex items-center gap-[10px] mb-[22px]">
+                    <span class="ms" style="font-size:22px;color:#C0A86E;">auto_awesome</span>
+                    <h3 class="m-0 font-headline font-extrabold text-[20px]">AI Processing Engine</h3>
+                </div>
+                <div class="grid grid-cols-2 gap-[18px]">
+                    <!-- Provider -->
+                    <div>
+                        <label class="block text-[10px] font-bold tracking-[.1em] uppercase mb-[9px]" style="color:#8E8F86;">Provider</label>
+                        <select id="llm-provider" onchange="onProviderChange()"
+                            class="w-full bg-white/[.08] border border-white/[.14] rounded-[11px] py-3 px-[14px] text-[13px] font-semibold text-[#F4F1EA] outline-none appearance-none cursor-pointer"
+                            style="background-image:url('data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%2216%22 height=%2216%22 viewBox=%220 0 24 24%22 fill=%22%23F4F1EA%22><path d=%22M7 10l5 5 5-5z%22/></svg>');background-repeat:no-repeat;background-position:right 12px center;">
+                            <option value="openrouter" style="color:#15171C;">OpenRouter</option>
+                            <option value="openai" style="color:#15171C;">OpenAI</option>
+                            <option value="groq" style="color:#15171C;">Groq</option>
+                            <option value="ollama" style="color:#15171C;">Ollama (Local)</option>
+                        </select>
+                    </div>
+                    <!-- Model -->
+                    <div>
+                        <label class="block text-[10px] font-bold tracking-[.1em] uppercase mb-[9px]" style="color:#8E8F86;">Model</label>
+                        <input id="llm-model" class="w-full bg-white/[.08] border border-white/[.14] rounded-[11px] py-3 px-[14px] font-mono font-medium text-[12px] text-[#F4F1EA] outline-none" type="text" placeholder="google/gemini-2.0-flash-001"/>
+                    </div>
+                    <!-- API Endpoint -->
+                    <div>
+                        <label class="block text-[10px] font-bold tracking-[.1em] uppercase mb-[9px]" style="color:#8E8F86;">API Endpoint</label>
+                        <input id="llm-base-url" class="w-full bg-white/[.08] border border-white/[.14] rounded-[11px] py-3 px-[14px] font-mono font-medium text-[11px] outline-none" style="color:#C5C6BD;" type="text" placeholder="https://openrouter.ai/api/v1"/>
+                    </div>
+                    <!-- API Key -->
+                    <div>
+                        <label class="block text-[10px] font-bold tracking-[.1em] uppercase mb-[9px]" style="color:#8E8F86;">API Key</label>
+                        <input id="llm-api-key" class="w-full bg-white/[.08] border border-white/[.14] rounded-[11px] py-3 px-[14px] font-mono font-medium text-[12px] outline-none" style="color:#C5C6BD;" type="password" placeholder="sk-or-v1-..."/>
+                    </div>
+                </div>
+                <!-- Confidence threshold -->
+                <div class="mt-6 max-w-[460px]">
+                    <div class="flex justify-between items-center mb-[11px]">
+                        <label class="text-[10px] font-bold tracking-[.1em] uppercase" style="color:#8E8F86;">Confidence Threshold</label>
+                        <span id="threshold-display" class="font-headline font-extrabold text-[15px]" style="color:#C0A86E;">75%</span>
+                    </div>
+                    <input id="threshold-slider" aria-label="Confidence threshold"
+                        class="w-full cursor-pointer" style="accent-color:#C0A86E;"
+                        max="100" min="50" type="range" value="75"/>
+                    <div class="flex justify-between mt-[7px] text-[10px]" style="color:#73746C;">
+                        <span>More auto-filing</span><span>More review</span>
+                    </div>
+                </div>
+                <div class="mt-6 flex gap-[10px] flex-wrap">
+                    <button onclick="saveSettings()"
+                        class="bg-[#F4F1EA] text-ink border-none rounded-[11px] py-[11px] px-5 font-bold text-[13px] cursor-pointer">
+                        Save Settings
+                    </button>
+                    <button onclick="testConnection()" id="btn-test-conn"
+                        class="bg-white/[.08] text-[#F4F1EA] border border-white/[.18] rounded-[11px] py-[11px] px-[18px] font-bold text-[13px] cursor-pointer flex items-center gap-[7px]">
+                        <span class="ms" style="font-size:17px;">cable</span> Test Connection
+                    </button>
+                    <button onclick="validatePaths()"
+                        class="bg-white/[.08] text-[#F4F1EA] border border-white/[.18] rounded-[11px] py-[11px] px-[18px] font-bold text-[13px] cursor-pointer flex items-center gap-[7px]">
+                        <span class="ms" style="font-size:17px;">folder_open</span> Verify Paths
+                    </button>
+                </div>
+            </section>
+        </div>
+
+        <!-- Right column -->
+        <div class="w-[316px] flex-shrink-0 flex flex-col gap-[18px]">
+            <!-- Filing Rules -->
+            <div class="bg-white border border-border-primary rounded-card p-5 shadow-card">
+                <div class="flex items-center justify-between mb-4">
+                    <h4 class="m-0 font-headline font-bold text-[15px] flex items-center gap-[7px]">
+                        <span class="ms" style="font-size:19px;color:#B5751F;">rule</span> Filing Rules
+                    </h4>
+                    <span id="rule-count" class="bg-success-bg text-success text-[10.5px] font-bold py-[3px] px-[9px] rounded-pill"></span>
+                </div>
+                <div id="rules-list" class="df-scroll flex flex-col gap-[7px] max-h-[360px] overflow-y-auto"></div>
+                <button onclick="openAddRule()" class="mt-3 w-full flex items-center justify-center gap-[6px] bg-inset border border-border-card rounded-[11px] py-[10px] text-[12px] font-bold text-text-muted cursor-pointer hover:bg-sidebar transition-colors">
+                    <span class="ms" style="font-size:16px;">add</span> Add Rule
+                </button>
             </div>
 
-            <!-- Right column -->
-            <div class="col-span-12 lg:col-span-4 space-y-8">
-                <!-- Filing Rules -->
-                <div class="bg-surface-container-low p-6 rounded-xl border border-outline-variant/10">
-                    <div class="flex justify-between items-center mb-6">
-                        <h4 class="font-headline font-bold text-primary flex items-center gap-2">
-                            <span class="material-symbols-outlined text-xl">rule</span> Filing Rules
-                        </h4>
-                        <span id="rule-count" class="bg-secondary-container text-on-secondary-container text-[10px] px-2 py-0.5 rounded-full font-bold"></span>
-                    </div>
-                    <div id="rules-list" class="space-y-3 mb-6 max-h-96 overflow-y-auto"></div>
+            <!-- System Health -->
+            <div class="bg-white border border-border-primary rounded-card p-5 shadow-card">
+                <h4 class="m-0 mb-4 font-headline font-bold text-[15px]">System Health</h4>
+                <div class="flex justify-between items-center mb-3">
+                    <span class="text-[12.5px] text-text-olive">LLM Provider</span>
+                    <span class="font-headline font-bold text-[13px] text-ink" id="health-llm">—</span>
                 </div>
-
-                <!-- System Health -->
-                <div class="bg-surface-container-lowest p-6 rounded-xl border border-outline-variant/10">
-                    <h4 class="font-headline font-bold text-primary mb-4">System Health</h4>
-                    <div class="space-y-4">
-                        <div class="flex justify-between items-center">
-                            <span class="text-xs text-on-surface-variant">LLM Provider</span>
-                            <span class="font-headline font-bold text-primary text-sm" id="health-llm">—</span>
-                        </div>
-                        <div class="flex justify-between items-center">
-                            <span class="text-xs text-on-surface-variant">API Status</span>
-                            <div class="flex items-center gap-1.5" id="health-api">
-                                <div class="w-2 h-2 rounded-full bg-outline"></div>
-                                <span class="text-xs font-bold text-outline">Checking...</span>
-                            </div>
-                        </div>
+                <div class="flex justify-between items-center">
+                    <span class="text-[12.5px] text-text-olive">API Status</span>
+                    <div class="flex items-center gap-[6px]" id="health-api">
+                        <span class="w-[7px] h-[7px] rounded-pill bg-text-dim"></span>
+                        <span class="text-[12.5px] font-bold text-text-dim">Checking...</span>
                     </div>
                 </div>
             </div>
         </div>
     </main>
 
-    <div id="footer"></div>
+        </div><!-- end df-body -->
+        <div id="footer"></div>
+    </div><!-- end df-main -->
 
     <script src="/static/shared.js"></script>
     <script>
@@ -179,9 +192,8 @@
             document.getElementById('llm-provider').value = settings.llm_provider || 'openrouter';
             document.getElementById('llm-model').value = settings.llm_model || settings.openrouter_model || 'google/gemini-2.0-flash-001';
             document.getElementById('llm-base-url').value = settings.llm_base_url || '';
-            // Don't show the actual key, just indicate if one is set
             if (settings.llm_api_key) {
-                document.getElementById('llm-api-key').placeholder = '••••••• (configured)';
+                document.getElementById('llm-api-key').placeholder = '••••••• configured';
             }
 
             // Threshold slider live update
@@ -192,42 +204,55 @@
             // Entities
             const grid = document.getElementById('entities-grid');
             const allEntities = [
-                ...(entities.family || []).map(f => ({ ...f, type: 'personal', icon: 'person' })),
-                ...(entities.entities || []).map(e => ({ ...e, type: e.type || 'business', icon: 'domain' })),
+                ...(entities.family || []).map(f => ({ ...f, kind: 'person' })),
+                ...(entities.entities || []).map(e => ({ ...e, kind: 'biz' })),
             ];
-            grid.innerHTML = allEntities.map(e => `
-                <div class="bg-surface-container-lowest p-5 rounded-lg shadow-sm flex justify-between items-center">
-                    <div class="flex items-center gap-4">
-                        <div class="w-10 h-10 rounded-full ${e.type === 'personal' ? 'bg-primary-fixed' : 'bg-tertiary-fixed'} flex items-center justify-center">
-                            <span class="material-symbols-outlined text-primary">${e.icon}</span>
-                        </div>
-                        <div>
-                            <p class="font-semibold text-primary">${e.name}</p>
-                            <p class="text-xs text-on-surface-variant uppercase tracking-wider font-bold">${e.relation || e.type}</p>
-                        </div>
+            grid.innerHTML = allEntities.map(e => {
+                const isPerson = e.kind === 'person';
+                const iconBg = isPerson ? '#E9EDF7' : '#F6E9D3';
+                const iconColor = isPerson ? '#34508C' : '#B5751F';
+                const icon = isPerson ? 'person' : 'apartment';
+                const label = e.relation || e.type || 'Entity';
+                const deleteAction = isPerson
+                    ? `deleteFamily('${e.name}')`
+                    : `deleteEntity('${e.id || e.name}')`;
+                return `
+                <div class="group flex items-center gap-[13px] bg-white border border-border-card rounded-[14px] py-[14px] px-4 shadow-card relative">
+                    <div class="w-[38px] h-[38px] rounded-[11px] flex items-center justify-center flex-shrink-0" style="background:${iconBg};">
+                        <span class="ms" style="font-size:20px;color:${iconColor};">${icon}</span>
                     </div>
-                </div>
-            `).join('');
+                    <div class="min-w-0 flex-1">
+                        <p class="m-0 font-bold text-[13.5px] text-ink truncate">${e.name}</p>
+                        <p class="m-0 mt-[2px] text-[10px] font-bold tracking-[.08em] uppercase text-text-label">${label}</p>
+                    </div>
+                    <button onclick="${deleteAction}" class="opacity-0 group-hover:opacity-100 transition-opacity border-none bg-transparent cursor-pointer p-1" title="Remove">
+                        <span class="ms" style="font-size:18px;color:#BE4029;">close</span>
+                    </button>
+                </div>`;
+            }).join('');
 
             // Rules
             document.getElementById('rule-count').textContent = `${rules.rules.length} Active`;
             const rulesList = document.getElementById('rules-list');
             rulesList.innerHTML = rules.rules.map(r => `
-                <div class="flex items-center justify-between p-3 bg-white rounded-lg shadow-sm">
-                    <div class="flex flex-col min-w-0">
-                        <span class="text-sm font-semibold truncate">${r.id}</span>
-                        <span class="text-[10px] text-on-surface-variant truncate">${r.file_to}</span>
+                <div class="group flex items-center gap-2 bg-inset rounded-[11px] py-[11px] px-[13px]">
+                    <div class="flex-1 min-w-0">
+                        <p class="m-0 font-mono text-[12px] font-semibold text-ink truncate">${r.id}</p>
+                        <p class="m-0 mt-[3px] text-[11px] text-text-faint truncate">${r.file_to}</p>
                     </div>
+                    <button onclick="deleteRule('${r.id}')" class="opacity-0 group-hover:opacity-100 transition-opacity border-none bg-transparent cursor-pointer p-0.5 flex-shrink-0" title="Remove rule">
+                        <span class="ms" style="font-size:16px;color:#BE4029;">close</span>
+                    </button>
                 </div>
             `).join('');
 
             // Health
-            document.getElementById('health-llm').textContent = health.model.split('/').pop();
+            document.getElementById('health-llm').textContent = (health.model || '').split('/').pop() || '—';
             const apiEl = document.getElementById('health-api');
             if (health.llm_ready) {
-                apiEl.innerHTML = '<div class="w-2 h-2 rounded-full bg-secondary animate-pulse"></div><span class="text-xs font-bold text-secondary">Connected</span>';
+                apiEl.innerHTML = '<span class="w-[7px] h-[7px] rounded-pill bg-success"></span><span class="text-[12.5px] font-bold text-success">Connected</span>';
             } else {
-                apiEl.innerHTML = '<div class="w-2 h-2 rounded-full bg-error"></div><span class="text-xs font-bold text-error">No API Key</span>';
+                apiEl.innerHTML = '<span class="w-[7px] h-[7px] rounded-pill bg-danger"></span><span class="text-[12.5px] font-bold text-danger">No API Key</span>';
             }
         }
 
@@ -243,7 +268,6 @@
             const defaults = PROVIDER_DEFAULTS[provider] || PROVIDER_DEFAULTS.openrouter;
             document.getElementById('llm-base-url').placeholder = defaults.url;
             document.getElementById('llm-model').placeholder = defaults.model;
-            // Only overwrite if the field is empty or was a default
             const modelInput = document.getElementById('llm-model');
             const isDefault = Object.values(PROVIDER_DEFAULTS).some(d => d.model === modelInput.value);
             if (!modelInput.value || isDefault) {
@@ -259,10 +283,8 @@
                 archive_root: document.getElementById('archive-root').value,
                 scan_watch_folder: document.getElementById('watch-folder').value,
             };
-            // Only send base_url if user explicitly set one
             const baseUrl = document.getElementById('llm-base-url').value.trim();
             if (baseUrl) body.llm_base_url = baseUrl;
-            // Only send API key if user entered one
             const apiKey = document.getElementById('llm-api-key').value.trim();
             if (apiKey) body.llm_api_key = apiKey;
 
@@ -286,9 +308,8 @@
         async function testConnection() {
             const btn = document.getElementById('btn-test-conn');
             btn.disabled = true;
-            btn.innerHTML = '<span class="material-symbols-outlined text-sm animate-spin">progress_activity</span> Saving & Testing...';
+            btn.innerHTML = '<span class="ms" style="font-size:17px;animation:dfspin 1s linear infinite;">progress_activity</span> Saving & Testing...';
             try {
-                // Save current settings first so test uses the latest values
                 await saveSettings();
                 const resp = await fetch('/api/settings/test-connection', { method: 'POST' });
                 const data = await resp.json();
@@ -301,7 +322,7 @@
                 showToast('Network error testing connection', 'error');
             }
             btn.disabled = false;
-            btn.innerHTML = '<span class="material-symbols-outlined text-sm">cable</span> Test Connection';
+            btn.innerHTML = '<span class="ms" style="font-size:17px;">cable</span> Test Connection';
         }
 
         async function validatePaths() {
@@ -322,6 +343,173 @@
             } catch (e) {
                 showToast('Network error validating paths', 'error');
             }
+        }
+
+        // ---- Delete operations ----
+        async function deleteEntity(id) {
+            if (!confirm(`Remove entity "${id}"? This won't delete any filed documents.`)) return;
+            try {
+                const resp = await fetch(`/api/settings/entities/${encodeURIComponent(id)}`, { method: 'DELETE' });
+                if (!resp.ok) { showToast('Failed to delete entity', 'error'); return; }
+                showToast('Entity removed', 'success', 3000);
+                loadSettings();
+            } catch (e) { showToast('Network error', 'error'); }
+        }
+
+        async function deleteFamily(name) {
+            if (!confirm(`Remove "${name}" from family members?`)) return;
+            try {
+                const resp = await fetch(`/api/settings/family/${encodeURIComponent(name)}`, { method: 'DELETE' });
+                if (!resp.ok) { showToast('Failed to delete family member', 'error'); return; }
+                showToast('Family member removed', 'success', 3000);
+                loadSettings();
+            } catch (e) { showToast('Network error', 'error'); }
+        }
+
+        async function deleteRule(id) {
+            if (!confirm(`Delete rule "${id}"? Documents already filed won't be affected.`)) return;
+            try {
+                const resp = await fetch(`/api/settings/rules/${encodeURIComponent(id)}`, { method: 'DELETE' });
+                if (!resp.ok) { showToast('Failed to delete rule', 'error'); return; }
+                showToast('Rule deleted', 'success', 3000);
+                loadSettings();
+            } catch (e) { showToast('Network error', 'error'); }
+        }
+
+        // ---- Add modals ----
+        function _showModal(title, fields, onSubmit) {
+            const existing = document.getElementById('settings-modal');
+            if (existing) existing.remove();
+
+            const fieldHtml = fields.map(f => `
+                <div>
+                    <label class="block text-[10px] font-bold tracking-[.1em] uppercase text-text-label mb-[7px]">${f.label}</label>
+                    ${f.type === 'select'
+                        ? `<select id="modal-${f.id}" class="w-full bg-white border border-border-primary rounded-input py-[10px] px-3 text-[13px] text-ink outline-none">
+                            ${f.options.map(o => `<option value="${o.value}">${o.label}</option>`).join('')}
+                           </select>`
+                        : `<input id="modal-${f.id}" type="text" placeholder="${f.placeholder || ''}"
+                            class="w-full bg-white border border-border-primary rounded-input py-[10px] px-3 font-${f.mono ? 'mono' : '[inherit]'} text-[${f.mono ? '12px' : '13px'}] text-ink outline-none" />`
+                    }
+                </div>
+            `).join('');
+
+            const modal = document.createElement('div');
+            modal.id = 'settings-modal';
+            modal.className = 'fixed inset-0 z-[200] flex items-center justify-center';
+            modal.innerHTML = `
+                <div class="absolute inset-0 bg-[rgba(20,23,28,0.42)] backdrop-blur-[3px]" onclick="closeSettingsModal()"></div>
+                <div class="relative w-[440px] bg-soft-hover rounded-modal shadow-modal overflow-hidden">
+                    <div class="py-[18px] px-5 border-b border-border-card flex items-center justify-between">
+                        <h3 class="m-0 font-headline font-extrabold text-[16px] text-ink">${title}</h3>
+                        <button onclick="closeSettingsModal()" class="w-[30px] h-[30px] border-none bg-tile rounded-[9px] flex items-center justify-center cursor-pointer">
+                            <span class="ms" style="font-size:18px;color:#8A8B72;">close</span>
+                        </button>
+                    </div>
+                    <div class="p-5 flex flex-col gap-4">${fieldHtml}</div>
+                    <div class="px-5 py-4 border-t border-border-card flex justify-end gap-3">
+                        <button onclick="closeSettingsModal()" class="py-[10px] px-4 border-none bg-transparent text-text-muted font-bold text-[13px] cursor-pointer rounded-btn hover:bg-sidebar transition-colors">Cancel</button>
+                        <button id="modal-submit" class="py-[10px] px-5 bg-ink text-[#F4F1EA] border-none rounded-btn font-bold text-[13px] cursor-pointer hover:-translate-y-px transition-transform">Add</button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+            document.getElementById('modal-submit').addEventListener('click', onSubmit);
+            // Focus first input
+            const first = modal.querySelector('input');
+            if (first) setTimeout(() => first.focus(), 100);
+            // Escape to close
+            modal.addEventListener('keydown', e => { if (e.key === 'Escape') closeSettingsModal(); });
+        }
+
+        function closeSettingsModal() {
+            const m = document.getElementById('settings-modal');
+            if (m) m.remove();
+        }
+
+        function openAddFamily() {
+            _showModal('Add Family Member', [
+                { id: 'name', label: 'Name', placeholder: 'e.g. Jane Scott' },
+                { id: 'relation', label: 'Relation', placeholder: 'e.g. Spouse, Son, Daughter' },
+            ], async () => {
+                const name = document.getElementById('modal-name').value.trim();
+                const relation = document.getElementById('modal-relation').value.trim();
+                if (!name) { showToast('Name is required', 'warning'); return; }
+                try {
+                    const resp = await fetch('/api/settings/family', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ name, relation }),
+                    });
+                    if (!resp.ok) {
+                        const err = await resp.json().catch(() => ({}));
+                        showToast(err.detail || 'Failed to add', 'error'); return;
+                    }
+                    showToast(`Added ${name}`, 'success', 3000);
+                    closeSettingsModal();
+                    loadSettings();
+                } catch (e) { showToast('Network error', 'error'); }
+            });
+        }
+
+        function openAddEntity() {
+            _showModal('Add Entity', [
+                { id: 'name', label: 'Name', placeholder: 'e.g. Acme Corp LLC' },
+                { id: 'type', label: 'Type', type: 'select', options: [
+                    { value: 'business', label: 'Business' },
+                    { value: 'investment', label: 'Investment' },
+                    { value: 'personal', label: 'Personal' },
+                ]},
+                { id: 'directory', label: 'Directory', placeholder: 'e.g. AcmeCorp', mono: true },
+            ], async () => {
+                const name = document.getElementById('modal-name').value.trim();
+                const type = document.getElementById('modal-type').value;
+                const directory = document.getElementById('modal-directory').value.trim();
+                if (!name) { showToast('Name is required', 'warning'); return; }
+                try {
+                    const resp = await fetch('/api/settings/entities', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ name, type, directory: directory || undefined }),
+                    });
+                    if (!resp.ok) {
+                        const err = await resp.json().catch(() => ({}));
+                        showToast(err.detail || 'Failed to add', 'error'); return;
+                    }
+                    showToast(`Added ${name}`, 'success', 3000);
+                    closeSettingsModal();
+                    loadSettings();
+                } catch (e) { showToast('Network error', 'error'); }
+            });
+        }
+
+        function openAddRule() {
+            _showModal('Add Filing Rule', [
+                { id: 'id', label: 'Rule ID', placeholder: 'e.g. pnc_business_checking', mono: true },
+                { id: 'file_to', label: 'File To', placeholder: 'e.g. PNC/Business/Checking', mono: true },
+                { id: 'institution', label: 'Institution Match', placeholder: 'e.g. pnc', mono: true },
+            ], async () => {
+                const id = document.getElementById('modal-id').value.trim();
+                const file_to = document.getElementById('modal-file_to').value.trim();
+                const institution = document.getElementById('modal-institution').value.trim();
+                if (!id) { showToast('Rule ID is required', 'warning'); return; }
+                const rule = { id, file_to };
+                if (institution) rule.match = { institution };
+                try {
+                    const resp = await fetch('/api/settings/rules', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(rule),
+                    });
+                    if (!resp.ok) {
+                        const err = await resp.json().catch(() => ({}));
+                        showToast(err.detail || 'Failed to add', 'error'); return;
+                    }
+                    showToast(`Rule "${id}" added`, 'success', 3000);
+                    closeSettingsModal();
+                    loadSettings();
+                } catch (e) { showToast('Network error', 'error'); }
+            });
         }
 
         loadSettings();

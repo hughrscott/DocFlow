@@ -65,13 +65,18 @@ def _persist_config() -> None:
         with open(_config_path) as f:
             existing = yaml.safe_load(f) or {}
 
-        # Update only the keys we allow changing via settings
+        # Update scalar settings
         persist_keys = {
             "confidence_threshold", "archive_root", "scan_watch_folder",
             "llm_provider", "llm_model", "llm_base_url", "llm_api_key",
         }
         for key in persist_keys:
             if key in _config and _config[key] not in ("", "••••••••", None):
+                existing[key] = _config[key]
+
+        # Also persist structured data (entities, family, filing_rules, user)
+        for key in ("entities", "family", "filing_rules", "user"):
+            if key in _config:
                 existing[key] = _config[key]
 
         with open(_config_path, "w") as f:
@@ -801,6 +806,152 @@ async def get_entities():
         "family": _config.get("family", []),
         "user": _config.get("user", {}),
     }
+
+
+# ---------------------------------------------------------------------------
+# CRUD: Entities
+# ---------------------------------------------------------------------------
+
+@app.post("/api/settings/entities")
+async def add_entity(request: Request):
+    """Add a new business/investment entity."""
+    body = await request.json()
+    if not body.get("name"):
+        raise HTTPException(400, "Entity name is required")
+    entity = {
+        "id": body.get("id") or body["name"].lower().replace(" ", "_"),
+        "name": body["name"],
+        "type": body.get("type", "business"),
+    }
+    for key in ("directory", "legal_name", "address", "banks", "account_hints"):
+        if body.get(key):
+            entity[key] = body[key]
+    entities = _config.setdefault("entities", [])
+    # Check for duplicate id
+    if any(e.get("id") == entity["id"] for e in entities):
+        raise HTTPException(409, f"Entity '{entity['id']}' already exists")
+    entities.append(entity)
+    _persist_config()
+    return {"status": "created", "entity": entity}
+
+
+@app.put("/api/settings/entities/{entity_id}")
+async def update_entity(entity_id: str, request: Request):
+    """Update an existing entity."""
+    body = await request.json()
+    entities = _config.get("entities", [])
+    for i, e in enumerate(entities):
+        if e.get("id") == entity_id:
+            entities[i] = {**e, **body}
+            _persist_config()
+            return {"status": "updated", "entity": entities[i]}
+    raise HTTPException(404, f"Entity '{entity_id}' not found")
+
+
+@app.delete("/api/settings/entities/{entity_id}")
+async def delete_entity(entity_id: str):
+    """Delete an entity."""
+    entities = _config.get("entities", [])
+    before = len(entities)
+    _config["entities"] = [e for e in entities if e.get("id") != entity_id]
+    if len(_config["entities"]) == before:
+        raise HTTPException(404, f"Entity '{entity_id}' not found")
+    _persist_config()
+    return {"status": "deleted"}
+
+
+# ---------------------------------------------------------------------------
+# CRUD: Family members
+# ---------------------------------------------------------------------------
+
+@app.post("/api/settings/family")
+async def add_family(request: Request):
+    """Add a new family member."""
+    body = await request.json()
+    if not body.get("name"):
+        raise HTTPException(400, "Name is required")
+    member = {"name": body["name"], "relation": body.get("relation", "")}
+    family = _config.setdefault("family", [])
+    if any(f.get("name") == member["name"] for f in family):
+        raise HTTPException(409, f"Family member '{member['name']}' already exists")
+    family.append(member)
+    _persist_config()
+    return {"status": "created", "member": member}
+
+
+@app.put("/api/settings/family/{name}")
+async def update_family(name: str, request: Request):
+    """Update a family member."""
+    body = await request.json()
+    family = _config.get("family", [])
+    for i, f in enumerate(family):
+        if f.get("name") == name:
+            family[i] = {**f, **body}
+            _persist_config()
+            return {"status": "updated", "member": family[i]}
+    raise HTTPException(404, f"Family member '{name}' not found")
+
+
+@app.delete("/api/settings/family/{name}")
+async def delete_family(name: str):
+    """Delete a family member."""
+    family = _config.get("family", [])
+    before = len(family)
+    _config["family"] = [f for f in family if f.get("name") != name]
+    if len(_config["family"]) == before:
+        raise HTTPException(404, f"Family member '{name}' not found")
+    _persist_config()
+    return {"status": "deleted"}
+
+
+# ---------------------------------------------------------------------------
+# CRUD: Filing rules
+# ---------------------------------------------------------------------------
+
+@app.post("/api/settings/rules")
+async def add_rule(request: Request):
+    """Add a new filing rule."""
+    body = await request.json()
+    if not body.get("id"):
+        raise HTTPException(400, "Rule id is required")
+    rules = _config.setdefault("filing_rules", [])
+    if any(r.get("id") == body["id"] for r in rules):
+        raise HTTPException(409, f"Rule '{body['id']}' already exists")
+    rule = {"id": body["id"]}
+    if body.get("match"):
+        rule["match"] = body["match"]
+    if body.get("file_to"):
+        rule["file_to"] = body["file_to"]
+    if body.get("filename_template"):
+        rule["filename_template"] = body["filename_template"]
+    rules.append(rule)
+    _persist_config()
+    return {"status": "created", "rule": rule}
+
+
+@app.put("/api/settings/rules/{rule_id}")
+async def update_rule(rule_id: str, request: Request):
+    """Update an existing filing rule."""
+    body = await request.json()
+    rules = _config.get("filing_rules", [])
+    for i, r in enumerate(rules):
+        if r.get("id") == rule_id:
+            rules[i] = {**r, **body}
+            _persist_config()
+            return {"status": "updated", "rule": rules[i]}
+    raise HTTPException(404, f"Rule '{rule_id}' not found")
+
+
+@app.delete("/api/settings/rules/{rule_id}")
+async def delete_rule(rule_id: str):
+    """Delete a filing rule."""
+    rules = _config.get("filing_rules", [])
+    before = len(rules)
+    _config["filing_rules"] = [r for r in rules if r.get("id") != rule_id]
+    if len(_config["filing_rules"]) == before:
+        raise HTTPException(404, f"Rule '{rule_id}' not found")
+    _persist_config()
+    return {"status": "deleted"}
 
 
 @app.get("/api/health")

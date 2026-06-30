@@ -5,59 +5,58 @@
     <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
     <title>DocFlow — Archive Browser</title>
     <script src="https://cdn.tailwindcss.com?plugins=forms"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@200..800&family=Inter:wght@100..900&display=swap" rel="stylesheet"/>
-    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+    <link rel="preconnect" href="https://fonts.googleapis.com"/>
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400..800&family=Inter:wght@400..700&family=JetBrains+Mono:wght@400..600&display=swap" rel="stylesheet"/>
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL@20..48,400..600,0..1&display=swap" rel="stylesheet"/>
     <script src="/static/config.js"></script>
     <style>
-        body { font-family: 'Inter', sans-serif; }
+        * { box-sizing: border-box; }
+        body { margin: 0; font-family: 'Inter', sans-serif; -webkit-font-smoothing: antialiased; }
         .font-headline { font-family: 'Manrope', sans-serif; }
-        .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
+        .font-mono { font-family: 'JetBrains Mono', monospace; }
     </style>
 </head>
-<body class="bg-surface text-on-surface dark:bg-slate-900 dark:text-slate-100">
+<body class="bg-canvas text-ink">
     <div id="nav"></div>
-    <div id="header"></div>
+    <div class="df-main">
+        <div id="header"></div>
+        <div class="df-body df-scroll">
 
-    <main class="ml-16 lg:ml-64 p-8 min-h-screen pb-20 transition-all duration-200">
-        <div class="max-w-6xl mx-auto flex gap-8">
-            <!-- Folder tree -->
-            <aside class="w-56 flex-shrink-0">
-                <h3 class="text-[11px] font-bold tracking-wider uppercase text-outline mb-4">File System</h3>
-                <div id="folder-tree" role="tree" aria-label="Archive folders" class="space-y-1 text-sm">
-                    <p class="text-on-surface-variant">Loading...</p>
+    <main class="p-[30px_34px] max-w-[1180px] min-w-[1020px] mx-auto flex gap-7 items-start">
+        <!-- Left: Folder tree -->
+        <aside class="w-[236px] flex-shrink-0 sticky top-0">
+            <p class="m-0 mb-3 text-[10.5px] font-bold tracking-[.12em] uppercase text-text-faint">File System</p>
+            <div id="folder-tree" role="tree" aria-label="Archive folders" class="flex flex-col gap-px">
+                <p class="text-text-muted text-[13px]">Loading...</p>
+            </div>
+        </aside>
+
+        <!-- Right: Filing history -->
+        <section class="flex-1 min-w-0">
+            <div id="breadcrumb" class="flex items-center gap-[6px] text-[12.5px] text-text-faint mb-3">
+                <span class="ms" style="font-size:15px;">home</span> Archive
+            </div>
+            <h2 class="m-0 font-headline font-extrabold text-[24px] tracking-[-0.01em]">Filing History</h2>
+            <p id="log-summary" class="m-0 mt-[5px] mb-[18px] text-text-olive text-[13.5px]">Loading...</p>
+
+            <!-- Filing log table -->
+            <div class="bg-white border border-border-primary rounded-card overflow-hidden shadow-card">
+                <div class="grid gap-[14px] py-[13px] px-[22px] bg-inset border-b border-border-card"
+                     style="grid-template-columns: minmax(0,2.1fr) minmax(0,1.5fr) 168px 104px;">
+                    <span class="text-[10px] font-bold tracking-[.1em] uppercase text-text-label">Document</span>
+                    <span class="text-[10px] font-bold tracking-[.1em] uppercase text-text-label">Filing Path</span>
+                    <span class="text-[10px] font-bold tracking-[.1em] uppercase text-text-label">Rule</span>
+                    <span class="text-[10px] font-bold tracking-[.1em] uppercase text-text-label text-right">Confidence</span>
                 </div>
-            </aside>
-
-            <!-- Main content -->
-            <section class="flex-1 space-y-6">
-                <div id="breadcrumb" class="flex items-center gap-2 text-sm text-outline"></div>
-
-                <div class="flex items-end justify-between">
-                    <div>
-                        <h2 class="text-2xl font-black font-headline text-slate-900">Filing History</h2>
-                        <p class="text-on-surface-variant mt-1" id="log-summary">Loading...</p>
-                    </div>
-                </div>
-
-                <!-- Filing log table -->
-                <div class="bg-surface-container-lowest rounded-xl shadow-sm overflow-hidden">
-                    <table class="w-full text-left">
-                        <thead>
-                            <tr class="bg-slate-50">
-                                <th class="px-6 py-4 text-[11px] font-bold uppercase tracking-widest text-outline">Document</th>
-                                <th class="px-6 py-4 text-[11px] font-bold uppercase tracking-widest text-outline">Filing Path</th>
-                                <th class="px-6 py-4 text-[11px] font-bold uppercase tracking-widest text-outline">Rule</th>
-                                <th class="px-6 py-4 text-[11px] font-bold uppercase tracking-widest text-outline">Confidence</th>
-                            </tr>
-                        </thead>
-                        <tbody id="log-table" class="divide-y divide-slate-100"></tbody>
-                    </table>
-                </div>
-            </section>
-        </div>
+                <div id="log-table"></div>
+            </div>
+        </section>
     </main>
 
-    <div id="footer"></div>
+        </div><!-- end df-body -->
+        <div id="footer"></div>
+    </div><!-- end df-main -->
 
     <script src="/static/shared.js"></script>
     <script>
@@ -71,7 +70,7 @@
             const container = document.getElementById('folder-tree');
 
             if (!data.tree || data.tree.length === 0) {
-                container.innerHTML = '<p class="text-on-surface-variant text-xs">No archive folders found.</p>';
+                container.innerHTML = '<p class="text-text-muted text-[13px]">No archive folders found.</p>';
                 return;
             }
 
@@ -80,15 +79,14 @@
 
         function renderTreeNodes(nodes, depth) {
             return nodes.map(node => {
-                const indent = depth * 16;
-                const icon = 'folder';
+                const pad = 10 + depth * 18;
                 return `
-                    <div class="flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer hover:bg-surface-container transition-colors"
-                         style="padding-left: ${indent + 8}px"
+                    <div class="flex items-center gap-2 py-[7px] px-2 rounded-[9px] cursor-pointer hover:bg-sidebar transition-colors duration-150"
+                         style="padding-left:${pad}px"
                          onclick="browseTo('${node.path}')">
-                        <span class="material-symbols-outlined text-primary-container text-sm">${icon}</span>
-                        <span class="text-on-surface-variant text-sm">${node.name}</span>
-                        <span class="text-outline text-[10px] ml-auto">${node.pdf_count}</span>
+                        <span class="ms" style="font-size:17px;color:#C0A86E;">folder</span>
+                        <span class="flex-1 text-[13px] text-[#4A4D57] truncate">${node.name}</span>
+                        <span class="text-[10.5px] text-text-dim font-semibold">${node.pdf_count}</span>
                     </div>
                     ${node.children ? renderTreeNodes(node.children, depth + 1) : ''}
                 `;
@@ -103,31 +101,33 @@
             // Update breadcrumb
             const parts = path.split('/').filter(Boolean);
             document.getElementById('breadcrumb').innerHTML = [
-                '<span class="cursor-pointer hover:text-primary" onclick="browseTo(\'\')">Archive</span>',
+                '<span class="ms" style="font-size:15px;">home</span>',
+                '<span class="cursor-pointer hover:text-ink" onclick="browseTo(\'\')">Archive</span>',
                 ...parts.map((p, i) => {
                     const subpath = parts.slice(0, i + 1).join('/');
-                    return `<span class="material-symbols-outlined text-xs">chevron_right</span>
-                            <span class="cursor-pointer hover:text-primary" onclick="browseTo('${subpath}')">${p}</span>`;
+                    return `<span class="ms" style="font-size:14px;">chevron_right</span>
+                            <span class="cursor-pointer hover:text-ink font-semibold text-[#4A4D57]" onclick="browseTo('${subpath}')">${p}</span>`;
                 })
             ].join('');
 
             // Show files in table
             const table = document.getElementById('log-table');
             if (data.files.length === 0) {
-                table.innerHTML = '<tr><td colspan="4" class="px-6 py-8 text-center text-on-surface-variant">No files in this folder</td></tr>';
+                table.innerHTML = '<div class="py-8 text-center text-text-muted text-[13px]">No files in this folder</div>';
             } else {
                 table.innerHTML = data.files.map(f => `
-                    <tr class="hover:bg-slate-50/50 transition-colors">
-                        <td class="px-6 py-4">
-                            <div class="flex items-center gap-3">
-                                <span class="material-symbols-outlined text-slate-400">description</span>
-                                <span class="font-medium text-slate-900 text-sm">${f.name}</span>
-                            </div>
-                        </td>
-                        <td class="px-6 py-4 text-sm text-slate-600">${f.path}</td>
-                        <td class="px-6 py-4 text-sm text-slate-600">—</td>
-                        <td class="px-6 py-4 text-sm text-slate-600">${(f.size / 1024).toFixed(0)} KB</td>
-                    </tr>
+                    <div class="grid gap-[14px] py-[14px] px-[22px] items-center border-b border-border-subtle hover:bg-soft-hover transition-colors duration-150"
+                         style="grid-template-columns: minmax(0,2.1fr) minmax(0,1.5fr) 168px 104px;">
+                        <div class="flex items-center gap-[11px] min-w-0">
+                            <span class="ms flex-shrink-0" style="font-size:19px;color:#C9C3B3;">description</span>
+                            <span class="font-mono text-[12px] font-medium text-ink truncate">${f.name}</span>
+                        </div>
+                        <span class="font-mono text-[11.5px] text-text-muted truncate">${f.path}</span>
+                        <span class="text-[11.5px] text-text-muted">—</span>
+                        <div class="text-right">
+                            <span class="text-[11px] text-text-dim">${(f.size / 1024).toFixed(0)} KB</span>
+                        </div>
+                    </div>
                 `).join('');
             }
             document.getElementById('log-summary').textContent = `${data.files.length} files in ${path || 'root'}`;
@@ -142,34 +142,41 @@
 
             const table = document.getElementById('log-table');
             if (entries.length === 0) {
-                table.innerHTML = '<tr><td colspan="4" class="px-6 py-8 text-center text-on-surface-variant">No filing history yet. Process a scan to see results here.</td></tr>';
-                return;
-            }
-
-            if (entries.length === 0) {
-                table.innerHTML = `<tr><td colspan="4" class="px-6 py-12 text-center">
-                    <div class="w-16 h-16 bg-surface-container rounded-full flex items-center justify-center mx-auto mb-4">
-                        <span class="material-symbols-outlined text-outline text-2xl">inventory_2</span>
+                table.innerHTML = `<div class="py-12 text-center">
+                    <div class="w-16 h-16 bg-tile rounded-full flex items-center justify-center mx-auto mb-4">
+                        <span class="ms" style="font-size:28px;color:#A9A595;">inventory_2</span>
                     </div>
-                    <p class="text-on-surface-variant font-medium mb-1">No documents filed yet</p>
-                    <p class="text-outline text-sm">Process a scan to populate your archive</p>
-                </td></tr>`;
+                    <p class="m-0 text-ink font-medium mb-1">No documents filed yet</p>
+                    <p class="m-0 text-text-faint text-sm">Process a scan to populate your archive</p>
+                </div>`;
                 return;
             }
 
-            table.innerHTML = entries.slice(0, 50).map(e => `
-                <tr class="hover:bg-slate-50/50 transition-colors group">
-                    <td class="px-6 py-4">
-                        <div class="flex items-center gap-3">
-                            <span class="material-symbols-outlined text-slate-400">description</span>
-                            <span class="font-medium text-slate-900 text-sm">${e.filename}</span>
-                        </div>
-                    </td>
-                    <td class="px-6 py-4 text-sm text-slate-600">${e.target_directory.split('/').slice(-2).join('/')}</td>
-                    <td class="px-6 py-4">${ruleBadge(e.rule_matched)}</td>
-                    <td class="px-6 py-4">${confidenceBadge(e.confidence)}</td>
-                </tr>
-            `).join('');
+            table.innerHTML = entries.slice(0, 50).map(e => {
+                const ci = confidenceInfo(e.confidence);
+                const pct = Math.round(e.confidence * 100);
+                let ruleColor = '#0E8A5E';
+                let ruleLabel = 'Rule: ' + e.rule_matched;
+                if (e.rule_matched === 'llm_suggested') { ruleColor = '#34508C'; ruleLabel = 'AI Suggested'; }
+                else if (e.rule_matched === 'none') { ruleColor = '#BE4029'; ruleLabel = 'Unmatched'; }
+
+                return `
+                <div class="grid gap-[14px] py-[14px] px-[22px] items-center border-b border-border-subtle hover:bg-soft-hover transition-colors duration-150"
+                     style="grid-template-columns: minmax(0,2.1fr) minmax(0,1.5fr) 168px 104px;">
+                    <div class="flex items-center gap-[11px] min-w-0">
+                        <span class="ms flex-shrink-0" style="font-size:19px;color:#C9C3B3;">description</span>
+                        <span class="font-mono text-[12px] font-medium text-ink truncate">${e.filename}</span>
+                    </div>
+                    <span class="font-mono text-[11.5px] text-text-muted truncate">${e.target_directory.split('/').slice(-2).join('/')}</span>
+                    <div class="flex items-center gap-[6px] min-w-0">
+                        <span class="w-[6px] h-[6px] rounded-pill flex-shrink-0" style="background:${ruleColor};"></span>
+                        <span class="text-[11.5px] text-text-muted truncate">${ruleLabel}</span>
+                    </div>
+                    <div class="text-right">
+                        <span class="text-[11px] font-bold py-[3px] px-[9px] rounded-pill whitespace-nowrap" style="color:${ci.color};background:${ci.bg};">${pct}% Match</span>
+                    </div>
+                </div>`;
+            }).join('');
         }
 
         loadTree();

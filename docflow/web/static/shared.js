@@ -1,4 +1,4 @@
-// DocFlow shared UI components and utilities
+// DocFlow shared UI components and utilities — Paper Archive redesign
 
 const VIEWS = [
     { id: 'dashboard', icon: 'dashboard', label: 'Dashboard', path: '/' },
@@ -13,104 +13,181 @@ function currentView() {
     return path.replace('/', '');
 }
 
+// ---------------------------------------------------------------------------
+// Sidebar
+// ---------------------------------------------------------------------------
 function renderNav() {
     const active = currentView();
+
     const navItems = VIEWS.map(v => {
         const isActive = v.id === active;
-        const cls = isActive
-            ? 'flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-900 dark:text-slate-100 font-bold border-r-4 border-slate-900 dark:border-slate-100 transition-colors'
-            : 'flex items-center gap-3 px-3 py-2.5 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-200/50 dark:hover:bg-slate-700/50 transition-colors';
-        const fillStyle = isActive ? "font-variation-settings: 'FILL' 1;" : '';
+        const baseCls = 'flex items-center gap-3 w-full border-none rounded-btn py-[11px] px-[14px] cursor-pointer font-semibold text-[13.5px] transition-all duration-150';
+        const activeCls = isActive
+            ? `${baseCls} bg-ink text-[#F4F1EA]`
+            : `${baseCls} bg-transparent text-text-secondary hover:bg-[#E3DCCD]`;
+        const fillCls = isActive ? 'fill' : '';
         const ariaCurrent = isActive ? ' aria-current="page"' : '';
-        return `<a href="${v.path}" class="${cls}"${ariaCurrent}>
-            <span class="material-symbols-outlined" style="${fillStyle}">${v.icon}</span>
-            <span class="nav-label font-medium">${v.label}</span>
+
+        // Badge for Review Queue (pending count, populated later by JS)
+        let badge = '';
+        if (v.id === 'review') {
+            badge = '<span id="nav-review-badge" class="bg-gold text-white text-[10.5px] font-bold rounded-pill px-[7px] py-[1px] hidden"></span>';
+        }
+
+        return `<a href="${v.path}" class="${activeCls}"${ariaCurrent}>
+            <span class="ms ${fillCls}" style="font-size:20px;">${v.icon}</span>
+            <span class="nav-label flex-1 text-left">${v.label}</span>
+            ${badge}
         </a>`;
     }).join('');
 
     return `
-    <aside id="sidebar" class="h-screen w-64 lg:w-64 md:w-16 fixed left-0 top-0 flex flex-col py-8 px-4 md:px-2 lg:px-4 bg-slate-100 dark:bg-slate-800 z-50 transition-all duration-200" aria-label="Main navigation">
-        <div class="mb-10 px-2 md:hidden lg:block">
-            <h1 class="text-xl font-black text-slate-900 dark:text-slate-100 font-headline tracking-tight">DocFlow</h1>
-            <p class="text-[10px] font-bold tracking-widest uppercase text-slate-500 mt-1">The Digital Archivist</p>
+    <aside id="sidebar" class="w-[248px] flex-shrink-0 bg-sidebar fixed left-0 top-0 h-screen flex flex-col py-[26px] px-[18px] z-50 border-r border-border-sidebar" aria-label="Main navigation">
+        <div class="px-2 pb-1">
+            <div class="flex items-center gap-[9px]">
+                <div class="w-7 h-7 rounded-tile bg-ink flex items-center justify-center">
+                    <span class="ms fill" style="font-size:18px;color:#F4F1EA;">inventory_2</span>
+                </div>
+                <h1 class="m-0 font-headline font-extrabold text-[21px] tracking-[-0.02em] text-ink">DocFlow</h1>
+            </div>
+            <p class="mt-[9px] text-[9.5px] font-bold tracking-[.18em] uppercase text-text-faint">The Digital Archivist</p>
         </div>
-        <div class="mb-10 px-2 hidden md:block lg:hidden text-center">
-            <h1 class="text-lg font-black text-slate-900 dark:text-slate-100 font-headline">DF</h1>
-        </div>
-        <button onclick="globalUpload()" role="button" aria-label="Upload PDF" class="mb-8 flex items-center justify-center gap-2 bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 py-3 rounded-lg font-bold text-sm hover:scale-[0.98] transition-transform active:scale-95">
-            <span class="material-symbols-outlined text-sm">add_circle</span>
+
+        <button onclick="globalUpload()" class="mt-6 mb-[22px] flex items-center justify-center gap-2 bg-ink text-[#F4F1EA] border-none rounded-btn py-[13px] font-bold text-[13.5px] cursor-pointer shadow-btn hover:-translate-y-px transition-transform duration-150">
+            <span class="ms" style="font-size:18px;">add</span>
             <span class="nav-label">Scan Mail</span>
         </button>
-        <nav role="navigation" class="space-y-1 flex-1">${navItems}</nav>
-        <div class="mt-auto border-t border-slate-200/50 dark:border-slate-700/50 pt-4">
-            <button onclick="toggleDarkMode()" class="flex items-center gap-3 px-3 py-2 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-200/50 dark:hover:bg-slate-700/50 transition-colors w-full">
-                <span class="material-symbols-outlined" id="dark-mode-icon">dark_mode</span>
-                <span class="nav-label text-sm font-medium" id="dark-mode-label">Dark Mode</span>
+
+        <nav class="flex flex-col gap-1 flex-1">${navItems}</nav>
+
+        <div class="border-t border-border-sidebar pt-3 flex flex-col gap-[2px]">
+            <button onclick="toggleDarkMode()" class="flex items-center gap-3 px-[14px] py-[10px] rounded-btn border-none bg-transparent text-text-muted font-semibold text-[13.5px] cursor-pointer hover:bg-[#E3DCCD] transition-colors w-full">
+                <span class="ms" style="font-size:20px;" id="dark-mode-icon">dark_mode</span>
+                <span class="nav-label" id="dark-mode-label">Dark Mode</span>
             </button>
-            <a href="#" class="flex items-center gap-3 px-3 py-3 rounded-lg text-slate-500 dark:text-slate-400 hover:bg-slate-200/50 dark:hover:bg-slate-700/50 transition-colors">
-                <span class="material-symbols-outlined">help_outline</span>
-                <span class="nav-label text-sm font-medium">Support</span>
+            <a href="#" class="flex items-center gap-3 px-[14px] py-[10px] rounded-btn text-text-muted font-semibold text-[13.5px] hover:bg-[#E3DCCD] transition-colors no-underline">
+                <span class="ms" style="font-size:20px;">help</span>
+                <span class="nav-label">Support</span>
             </a>
         </div>
     </aside>`;
 }
 
+// ---------------------------------------------------------------------------
+// Header
+// ---------------------------------------------------------------------------
 function renderHeader(title) {
     return `
-    <header class="flex justify-between items-center w-full px-6 py-4 ml-16 lg:ml-64 max-w-[calc(100%-4rem)] lg:max-w-[calc(100%-16rem)] sticky top-0 bg-slate-50/80 dark:bg-slate-900/80 backdrop-blur-xl z-40 shadow-sm transition-all duration-200">
-        <div class="flex items-center gap-8">
-            <h2 class="text-lg font-bold tracking-tight text-slate-900 dark:text-slate-100 font-headline">${title}</h2>
-        </div>
+    <header id="main-header" class="flex items-center justify-between py-5 px-[34px] border-b border-border-primary bg-[rgba(244,241,234,0.86)] backdrop-blur-[10px] sticky top-0 z-40 flex-shrink-0">
+        <h2 class="m-0 font-headline font-bold text-[20px] tracking-[-0.01em] text-ink">${title}</h2>
         <div class="flex items-center gap-4">
             <div class="relative" id="search-container">
-                <input id="search-input" aria-label="Search archive" class="bg-surface-container-low dark:bg-slate-800 border-none rounded-full px-4 py-2 text-sm w-64 focus:ring-2 focus:ring-primary/15 outline-none transition-all dark:text-slate-200" placeholder="Search archive..." type="text" autocomplete="off"/>
-                <span class="material-symbols-outlined absolute right-3 top-2 text-slate-400 text-sm">search</span>
-                <div id="search-results" class="absolute top-full mt-2 right-0 w-96 bg-white rounded-xl shadow-2xl border border-slate-200 hidden max-h-80 overflow-y-auto z-50"></div>
+                <input id="search-input" aria-label="Search archive"
+                    class="bg-white border border-border-primary rounded-pill py-[9px] pl-[38px] pr-4 text-[13px] font-medium w-[240px] outline-none text-ink"
+                    placeholder="Search archive…" type="text" autocomplete="off" />
+                <span class="ms absolute left-[13px] top-[9px] text-text-dim" style="font-size:18px;">search</span>
+                <div id="search-results" class="absolute top-full mt-2 right-0 w-96 bg-white rounded-card shadow-modal border border-border-primary hidden max-h-80 overflow-y-auto z-50"></div>
             </div>
-            <div class="flex gap-2 text-slate-600">
-                <span class="material-symbols-outlined cursor-pointer hover:text-primary transition-colors">notifications</span>
-            </div>
+            <button class="relative w-10 h-10 rounded-btn border border-border-primary bg-white flex items-center justify-center cursor-pointer">
+                <span class="ms" style="font-size:20px;color:#4A4D57;">notifications</span>
+                <span class="absolute top-[9px] right-[10px] w-[7px] h-[7px] rounded-pill bg-danger border-[1.5px] border-white"></span>
+            </button>
         </div>
     </header>`;
 }
 
+// ---------------------------------------------------------------------------
+// Footer status bar
+// ---------------------------------------------------------------------------
 function renderFooter() {
     return `
-    <footer id="status-bar" role="contentinfo" class="fixed bottom-0 right-0 w-[calc(100%-4rem)] lg:w-[calc(100%-16rem)] h-8 bg-slate-100/50 dark:bg-slate-800/50 backdrop-blur-md border-t border-slate-200/20 dark:border-slate-700 flex justify-between items-center px-6 z-50 transition-all duration-200">
-        <div class="flex items-center gap-4">
-            <p class="text-xs font-medium tracking-wide uppercase text-slate-600 dark:text-slate-400">
-                Watch Folder: <span class="text-emerald-600 font-bold" id="watch-status">Checking...</span>
-                • LLM Status: <span class="text-emerald-600 font-bold" id="llm-status">Checking...</span>
-            </p>
-        </div>
-        <div class="flex gap-4">
-            <a href="#" class="text-xs font-medium tracking-wide uppercase text-slate-400 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 transition-colors">System Logs</a>
-        </div>
+    <footer id="status-bar" role="contentinfo" class="flex items-center justify-between py-2 px-[34px] border-t border-border-primary bg-panel flex-shrink-0">
+        <p class="m-0 text-[10.5px] font-semibold tracking-[.06em] uppercase text-text-olive">
+            Watch Folder: <span class="text-success font-bold" id="watch-status">Checking...</span>
+            &nbsp;&bull;&nbsp; LLM Status: <span class="text-success font-bold" id="llm-status">Checking...</span>
+        </p>
+        <span class="text-[10.5px] font-semibold tracking-[.06em] uppercase text-text-dim cursor-pointer">System Logs</span>
     </footer>`;
 }
 
 // ---------------------------------------------------------------------------
-// Responsive styles injected once
+// Responsive styles
 // ---------------------------------------------------------------------------
 function injectResponsiveStyles() {
     if (document.getElementById('docflow-responsive-css')) return;
     const style = document.createElement('style');
     style.id = 'docflow-responsive-css';
     style.textContent = `
-        /* Collapse nav labels on medium screens */
-        @media (min-width: 768px) and (max-width: 1023px) {
-            .nav-label { display: none; }
-            #sidebar { width: 4rem; padding-left: 0.5rem; padding-right: 0.5rem; }
-            #sidebar nav a { justify-content: center; padding-left: 0; padding-right: 0; }
-            #sidebar button { padding-left: 0; padding-right: 0; }
+        /* Material Symbols shorthand */
+        .ms {
+            font-family: 'Material Symbols Outlined';
+            font-weight: normal;
+            font-style: normal;
+            line-height: 1;
+            letter-spacing: normal;
+            text-transform: none;
+            display: inline-block;
+            white-space: nowrap;
+            word-wrap: normal;
+            direction: ltr;
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+            -webkit-font-smoothing: antialiased;
+            user-select: none;
         }
+        .ms.fill {
+            font-variation-settings: 'FILL' 1, 'wght' 500;
+        }
+
+        /* Custom scrollbar */
+        .df-scroll::-webkit-scrollbar { width: 10px; height: 10px; }
+        .df-scroll::-webkit-scrollbar-thumb {
+            background: rgba(20,23,28,.14);
+            border-radius: 8px;
+            border: 3px solid transparent;
+            background-clip: content-box;
+        }
+        .df-scroll::-webkit-scrollbar-thumb:hover {
+            background: rgba(20,23,28,.26);
+            background-clip: content-box;
+        }
+
+        /* Animations */
+        @keyframes dfup { from { transform: translateY(14px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        @keyframes dffade { from { opacity: 0; } to { opacity: 1; } }
+
+        /* Input placeholder */
+        input::placeholder { color: #A9A595; }
+
+        /* Full-height layout with sidebar */
+        .df-shell {
+            display: flex;
+            min-height: 100vh;
+            width: 100%;
+            background: #F4F1EA;
+            color: #15171C;
+            font-family: 'Inter', sans-serif;
+            -webkit-font-smoothing: antialiased;
+        }
+        .df-main {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            min-width: 0;
+            height: 100vh;
+            margin-left: 248px;
+        }
+        .df-body {
+            flex: 1;
+            overflow-y: auto;
+            position: relative;
+        }
+
         /* Below 768px: hide sidebar entirely, show bottom tab bar */
         @media (max-width: 767px) {
             #sidebar { display: none; }
             #mobile-tabs { display: flex !important; }
-            main { margin-left: 0 !important; padding-bottom: 4rem !important; }
-            header { margin-left: 0 !important; max-width: 100% !important; }
-            #status-bar { width: 100% !important; bottom: 3.5rem !important; }
+            .df-main { margin-left: 0 !important; }
+            #status-bar { bottom: 3.5rem; }
             #search-container input { width: 8rem; }
             #search-results { width: calc(100vw - 2rem); right: -1rem; }
         }
@@ -122,15 +199,15 @@ function renderMobileTabs() {
     const active = currentView();
     const tabs = VIEWS.map(v => {
         const isActive = v.id === active;
-        const cls = isActive ? 'text-slate-900' : 'text-slate-400';
-        const fill = isActive ? "font-variation-settings: 'FILL' 1;" : '';
-        return `<a href="${v.path}" class="flex flex-col items-center gap-0.5 ${cls}">
-            <span class="material-symbols-outlined text-xl" style="${fill}">${v.icon}</span>
+        const cls = isActive ? 'text-ink' : 'text-text-dim';
+        const fill = isActive ? 'fill' : '';
+        return `<a href="${v.path}" class="flex flex-col items-center gap-0.5 ${cls} no-underline">
+            <span class="ms ${fill}" style="font-size:20px;">${v.icon}</span>
             <span class="text-[10px] font-bold">${v.label.split(' ')[0]}</span>
         </a>`;
     }).join('');
 
-    return `<nav id="mobile-tabs" class="fixed bottom-0 left-0 right-0 h-14 bg-white border-t border-slate-200 justify-around items-center z-50 hidden">${tabs}</nav>`;
+    return `<nav id="mobile-tabs" class="fixed bottom-0 left-0 right-0 h-14 bg-canvas border-t border-border-primary justify-around items-center z-50 hidden">${tabs}</nav>`;
 }
 
 // ---------------------------------------------------------------------------
@@ -154,12 +231,10 @@ function initSearch() {
         if (input.value.trim().length >= 2) runSearch(input.value.trim());
     });
 
-    // Close on click outside
     document.addEventListener('click', (e) => {
         if (!e.target.closest('#search-container')) results.classList.add('hidden');
     });
 
-    // Keyboard shortcut: / to focus search
     document.addEventListener('keydown', (e) => {
         if (e.key === '/' && !e.target.closest('input, textarea, select')) {
             e.preventDefault();
@@ -176,22 +251,19 @@ async function runSearch(query) {
     const results = document.getElementById('search-results');
     try {
         const resp = await fetch('/api/search?q=' + encodeURIComponent(query));
-        if (!resp.ok) {
-            results.classList.add('hidden');
-            return;
-        }
+        if (!resp.ok) { results.classList.add('hidden'); return; }
         const data = await resp.json();
         if (!data.results || data.results.length === 0) {
-            results.innerHTML = '<div class="p-4 text-sm text-on-surface-variant text-center">No results found</div>';
+            results.innerHTML = '<div class="p-4 text-sm text-text-muted text-center">No results found</div>';
             results.classList.remove('hidden');
             return;
         }
         results.innerHTML = data.results.map(r => `
-            <a href="${r.url || '#'}" class="flex items-center gap-3 px-4 py-3 hover:bg-slate-50 transition-colors border-b border-slate-100 last:border-0">
-                <span class="material-symbols-outlined text-slate-400 text-sm">${r.icon || 'description'}</span>
+            <a href="${r.url || '#'}" class="flex items-center gap-3 px-4 py-3 hover:bg-soft-hover transition-colors border-b border-border-card last:border-0 no-underline">
+                <span class="ms text-text-dim" style="font-size:18px;">${r.icon || 'description'}</span>
                 <div class="min-w-0 flex-1">
-                    <p class="text-sm font-medium text-slate-900 truncate">${r.filename || r.name}</p>
-                    <p class="text-xs text-on-surface-variant truncate">${r.directory || r.path || ''}</p>
+                    <p class="text-[12.5px] font-mono font-medium text-ink truncate m-0">${r.filename || r.name}</p>
+                    <p class="text-[11.5px] text-text-faint truncate m-0 mt-0.5">${r.directory || r.path || ''}</p>
                 </div>
                 ${r.confidence != null ? confidenceBadge(r.confidence) : ''}
             </a>
@@ -214,7 +286,26 @@ async function updateHealthStatus() {
         if (watchEl) watchEl.textContent = data.watch_folder ? 'Active' : 'Not Set';
         if (llmEl) {
             llmEl.textContent = data.llm_ready ? 'Ready' : 'No API Key';
-            llmEl.className = data.llm_ready ? 'text-emerald-600 font-bold' : 'text-red-500 font-bold';
+            llmEl.className = data.llm_ready ? 'text-success font-bold' : 'text-danger font-bold';
+        }
+    } catch (e) { /* ignore */ }
+}
+
+// ---------------------------------------------------------------------------
+// Review queue badge in sidebar
+// ---------------------------------------------------------------------------
+async function updateReviewBadge() {
+    try {
+        const resp = await fetch('/api/queue');
+        const data = await resp.json();
+        const badge = document.getElementById('nav-review-badge');
+        if (!badge) return;
+        const count = (data.items || []).length;
+        if (count > 0) {
+            badge.textContent = count;
+            badge.classList.remove('hidden');
+        } else {
+            badge.classList.add('hidden');
         }
     } catch (e) { /* ignore */ }
 }
@@ -223,13 +314,9 @@ async function updateHealthStatus() {
 // Global upload (works from any page)
 // ---------------------------------------------------------------------------
 function globalUpload() {
-    // If we're on the dashboard, use its file input directly
     const dashInput = document.getElementById('upload-input');
-    if (dashInput) {
-        dashInput.click();
-        return;
-    }
-    // On other pages, use a global file input that uploads then redirects
+    if (dashInput) { dashInput.click(); return; }
+
     let input = document.getElementById('global-upload-input');
     if (!input) {
         input = document.createElement('input');
@@ -275,24 +362,31 @@ function globalUpload() {
 // ---------------------------------------------------------------------------
 function confidenceBadge(confidence) {
     const pct = Math.round(confidence * 100);
-    if (confidence >= 0.9) {
-        return `<span class="bg-secondary-container text-on-secondary-container text-[11px] font-bold px-2 py-0.5 rounded-full">${pct}% Match</span>`;
-    } else if (confidence >= 0.75) {
-        return `<span class="bg-primary-fixed text-primary text-[11px] font-bold px-2 py-0.5 rounded-full">${pct}% Match</span>`;
-    } else if (confidence >= 0.6) {
-        return `<span class="bg-tertiary-fixed text-on-tertiary-container text-[11px] font-bold px-2 py-0.5 rounded-full">${pct}% Uncertain</span>`;
+    let bg, color;
+    if (confidence >= 0.75) {
+        bg = '#E2F1E9'; color = '#0E8A5E';
+    } else if (confidence >= 0.60) {
+        bg = '#F6E9D3'; color = '#B5751F';
     } else {
-        return `<span class="bg-red-100 text-red-700 text-[11px] font-bold px-2 py-0.5 rounded-full">${pct}% Low</span>`;
+        bg = '#F7E3DD'; color = '#BE4029';
     }
+    return `<span style="background:${bg};color:${color};" class="text-[11px] font-bold px-[9px] py-1 rounded-pill whitespace-nowrap">${pct}% Match</span>`;
+}
+
+function confidenceInfo(confidence) {
+    if (confidence == null) return { color: '#8A8B72', bg: '#ECE7DC', label: 'Unclassified' };
+    if (confidence >= 0.75) return { color: '#0E8A5E', bg: '#E2F1E9', label: 'Confident' };
+    if (confidence >= 0.60) return { color: '#B5751F', bg: '#F6E9D3', label: 'Needs a look' };
+    return { color: '#BE4029', bg: '#F7E3DD', label: 'Low confidence' };
 }
 
 function ruleBadge(rule) {
     if (rule === 'llm_suggested') {
-        return `<span class="flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-secondary"></span><span class="text-xs text-slate-600 font-medium">AI Suggested</span></span>`;
+        return `<span class="flex items-center gap-[6px]"><span class="w-[6px] h-[6px] rounded-pill bg-ai flex-shrink-0"></span><span class="text-[11.5px] text-text-muted truncate">AI Suggested</span></span>`;
     } else if (rule === 'none') {
-        return `<span class="flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-red-400"></span><span class="text-xs text-slate-600 font-medium">Unmatched</span></span>`;
+        return `<span class="flex items-center gap-[6px]"><span class="w-[6px] h-[6px] rounded-pill bg-danger flex-shrink-0"></span><span class="text-[11.5px] text-text-muted truncate">Unmatched</span></span>`;
     }
-    return `<span class="flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-primary"></span><span class="text-xs text-slate-600 font-medium">Rule: ${rule}</span></span>`;
+    return `<span class="flex items-center gap-[6px]"><span class="w-[6px] h-[6px] rounded-pill bg-success flex-shrink-0"></span><span class="text-[11.5px] text-text-muted truncate">Rule: ${rule}</span></span>`;
 }
 
 // ---------------------------------------------------------------------------
@@ -311,32 +405,25 @@ function showToast(message, type = 'error', duration = 5000) {
     const container = document.getElementById('toast-container');
 
     const colors = {
-        error: 'bg-red-50 border-red-200 text-red-800',
-        success: 'bg-emerald-50 border-emerald-200 text-emerald-800',
-        warning: 'bg-amber-50 border-amber-200 text-amber-800',
-        info: 'bg-blue-50 border-blue-200 text-blue-800',
+        error:   'bg-danger-bg border border-danger/20 text-danger',
+        success: 'bg-success-bg border border-success/20 text-success',
+        warning: 'bg-amber-bg border border-amber/20 text-amber',
+        info:    'bg-ai-bg border border-ai-border text-ai',
     };
-    const icons = {
-        error: 'error',
-        success: 'check_circle',
-        warning: 'warning',
-        info: 'info',
-    };
+    const icons = { error: 'error', success: 'check_circle', warning: 'warning', info: 'info' };
 
     const toast = document.createElement('div');
-    toast.className = `pointer-events-auto flex items-center gap-3 px-4 py-3 rounded-lg border shadow-lg ${colors[type] || colors.info} transform translate-x-full opacity-0 transition-all duration-300`;
+    toast.className = `pointer-events-auto flex items-center gap-3 px-4 py-3 rounded-btn shadow-btn ${colors[type] || colors.info} transform translate-x-full opacity-0 transition-all duration-300`;
     toast.innerHTML = `
-        <span class="material-symbols-outlined text-sm">${icons[type] || icons.info}</span>
-        <span class="text-sm font-medium flex-1">${message}</span>
-        <button onclick="this.parentElement.remove()" class="opacity-50 hover:opacity-100 transition-opacity">
-            <span class="material-symbols-outlined text-sm">close</span>
+        <span class="ms" style="font-size:18px;">${icons[type] || icons.info}</span>
+        <span class="text-sm font-semibold flex-1">${message}</span>
+        <button onclick="this.parentElement.remove()" class="opacity-50 hover:opacity-100 transition-opacity border-none bg-transparent cursor-pointer">
+            <span class="ms" style="font-size:16px;">close</span>
         </button>
     `;
 
     container.appendChild(toast);
-    requestAnimationFrame(() => {
-        toast.classList.remove('translate-x-full', 'opacity-0');
-    });
+    requestAnimationFrame(() => toast.classList.remove('translate-x-full', 'opacity-0'));
 
     if (duration > 0) {
         setTimeout(() => {
@@ -344,6 +431,45 @@ function showToast(message, type = 'error', duration = 5000) {
             setTimeout(() => toast.remove(), 300);
         }, duration);
     }
+}
+
+// ---------------------------------------------------------------------------
+// Undo snackbar
+// ---------------------------------------------------------------------------
+let _undoTimer = null;
+let _undoCallback = null;
+
+function showUndoSnackbar(label, onUndo) {
+    hideUndoSnackbar();
+    _undoCallback = onUndo;
+
+    const snack = document.createElement('div');
+    snack.id = 'undo-snackbar';
+    snack.className = 'fixed bottom-[26px] left-1/2 -translate-x-1/2 z-[120] flex items-center gap-[14px] bg-ink text-[#F4F1EA] rounded-[14px] py-3 pl-[18px] pr-[14px] shadow-snackbar';
+    snack.style.animation = 'dfup .2s ease-out';
+    snack.innerHTML = `
+        <span class="ms fill" style="font-size:20px;color:#7FD7AB;">check_circle</span>
+        <span class="text-[13.5px] font-semibold">${label}</span>
+        <button onclick="triggerUndo()" class="flex items-center gap-[6px] bg-white/10 text-[#F4F1EA] border-none rounded-[9px] py-2 px-[13px] font-bold text-[12.5px] cursor-pointer hover:bg-white/20 transition-colors">
+            <span class="ms" style="font-size:16px;">undo</span> Undo
+            <span class="opacity-50 text-[10.5px] border border-white/30 rounded px-1">U</span>
+        </button>
+    `;
+    document.body.appendChild(snack);
+
+    _undoTimer = setTimeout(() => hideUndoSnackbar(), 6000);
+}
+
+function hideUndoSnackbar() {
+    clearTimeout(_undoTimer);
+    const el = document.getElementById('undo-snackbar');
+    if (el) el.remove();
+    _undoCallback = null;
+}
+
+function triggerUndo() {
+    if (_undoCallback) _undoCallback();
+    hideUndoSnackbar();
 }
 
 // ---------------------------------------------------------------------------
@@ -379,16 +505,14 @@ function updateDarkModeUI(isDark) {
 }
 
 // ---------------------------------------------------------------------------
-// Directory Picker
+// Directory Picker (redesigned modal)
 // ---------------------------------------------------------------------------
 let _dirTreeCache = null;
 
 async function openDirectoryPicker(callback) {
-    // Remove existing modal if any
     const existing = document.getElementById('dir-picker-modal');
     if (existing) existing.remove();
 
-    // Fetch tree (cache for session)
     if (!_dirTreeCache) {
         try {
             const resp = await fetch('/api/archive/tree');
@@ -400,56 +524,49 @@ async function openDirectoryPicker(callback) {
         }
     }
 
-    // Build modal
     const modal = document.createElement('div');
     modal.id = 'dir-picker-modal';
     modal.className = 'fixed inset-0 z-[200] flex items-center justify-center';
     modal.innerHTML = `
-        <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" onclick="closeDirPicker()"></div>
-        <div class="relative bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-[420px] max-h-[70vh] flex flex-col overflow-hidden">
-            <div class="px-5 pt-5 pb-3 border-b border-slate-200 dark:border-slate-700">
-                <div class="flex items-center justify-between mb-3">
-                    <h3 class="text-sm font-bold font-headline text-slate-900 dark:text-slate-100">Choose Filing Location</h3>
-                    <button onclick="closeDirPicker()" class="text-slate-400 hover:text-slate-600 transition-colors">
-                        <span class="material-symbols-outlined text-sm">close</span>
+        <div class="absolute inset-0 bg-[rgba(20,23,28,0.42)] backdrop-blur-[3px]" onclick="closeDirPicker()"></div>
+        <div class="relative w-[440px] max-h-[74vh] flex flex-col bg-soft-hover rounded-modal shadow-modal overflow-hidden">
+            <div class="py-[18px] px-5 pb-[14px] border-b border-border-card">
+                <div class="flex items-center justify-between mb-[13px]">
+                    <h3 class="m-0 font-headline font-extrabold text-[16px] text-ink">Choose Filing Location</h3>
+                    <button onclick="closeDirPicker()" class="w-[30px] h-[30px] border-none bg-tile rounded-[9px] flex items-center justify-center cursor-pointer">
+                        <span class="ms" style="font-size:18px;color:#8A8B72;">close</span>
                     </button>
                 </div>
                 <div class="relative">
-                    <input id="dir-picker-search" type="text" placeholder="Filter folders..." autocomplete="off"
-                        class="w-full bg-slate-100 dark:bg-slate-700 border-none rounded-lg py-2 px-3 text-sm focus:ring-2 focus:ring-primary/20 outline-none dark:text-slate-200" />
-                    <span class="material-symbols-outlined absolute right-2.5 top-2 text-slate-400 text-sm">search</span>
+                    <input id="dir-picker-search" type="text" placeholder="Filter folders…" autocomplete="off"
+                        class="w-full bg-white border border-border-primary rounded-input py-[10px] pl-9 pr-3 text-[13px] font-medium text-ink outline-none" />
+                    <span class="ms absolute left-[11px] top-[10px] text-text-dim" style="font-size:17px;">search</span>
                 </div>
             </div>
-            <div id="dir-picker-tree" class="flex-1 overflow-y-auto p-3 space-y-0.5"></div>
-            <div class="px-5 py-3 border-t border-slate-200 dark:border-slate-700 flex items-center gap-2">
-                <span class="material-symbols-outlined text-slate-400 text-sm">subdirectory_arrow_right</span>
-                <input id="dir-picker-custom" type="text" placeholder="Or type a new path..."
-                    class="flex-1 bg-transparent border-none text-sm focus:ring-0 outline-none text-slate-700 dark:text-slate-200" />
-                <button onclick="dirPickerConfirmCustom()" class="px-3 py-1.5 bg-primary text-on-primary rounded-lg text-xs font-bold hover:opacity-90 transition-opacity">Use</button>
+            <div id="dir-picker-tree" class="df-scroll flex-1 overflow-y-auto p-2"></div>
+            <div class="px-5 py-3 border-t border-border-card flex items-center gap-2">
+                <span class="ms text-text-dim" style="font-size:16px;">subdirectory_arrow_right</span>
+                <input id="dir-picker-custom" type="text" placeholder="Or type a new path…"
+                    class="flex-1 bg-transparent border-none text-sm text-ink outline-none font-mono" />
+                <button onclick="dirPickerConfirmCustom()" class="px-3 py-1.5 bg-ink text-[#F4F1EA] rounded-input text-xs font-bold cursor-pointer hover:opacity-90 transition-opacity border-none">Use</button>
             </div>
         </div>
     `;
     document.body.appendChild(modal);
 
-    // Store callback
     window._dirPickerCallback = callback;
-
-    // Render tree
     _renderDirPickerTree(_dirTreeCache, '');
 
-    // Wire up search filter
     const searchInput = document.getElementById('dir-picker-search');
     searchInput.focus();
     searchInput.addEventListener('input', () => {
         _renderDirPickerTree(_dirTreeCache, searchInput.value.trim().toLowerCase());
     });
 
-    // Enter on custom input
     document.getElementById('dir-picker-custom').addEventListener('keydown', (e) => {
         if (e.key === 'Enter') dirPickerConfirmCustom();
     });
 
-    // Escape to close
     modal.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') closeDirPicker();
     });
@@ -465,14 +582,14 @@ function _renderDirPickerTree(nodes, filter, depth = 0) {
 
         if (!matchesFilter && !childrenMatch) continue;
 
-        const indent = depth * 16;
+        const indent = 10 + depth * 16;
         const item = document.createElement('div');
-        item.className = 'flex items-center gap-2 px-2 py-2 rounded-lg cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors group';
-        item.style.paddingLeft = `${indent + 8}px`;
+        item.className = 'flex items-center gap-[9px] py-[9px] px-[10px] rounded-[9px] cursor-pointer hover:bg-sidebar transition-colors';
+        item.style.paddingLeft = `${indent}px`;
         item.innerHTML = `
-            <span class="material-symbols-outlined text-primary/60 text-sm group-hover:text-primary transition-colors">folder</span>
-            <span class="text-sm text-slate-700 dark:text-slate-300 group-hover:text-slate-900 dark:group-hover:text-slate-100 flex-1">${node.name}</span>
-            <span class="text-[10px] text-slate-400 font-medium">${node.pdf_count || ''}</span>
+            <span class="ms" style="font-size:18px;color:#C0A86E;">folder</span>
+            <span class="flex-1 text-[13px] text-ink truncate">${node.name}</span>
+            <span class="text-[10.5px] text-text-dim font-semibold">${node.pdf_count || ''}</span>
         `;
         item.addEventListener('click', () => {
             if (window._dirPickerCallback) window._dirPickerCallback(node.path);
@@ -513,14 +630,24 @@ function dirPickerConfirmCustom() {
 // Initialize page shell
 // ---------------------------------------------------------------------------
 function initPage(title) {
-    document.getElementById('nav').innerHTML = renderNav();
-    document.getElementById('header').innerHTML = renderHeader(title);
-    document.getElementById('footer').innerHTML = renderFooter();
-    // Add mobile tab bar
+    // Inject sidebar
+    const navEl = document.getElementById('nav');
+    if (navEl) navEl.innerHTML = renderNav();
+
+    // The header and footer are now part of df-main flow, not absolute-positioned
+    const headerEl = document.getElementById('header');
+    if (headerEl) headerEl.innerHTML = renderHeader(title);
+
+    const footerEl = document.getElementById('footer');
+    if (footerEl) footerEl.innerHTML = renderFooter();
+
+    // Mobile tab bar
     document.body.insertAdjacentHTML('beforeend', renderMobileTabs());
+
     injectResponsiveStyles();
     initDarkMode();
     updateHealthStatus();
     initToastContainer();
     initSearch();
+    updateReviewBadge();
 }

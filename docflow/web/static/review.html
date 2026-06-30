@@ -5,519 +5,550 @@
     <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
     <title>DocFlow — Review Queue</title>
     <script src="https://cdn.tailwindcss.com?plugins=forms"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@200..800&family=Inter:wght@100..900&display=swap" rel="stylesheet"/>
-    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+    <link rel="preconnect" href="https://fonts.googleapis.com"/>
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400..800&family=Inter:wght@400..700&family=JetBrains+Mono:wght@400..600&display=swap" rel="stylesheet"/>
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL@20..48,400..600,0..1&display=swap" rel="stylesheet"/>
     <script src="/static/config.js"></script>
     <style>
-        body { font-family: 'Inter', sans-serif; }
+        * { box-sizing: border-box; }
+        body { margin: 0; font-family: 'Inter', sans-serif; -webkit-font-smoothing: antialiased; }
         .font-headline { font-family: 'Manrope', sans-serif; }
-        .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
+        .font-mono { font-family: 'JetBrains Mono', monospace; }
     </style>
 </head>
-<body class="bg-surface text-on-surface dark:bg-slate-900 dark:text-slate-100 flex overflow-hidden h-screen">
+<body class="bg-canvas text-ink">
     <div id="nav"></div>
 
-    <main class="ml-16 lg:ml-64 flex-1 flex flex-col h-screen relative bg-surface overflow-hidden transition-all duration-200">
+    <div class="df-main">
         <div id="header"></div>
 
-        <!-- Tab bar -->
-        <div class="flex items-center gap-1 px-8 pt-4 pb-0">
-            <button id="tab-pending" onclick="switchTab('pending')" class="px-4 py-2 rounded-t-lg text-sm font-bold bg-primary text-on-primary transition-colors">
-                Pending Review <span id="tab-pending-count" class="ml-1 opacity-70"></span>
-            </button>
-            <button id="tab-unmatched" onclick="switchTab('unmatched')" class="px-4 py-2 rounded-t-lg text-sm font-bold bg-surface-container text-outline hover:bg-surface-variant transition-colors">
-                Unmatched & Skipped <span id="tab-unmatched-count" class="ml-1 opacity-70"></span>
-            </button>
-        </div>
+        <!-- Full-height review container -->
+        <div class="flex-1 flex flex-col min-h-0 min-w-[1060px]">
 
-        <!-- Empty state -->
-        <div id="empty-state" class="flex-1 flex items-center justify-center hidden">
-            <div class="text-center">
-                <div class="w-20 h-20 bg-secondary-container/30 rounded-full flex items-center justify-center mx-auto mb-6">
-                    <span class="material-symbols-outlined text-secondary text-4xl">check_circle</span>
-                </div>
-                <h2 class="text-2xl font-headline font-bold text-primary mb-2">All Clear!</h2>
-                <p class="text-on-surface-variant">No items pending review. Nice work.</p>
-                <a href="/" class="inline-block mt-6 bg-primary text-on-primary px-6 py-3 rounded-lg font-bold text-sm hover:opacity-90 transition-all">Back to Dashboard</a>
-            </div>
-        </div>
-
-        <!-- Split-pane workspace -->
-        <section id="review-workspace" class="flex-1 flex gap-0 h-full overflow-hidden hidden">
-            <!-- Left: Document preview -->
-            <div class="w-3/5 bg-surface-container-low p-8 flex flex-col relative">
-                <!-- View toggle -->
-                <div class="flex items-center gap-2 mb-4">
-                    <button id="btn-view-image" onclick="setPreviewMode('image')" class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-primary text-on-primary transition-colors">
-                        <span class="material-symbols-outlined text-sm">image</span> Page Image
+            <!-- Tabs + progress -->
+            <div class="flex items-center gap-5 px-7 pt-[18px] flex-shrink-0">
+                <div class="flex gap-1 bg-sidebar p-1 rounded-[13px]">
+                    <button id="tab-pending" onclick="switchTab('pending')"
+                        class="border-none rounded-[10px] py-2 px-[14px] font-bold text-[13px] cursor-pointer transition-all duration-150 bg-white text-ink shadow-tab">
+                        Pending Review <span id="tab-pending-count" class="opacity-55 ml-[5px]"></span>
                     </button>
-                    <button id="btn-view-text" onclick="setPreviewMode('text')" class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-surface-container text-outline transition-colors">
-                        <span class="material-symbols-outlined text-sm">text_fields</span> OCR Text
+                    <button id="tab-unmatched" onclick="switchTab('unmatched')"
+                        class="border-none rounded-[10px] py-2 px-[14px] font-bold text-[13px] cursor-pointer transition-all duration-150 bg-transparent text-text-olive">
+                        Unmatched &amp; Skipped <span id="tab-unmatched-count" class="opacity-55 ml-[5px]"></span>
                     </button>
-                    <!-- Page navigation (for multi-page docs) -->
-                    <div id="page-nav" class="ml-auto flex items-center gap-2 hidden">
-                        <button onclick="prevPage()" class="w-8 h-8 rounded-lg bg-surface-container flex items-center justify-center hover:bg-surface-variant transition-colors">
-                            <span class="material-symbols-outlined text-sm">chevron_left</span>
-                        </button>
-                        <span id="page-indicator" class="text-xs font-bold text-on-surface-variant"></span>
-                        <button onclick="nextPage()" class="w-8 h-8 rounded-lg bg-surface-container flex items-center justify-center hover:bg-surface-variant transition-colors">
-                            <span class="material-symbols-outlined text-sm">chevron_right</span>
-                        </button>
-                    </div>
                 </div>
-                <!-- Preview area -->
-                <div id="doc-preview" aria-label="Document preview" class="relative flex-1 max-w-2xl w-full mx-auto bg-white shadow-2xl rounded-lg overflow-hidden">
-                    <div id="preview-image-container" class="absolute inset-0 overflow-y-auto flex items-start justify-center p-4 bg-surface-container-low">
-                        <img id="preview-image" class="max-w-full rounded shadow-sm" alt="Page preview" />
+                <div id="progress-area" class="flex-1 flex items-center gap-3 min-w-0">
+                    <div class="flex-1 max-w-[300px] h-[7px] rounded-pill bg-[#E2DBCC] overflow-hidden">
+                        <div id="review-progress" class="h-full bg-success rounded-pill transition-all duration-300" style="width:0%"></div>
                     </div>
-                    <div id="preview-text-container" class="absolute inset-0 bg-white p-12 overflow-y-auto hidden">
-                        <pre id="preview-text" class="text-sm text-slate-700 whitespace-pre-wrap font-mono leading-relaxed"></pre>
-                    </div>
+                    <span id="review-progress-text" class="text-[12px] font-semibold text-text-olive whitespace-nowrap"></span>
                 </div>
             </div>
 
-            <!-- Right: Metadata & actions -->
-            <div class="w-2/5 flex flex-col bg-surface border-l border-slate-200/20 shadow-[-10px_0_30px_rgba(0,0,0,0.02)] z-10">
-                <!-- Confidence header -->
-                <div id="confidence-header" role="status" class="bg-tertiary-fixed text-on-tertiary-fixed px-6 py-4 flex items-center gap-3">
-                    <span class="material-symbols-outlined text-on-tertiary-container">warning</span>
-                    <span class="text-sm font-bold font-headline uppercase tracking-tight">Low Confidence — Human Review Required</span>
-                </div>
-
-                <div class="flex-1 overflow-y-auto p-8 space-y-6">
-                    <!-- LLM Reasoning -->
-                    <div class="bg-surface-container-low rounded-xl p-5 border border-outline-variant/10">
-                        <div class="flex items-center gap-2 mb-3">
-                            <span class="material-symbols-outlined text-primary-container text-sm">psychology</span>
-                            <span class="text-xs font-bold uppercase tracking-wider text-on-surface-variant">Archivist Reasoning</span>
-                        </div>
-                        <p id="reasoning-text" class="text-sm text-on-surface leading-relaxed italic"></p>
-                    </div>
-
-                    <!-- Form fields -->
-                    <div class="space-y-5">
-                        <div class="space-y-2">
-                            <label class="text-[10px] font-bold text-outline uppercase tracking-widest px-1">Suggested Filename</label>
-                            <input id="edit-filename" class="w-full bg-surface-container-low border-none rounded-lg py-3 px-4 text-sm font-medium text-primary focus:ring-2 focus:ring-primary/5" type="text" />
-                        </div>
-                        <div class="space-y-2">
-                            <label class="text-[10px] font-bold text-outline uppercase tracking-widest px-1">Filing Location</label>
-                            <div class="flex gap-2">
-                                <input id="edit-directory" class="flex-1 bg-surface-container-low border-none rounded-lg py-3 px-4 text-sm font-medium text-primary focus:ring-2 focus:ring-primary/5" type="text" />
-                                <button onclick="openDirectoryPicker(path => document.getElementById('edit-directory').value = path)" class="px-3 bg-surface-container-low rounded-lg hover:bg-surface-container transition-colors flex items-center" title="Browse folders">
-                                    <span class="material-symbols-outlined text-primary text-sm">folder_open</span>
-                                </button>
-                            </div>
-                        </div>
-                        <div class="grid grid-cols-3 gap-3">
-                            <div class="space-y-2">
-                                <label class="text-[10px] font-bold text-outline uppercase tracking-widest px-1">Type</label>
-                                <div id="doc-type-badge" class="bg-surface-container-low px-3 py-2 rounded-lg text-xs font-bold text-primary text-center"></div>
-                            </div>
-                            <div class="space-y-2">
-                                <label class="text-[10px] font-bold text-outline uppercase tracking-widest px-1">Period</label>
-                                <div id="doc-period" class="bg-surface-container-low px-3 py-2 rounded-lg text-xs font-bold text-primary text-center"></div>
-                            </div>
-                            <div class="space-y-2">
-                                <label class="text-[10px] font-bold text-outline uppercase tracking-widest px-1">Pages</label>
-                                <div id="doc-pages" class="bg-surface-container-low px-3 py-2 rounded-lg text-xs font-bold text-primary text-center"></div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Actions -->
-                <div class="p-6 bg-surface-container-lowest border-t border-slate-100 flex flex-col gap-3">
-                    <button id="btn-correct" aria-label="Correct and file document" class="w-full py-4 rounded-xl font-bold bg-gradient-to-r from-primary to-primary-container text-on-primary flex items-center justify-center gap-2 hover:shadow-xl hover:-translate-y-0.5 transition-all active:scale-95">
-                        <span class="material-symbols-outlined">verified</span>
-                        Correct & File <span class="text-xs opacity-60 ml-1">[C then Enter]</span>
-                    </button>
-                    <div class="grid grid-cols-3 gap-3">
-                        <button id="btn-approve" aria-label="Approve document as-is" class="py-3.5 rounded-xl font-bold bg-surface-container-high text-on-surface hover:bg-surface-variant transition-colors active:scale-95">
-                            Approve As-Is <span class="text-xs opacity-50 ml-1">[A]</span>
-                        </button>
-                        <button id="btn-skip" aria-label="Skip document" class="py-3.5 rounded-xl font-bold text-on-surface-variant hover:bg-slate-50 transition-colors active:scale-95">
-                            Skip <span class="text-xs opacity-50 ml-1">[S]</span>
-                        </button>
-                        <button id="btn-ask-ai" onclick="askAiForPending()" class="py-3.5 rounded-xl font-bold bg-surface-container text-on-surface hover:bg-surface-variant transition-colors active:scale-95 flex items-center justify-center gap-1.5">
-                            <span class="material-symbols-outlined text-sm">psychology</span> Ask AI
-                        </button>
-                    </div>
-                </div>
-            </div>
-        </section>
-
-        <!-- Pending queue strip -->
-        <section id="queue-strip" class="absolute bottom-12 left-8 right-[42%] z-30 hidden">
-            <div class="bg-white/70 backdrop-blur-xl rounded-2xl shadow-2xl p-4 flex items-center gap-4 border border-white/40">
-                <div class="flex items-center gap-2 px-3 border-r border-slate-200">
-                    <span class="text-[10px] font-black uppercase text-primary/40">Pending</span>
-                </div>
-                <div id="queue-items" class="flex-1 flex gap-3 overflow-x-auto py-1"></div>
-            </div>
-        </section>
-
-        <!-- Unmatched files view -->
-        <section id="unmatched-workspace" class="flex-1 flex flex-col overflow-hidden hidden">
-            <div id="unmatched-empty" class="flex-1 flex items-center justify-center hidden">
+            <!-- Empty state -->
+            <div id="empty-state" class="flex-1 flex items-center justify-center hidden">
                 <div class="text-center">
-                    <div class="w-20 h-20 bg-secondary-container/30 rounded-full flex items-center justify-center mx-auto mb-6">
-                        <span class="material-symbols-outlined text-secondary text-4xl">check_circle</span>
+                    <div class="w-[74px] h-[74px] rounded-pill bg-success-bg flex items-center justify-center mx-auto mb-[18px]">
+                        <span class="ms fill" style="font-size:38px;color:#0E8A5E;">task_alt</span>
                     </div>
-                    <h2 class="text-2xl font-headline font-bold text-primary mb-2">No Unmatched Files</h2>
-                    <p class="text-on-surface-variant">All documents have been filed.</p>
+                    <h2 id="empty-title" class="m-0 mb-[6px] font-headline font-extrabold text-[24px]">All caught up</h2>
+                    <p id="empty-sub" class="m-0 text-text-olive text-[14px]">No documents are waiting for review. Nice work.</p>
                 </div>
             </div>
-            <div id="unmatched-list" class="flex-1 overflow-y-auto p-8">
-                <div class="max-w-4xl mx-auto space-y-3" id="unmatched-items"></div>
-            </div>
-        </section>
 
-        <!-- Unmatched reclassify modal -->
-        <div id="reclassify-modal" class="fixed inset-0 z-[150] flex items-center justify-center hidden">
-            <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" onclick="closeReclassifyModal()"></div>
-            <div class="relative bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-[600px] max-h-[80vh] flex flex-col overflow-hidden">
-                <div class="px-6 pt-5 pb-3 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
-                    <h3 class="text-sm font-bold font-headline text-slate-900 dark:text-slate-100">Reclassify Document</h3>
-                    <button onclick="closeReclassifyModal()" class="text-slate-400 hover:text-slate-600"><span class="material-symbols-outlined text-sm">close</span></button>
+            <!-- Three-pane workspace -->
+            <div id="workspace" class="flex-1 flex min-h-0 py-4 px-7 gap-4 hidden">
+
+                <!-- LEFT: Queue rail -->
+                <div class="w-[266px] flex-shrink-0 flex flex-col bg-panel border border-border-primary rounded-card p-3">
+                    <div class="flex items-center justify-between px-[6px] pb-[9px]">
+                        <span class="text-[10.5px] font-bold tracking-[.1em] uppercase text-text-faint">Queue &middot; <span id="queue-count">0</span></span>
+                        <button onclick="onSelectAll()" id="select-all-btn" class="bg-transparent border-none text-text-muted font-bold text-[11.5px] cursor-pointer p-[2px_4px]">Select all</button>
+                    </div>
+                    <div id="bulk-approve" class="hidden mb-2">
+                        <button onclick="onBulkApprove()" class="w-full flex items-center justify-center gap-[7px] bg-ink text-[#F4F1EA] border-none rounded-[11px] py-[10px] font-bold text-[12.5px] cursor-pointer">
+                            <span class="ms" style="font-size:17px;">done_all</span> Approve <span id="bulk-count">0</span> selected
+                        </button>
+                    </div>
+                    <div id="queue-list" class="df-scroll flex-1 overflow-y-auto flex flex-col gap-[5px]"></div>
                 </div>
-                <div class="flex-1 overflow-y-auto p-6 space-y-5">
-                    <!-- Preview (click to enlarge) -->
-                    <div class="bg-slate-50 rounded-xl overflow-hidden max-h-64 flex items-center justify-center cursor-pointer group relative" onclick="openFullPreview()">
-                        <img id="reclassify-preview" class="max-h-64 max-w-full" alt="Preview" />
-                        <div class="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors flex items-center justify-center">
-                            <span class="material-symbols-outlined text-white opacity-0 group-hover:opacity-100 transition-opacity text-3xl drop-shadow-lg">zoom_in</span>
+
+                <!-- CENTER: Preview -->
+                <div class="flex-1 min-w-0 flex flex-col bg-panel border border-border-primary rounded-card p-[14px]">
+                    <div class="flex items-center gap-2 mb-3 flex-shrink-0">
+                        <div class="flex gap-[3px] bg-[#E2DBCC] p-[3px] rounded-input">
+                            <button id="btn-view-image" onclick="setPreviewMode('image')"
+                                class="flex items-center gap-[5px] border-none rounded-tile py-[6px] px-[11px] font-bold text-[11.5px] cursor-pointer transition-all duration-150 bg-white text-ink shadow-[0_1px_3px_rgba(20,23,28,.1)]">
+                                <span class="ms" style="font-size:15px;">image</span> Page
+                            </button>
+                            <button id="btn-view-text" onclick="setPreviewMode('text')"
+                                class="flex items-center gap-[5px] border-none rounded-tile py-[6px] px-[11px] font-bold text-[11.5px] cursor-pointer transition-all duration-150 bg-transparent text-text-olive">
+                                <span class="ms" style="font-size:15px;">subject</span> OCR Text
+                            </button>
+                        </div>
+                        <div id="page-nav" class="ml-auto flex items-center gap-2 hidden">
+                            <button onclick="prevPage()" class="w-[30px] h-[30px] rounded-[9px] border border-[#E2DBCC] bg-white flex items-center justify-center cursor-pointer">
+                                <span class="ms" style="font-size:17px;color:#4A4D57;">chevron_left</span>
+                            </button>
+                            <span id="page-indicator" class="text-[12px] font-semibold text-text-olive whitespace-nowrap"></span>
+                            <button onclick="nextPage()" class="w-[30px] h-[30px] rounded-[9px] border border-[#E2DBCC] bg-white flex items-center justify-center cursor-pointer">
+                                <span class="ms" style="font-size:17px;color:#4A4D57;">chevron_right</span>
+                            </button>
                         </div>
                     </div>
-                    <!-- LLM suggestion -->
-                    <div id="reclassify-suggestion" class="bg-blue-50 border border-blue-200 rounded-xl p-4 hidden">
-                        <div class="flex items-center gap-2 mb-2">
-                            <span class="material-symbols-outlined text-blue-600 text-sm">psychology</span>
-                            <span class="text-xs font-bold uppercase text-blue-700">AI Suggestion</span>
+                    <div class="df-scroll flex-1 overflow-y-auto flex items-start justify-center min-h-0">
+                        <!-- Page image -->
+                        <div id="preview-image-container" class="w-full max-w-[520px]">
+                            <div onclick="openZoom()" class="bg-white rounded-sm shadow-doc p-[44px_46px] cursor-zoom-in relative">
+                                <div class="absolute top-[14px] right-[14px] flex items-center gap-1 bg-[rgba(20,23,28,.06)] rounded-tile py-[5px] px-2">
+                                    <span class="ms" style="font-size:15px;color:#8A8B72;">zoom_in</span>
+                                </div>
+                                <img id="preview-image" class="w-full rounded" alt="Page preview" style="display:none;" />
+                                <div id="preview-skeleton" class="flex flex-col gap-[11px]">
+                                    <div class="h-[9px] rounded-[3px] bg-skeleton w-[92%]"></div>
+                                    <div class="h-[9px] rounded-[3px] bg-skeleton w-[78%]"></div>
+                                    <div class="h-[9px] rounded-[3px] bg-skeleton w-[85%]"></div>
+                                    <div class="h-[9px] rounded-[3px] bg-skeleton w-[60%]"></div>
+                                    <div class="h-[9px] rounded-[3px] bg-skeleton w-[90%]"></div>
+                                    <div class="h-[9px] rounded-[3px] bg-skeleton w-[72%]"></div>
+                                    <div class="h-[9px] rounded-[3px] bg-skeleton w-[88%]"></div>
+                                    <div class="mt-[26px] flex gap-[10px]">
+                                        <div class="flex-1 h-[54px] rounded-sm bg-canvas"></div>
+                                        <div class="flex-1 h-[54px] rounded-sm bg-canvas"></div>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
-                        <p id="reclassify-reasoning" class="text-sm text-blue-800 mb-3 italic"></p>
-                    </div>
-                    <!-- Form -->
-                    <div class="space-y-4">
-                        <div class="space-y-2">
-                            <label class="text-[10px] font-bold text-outline uppercase tracking-widest px-1">Filename</label>
-                            <input id="reclassify-filename" class="w-full bg-surface-container-low border-none rounded-lg py-3 px-4 text-sm font-medium text-primary focus:ring-2 focus:ring-primary/5" type="text" />
-                        </div>
-                        <div class="space-y-2">
-                            <label class="text-[10px] font-bold text-outline uppercase tracking-widest px-1">Filing Location</label>
-                            <div class="flex gap-2">
-                                <input id="reclassify-directory" class="flex-1 bg-surface-container-low border-none rounded-lg py-3 px-4 text-sm font-medium text-primary focus:ring-2 focus:ring-primary/5" type="text" />
-                                <button onclick="openDirectoryPicker(path => document.getElementById('reclassify-directory').value = path)" class="px-3 bg-surface-container-low rounded-lg hover:bg-surface-container transition-colors flex items-center">
-                                    <span class="material-symbols-outlined text-primary text-sm">folder_open</span>
-                                </button>
+                        <!-- OCR text -->
+                        <div id="preview-text-container" class="w-full max-w-[560px] hidden">
+                            <div class="bg-white rounded-sm shadow-[0_10px_34px_rgba(20,23,28,.10)] p-[34px_38px]">
+                                <pre id="preview-text" class="m-0 font-mono text-[12.5px] leading-[1.7] text-[#3A3D47] whitespace-pre-wrap"></pre>
                             </div>
                         </div>
                     </div>
                 </div>
-                <div class="px-6 py-4 border-t border-slate-200 dark:border-slate-700 flex gap-3">
-                    <button id="reclassify-suggest-btn" onclick="suggestClassification()" class="px-4 py-2.5 rounded-xl font-bold bg-surface-container text-on-surface hover:bg-surface-variant transition-colors text-sm flex items-center gap-2">
-                        <span class="material-symbols-outlined text-sm">psychology</span> Ask AI
-                    </button>
-                    <div class="flex-1"></div>
-                    <button onclick="closeReclassifyModal()" class="px-4 py-2.5 rounded-xl font-bold text-on-surface-variant hover:bg-slate-50 transition-colors text-sm">Cancel</button>
-                    <button onclick="submitReclassify()" class="px-6 py-2.5 rounded-xl font-bold bg-primary text-on-primary hover:shadow-xl transition-all text-sm">File</button>
+
+                <!-- RIGHT: Decision panel -->
+                <div id="decision-panel" class="w-[362px] flex-shrink-0 flex flex-col bg-white border border-border-primary rounded-card overflow-hidden shadow-raised">
+                    <!-- Confidence header -->
+                    <div id="conf-header" class="py-[18px] px-5 flex items-center gap-[15px] border-b border-[rgba(20,23,28,.05)]" style="background:#E2F1E9;">
+                        <div id="conf-ring" class="w-[58px] h-[58px] rounded-pill flex items-center justify-center flex-shrink-0" style="background:conic-gradient(#0E8A5E 270deg, #EDE7DA 270deg);">
+                            <div class="w-[44px] h-[44px] rounded-pill flex items-center justify-center" id="conf-ring-inner" style="background:#E2F1E9;">
+                                <span id="conf-pct" class="font-headline font-extrabold text-[15px]" style="color:#0E8A5E;">—<span class="text-[9px]">%</span></span>
+                            </div>
+                        </div>
+                        <div class="flex-1 min-w-0">
+                            <p id="conf-label" class="m-0 font-headline font-extrabold text-[14px]" style="color:#0E8A5E;">Confident</p>
+                            <p id="conf-why" class="m-0 mt-[3px] text-[11.5px] leading-[1.4] text-text-muted"></p>
+                        </div>
+                    </div>
+
+                    <div class="df-scroll flex-1 overflow-y-auto p-5 flex flex-col gap-[18px]">
+                        <!-- Files to -->
+                        <div>
+                            <p class="m-0 mb-[9px] text-[10px] font-bold tracking-[.1em] uppercase text-text-label">Files to</p>
+                            <div id="dir-chips" class="flex flex-wrap items-center gap-1 mb-2 hidden">
+                                <span class="ms" style="font-size:16px;color:#B5751F;">folder</span>
+                            </div>
+                            <div class="flex gap-[7px]">
+                                <input id="edit-directory" placeholder="Set a destination folder…"
+                                    class="flex-1 min-w-0 bg-inset border border-border-primary rounded-input py-[10px] px-3 font-mono font-medium text-[12px] text-ink outline-none" />
+                                <button onclick="openDirectoryPicker(path => { document.getElementById('edit-directory').value = path; updateDirChips(); })"
+                                    class="w-[42px] flex-shrink-0 bg-tile border border-border-primary rounded-input flex items-center justify-center cursor-pointer" title="Browse folders">
+                                    <span class="ms" style="font-size:18px;color:#15171C;">folder_open</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Filename -->
+                        <div>
+                            <p class="m-0 mb-[9px] text-[10px] font-bold tracking-[.1em] uppercase text-text-label">Filename</p>
+                            <input id="edit-filename"
+                                class="w-full bg-inset border border-border-primary rounded-input py-[10px] px-3 font-mono font-medium text-[12px] text-ink outline-none" />
+                        </div>
+
+                        <!-- Facts -->
+                        <div class="grid grid-cols-3 gap-2">
+                            <div class="bg-inset rounded-input py-[9px] px-[10px] text-center">
+                                <p class="m-0 mb-[3px] text-[9px] font-bold tracking-[.06em] uppercase text-text-label">Type</p>
+                                <p id="fact-type" class="m-0 text-[11.5px] font-bold text-ink leading-[1.2]">—</p>
+                            </div>
+                            <div class="bg-inset rounded-input py-[9px] px-[10px] text-center">
+                                <p class="m-0 mb-[3px] text-[9px] font-bold tracking-[.06em] uppercase text-text-label">Period</p>
+                                <p id="fact-period" class="m-0 text-[11.5px] font-bold text-ink leading-[1.2]">—</p>
+                            </div>
+                            <div class="bg-inset rounded-input py-[9px] px-[10px] text-center">
+                                <p class="m-0 mb-[3px] text-[9px] font-bold tracking-[.06em] uppercase text-text-label">Pages</p>
+                                <p id="fact-pages" class="m-0 text-[11.5px] font-bold text-ink leading-[1.2]">—</p>
+                            </div>
+                        </div>
+
+                        <!-- Archivist Reasoning -->
+                        <div class="bg-ai-bg border border-ai-border rounded-card-sm p-[14px]">
+                            <div class="flex items-center gap-[7px] mb-2">
+                                <span class="ms" style="font-size:16px;color:#34508C;">neurology</span>
+                                <span class="text-[10px] font-bold tracking-[.08em] uppercase text-ai">Archivist Reasoning</span>
+                            </div>
+                            <p id="reasoning-text" class="m-0 text-[12.5px] leading-[1.55]" style="color:#3C4252;"></p>
+                        </div>
+                    </div>
+
+                    <!-- Action footer -->
+                    <div class="p-[14px_16px] border-t border-border-card bg-soft-hover flex flex-col gap-[9px]">
+                        <button id="btn-approve" onclick="doAction('approve')"
+                            class="flex items-center justify-center gap-[9px] bg-ink text-[#F4F1EA] border-none rounded-card-sm py-[15px] font-headline font-extrabold text-[14.5px] cursor-pointer shadow-btn-strong hover:-translate-y-px transition-transform duration-150">
+                            <span class="ms" style="font-size:20px;">check_circle</span>
+                            <span id="approve-label">Approve &amp; File</span>
+                            <span class="text-[11px] font-semibold opacity-50 border border-[rgba(244,241,234,.3)] rounded-[5px] py-px px-[5px]">A</span>
+                        </button>
+                        <div class="flex gap-[9px]">
+                            <button id="btn-skip" onclick="doAction('skip')"
+                                class="flex-1 flex items-center justify-center gap-[6px] bg-white text-text-muted border border-border-primary rounded-btn py-3 font-bold text-[13px] cursor-pointer hover:bg-canvas transition-colors">
+                                Skip <span class="text-[10.5px] opacity-60 border border-border-check rounded-[5px] py-px px-[5px]">S</span>
+                            </button>
+                            <button id="btn-ask-ai" onclick="askAI()"
+                                class="flex-1 flex items-center justify-center gap-[6px] bg-ai-bg-light text-ai border border-ai-border-light rounded-btn py-3 font-bold text-[13px] cursor-pointer hover:bg-[#E4E9F6] transition-colors">
+                                <span class="ms" style="font-size:17px;">auto_awesome</span>
+                                <span id="ask-ai-label">Ask AI</span>
+                            </button>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
 
-        <!-- Full-screen document preview -->
-        <div id="fullscreen-preview" class="fixed inset-0 z-[300] bg-black/90 backdrop-blur-md hidden flex items-center justify-center cursor-pointer" onclick="closeFullPreview()">
-            <button class="absolute top-6 right-6 text-white/70 hover:text-white transition-colors z-10" onclick="closeFullPreview()">
-                <span class="material-symbols-outlined text-3xl">close</span>
+        <!-- Zoom modal -->
+        <div id="zoom-modal" onclick="closeZoom()" class="fixed inset-0 z-[300] bg-[rgba(20,23,28,.86)] backdrop-blur-[6px] flex items-center justify-center p-10 cursor-zoom-out hidden">
+            <button onclick="closeZoom()" class="absolute top-6 right-[26px] w-[42px] h-[42px] border-none bg-white/[.12] rounded-[11px] flex items-center justify-center cursor-pointer">
+                <span class="ms" style="font-size:24px;color:#fff;">close</span>
             </button>
-            <div class="absolute top-6 left-6 flex items-center gap-3 z-10">
-                <button onclick="event.stopPropagation(); fullPreviewPrevPage()" class="w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-colors">
-                    <span class="material-symbols-outlined">chevron_left</span>
-                </button>
-                <span id="fullscreen-page-indicator" class="text-white/70 text-sm font-bold"></span>
-                <button onclick="event.stopPropagation(); fullPreviewNextPage()" class="w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white transition-colors">
-                    <span class="material-symbols-outlined">chevron_right</span>
-                </button>
-            </div>
-            <img id="fullscreen-image" class="max-h-[90vh] max-w-[90vw] rounded-lg shadow-2xl" alt="Full preview" onclick="event.stopPropagation()" />
+            <img id="zoom-image" class="max-w-full max-h-[88vh] rounded-sm shadow-[0_30px_80px_rgba(0,0,0,.5)]" alt="Zoomed preview" onclick="event.stopPropagation()" />
         </div>
 
         <div id="footer"></div>
-    </main>
+    </div><!-- end df-main -->
 
     <script src="/static/shared.js"></script>
     <script>
         initPage('Review Queue');
 
         let queueItems = [];
+        let unmatchedFiles = [];
         let currentIndex = 0;
+        let currentTab = 'pending';
         let previewMode = 'image';
         let currentPageIdx = 0;
-        let currentTab = 'pending';
-        let unmatchedFiles = [];
-        let reclassifyPath = '';
+        let selected = {};
+        let sessionTotal = 0;
 
-        // Tab switching
+        // ---- Tab switching ----
         function switchTab(tab) {
             currentTab = tab;
+            currentIndex = 0;
+            selected = {};
+            currentPageIdx = 0;
+
             const pendingBtn = document.getElementById('tab-pending');
             const unmatchedBtn = document.getElementById('tab-unmatched');
-            const activeClass = 'px-4 py-2 rounded-t-lg text-sm font-bold bg-primary text-on-primary transition-colors';
-            const inactiveClass = 'px-4 py-2 rounded-t-lg text-sm font-bold bg-surface-container text-outline hover:bg-surface-variant transition-colors';
+            const activeStyle = 'border-none rounded-[10px] py-2 px-[14px] font-bold text-[13px] cursor-pointer transition-all duration-150 bg-white text-ink shadow-tab';
+            const inactiveStyle = 'border-none rounded-[10px] py-2 px-[14px] font-bold text-[13px] cursor-pointer transition-all duration-150 bg-transparent text-text-olive';
 
             if (tab === 'pending') {
-                pendingBtn.className = activeClass;
-                unmatchedBtn.className = inactiveClass;
-                document.getElementById('unmatched-workspace').classList.add('hidden');
+                pendingBtn.className = activeStyle;
+                unmatchedBtn.className = inactiveStyle;
+                document.getElementById('progress-area').classList.remove('hidden');
                 loadQueue();
             } else {
-                unmatchedBtn.className = activeClass;
-                pendingBtn.className = inactiveClass;
-                document.getElementById('review-workspace').classList.add('hidden');
-                document.getElementById('queue-strip').classList.add('hidden');
-                document.getElementById('empty-state').classList.add('hidden');
-                document.getElementById('unmatched-workspace').classList.remove('hidden');
+                unmatchedBtn.className = activeStyle;
+                pendingBtn.className = inactiveStyle;
+                document.getElementById('progress-area').classList.add('hidden');
                 loadUnmatched();
             }
         }
 
-        // Unmatched files
-        async function loadUnmatched() {
-            const resp = await fetch('/api/unmatched');
-            const data = await resp.json();
-            unmatchedFiles = data.files;
-            document.getElementById('tab-unmatched-count').textContent = data.count > 0 ? `(${data.count})` : '';
-
-            if (unmatchedFiles.length === 0) {
-                document.getElementById('unmatched-empty').classList.remove('hidden');
-                document.getElementById('unmatched-list').classList.add('hidden');
-                return;
-            }
-
-            document.getElementById('unmatched-empty').classList.add('hidden');
-            document.getElementById('unmatched-list').classList.remove('hidden');
-            const container = document.getElementById('unmatched-items');
-            container.innerHTML = unmatchedFiles.map((f, i) => `
-                <div class="flex items-center gap-4 p-4 bg-surface-container-lowest rounded-xl hover:shadow-md transition-all group cursor-pointer" onclick="openReclassify(${i})">
-                    <span class="material-symbols-outlined text-slate-400 text-2xl">description</span>
-                    <div class="flex-1 min-w-0">
-                        <p class="text-sm font-bold text-slate-900 truncate">${f.name}</p>
-                        <p class="text-xs text-on-surface-variant">${f.folder} &middot; ${f.pages} pages &middot; ${(f.size / 1024).toFixed(0)} KB</p>
-                    </div>
-                    <span class="px-2 py-1 rounded-lg text-[10px] font-bold uppercase ${f.folder === '_Skipped' ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}">${f.folder === '_Skipped' ? 'Skipped' : 'Unmatched'}</span>
-                    <button class="opacity-0 group-hover:opacity-100 transition-opacity px-3 py-1.5 bg-primary text-on-primary rounded-lg text-xs font-bold">
-                        Reclassify
-                    </button>
-                </div>
-            `).join('');
+        // ---- Active items helper ----
+        function activeItems() {
+            if (currentTab === 'pending') return queueItems;
+            return unmatchedFiles.map(u => ({
+                id: u.id || u.path,
+                institution: u.folder === '_Skipped' ? 'Skipped file' : 'Unmatched file',
+                doc_type: u.name.replace(/\.pdf$/i, ''),
+                period: '—',
+                pages: Array.from({ length: u.pages || 1 }, (_, i) => i + 1),
+                confidence: null,
+                suggested_filename: u.name.replace(/\.pdf$/i, ''),
+                suggested_directory: '',
+                notes: u.folder === '_Skipped' ? 'Previously skipped — never filed' : 'Never matched a filing rule',
+                reasoning: 'This file is sitting in your ToBeOrganized folder and was never filed. Ask the archivist to suggest a destination, or set one yourself.',
+                source_pdf: u.path,
+                _unmatched: u,
+            }));
         }
 
-        function openReclassify(index) {
-            const f = unmatchedFiles[index];
-            reclassifyPath = f.path;
-            document.getElementById('reclassify-filename').value = f.name;
-            document.getElementById('reclassify-directory').value = '';
-            document.getElementById('reclassify-preview').src = `/api/preview/file?path=${encodeURIComponent(f.path)}&page=1`;
-            document.getElementById('reclassify-suggestion').classList.add('hidden');
-            document.getElementById('reclassify-modal').classList.remove('hidden');
-        }
-
-        function closeReclassifyModal() {
-            document.getElementById('reclassify-modal').classList.add('hidden');
-        }
-
-        // Full-screen preview
-        let fullPreviewCurrentPage = 1;
-        let fullPreviewTotalPages = 1;
-
-        function openFullPreview() {
-            const f = unmatchedFiles.find(f => f.path === reclassifyPath);
-            fullPreviewTotalPages = f ? f.pages : 1;
-            fullPreviewCurrentPage = 1;
-            _updateFullPreview();
-            document.getElementById('fullscreen-preview').classList.remove('hidden');
-        }
-
-        function closeFullPreview() {
-            document.getElementById('fullscreen-preview').classList.add('hidden');
-        }
-
-        function _updateFullPreview() {
-            document.getElementById('fullscreen-image').src =
-                `/api/preview/file?path=${encodeURIComponent(reclassifyPath)}&page=${fullPreviewCurrentPage}`;
-            document.getElementById('fullscreen-page-indicator').textContent =
-                fullPreviewTotalPages > 1 ? `Page ${fullPreviewCurrentPage} of ${fullPreviewTotalPages}` : '';
-        }
-
-        function fullPreviewPrevPage() {
-            if (fullPreviewCurrentPage > 1) {
-                fullPreviewCurrentPage--;
-                _updateFullPreview();
-            }
-        }
-
-        function fullPreviewNextPage() {
-            if (fullPreviewCurrentPage < fullPreviewTotalPages) {
-                fullPreviewCurrentPage++;
-                _updateFullPreview();
-            }
-        }
-
-        // Keyboard support for fullscreen
-        document.addEventListener('keydown', (e) => {
-            const fs = document.getElementById('fullscreen-preview');
-            if (fs && !fs.classList.contains('hidden')) {
-                if (e.key === 'Escape') closeFullPreview();
-                if (e.key === 'ArrowLeft') fullPreviewPrevPage();
-                if (e.key === 'ArrowRight') fullPreviewNextPage();
-                e.preventDefault();
-                return;
-            }
-        });
-
-        async function suggestClassification() {
-            const btn = document.getElementById('reclassify-suggest-btn');
-            btn.disabled = true;
-            btn.innerHTML = '<span class="material-symbols-outlined text-sm animate-spin">progress_activity</span> Thinking...';
-
-            try {
-                const resp = await fetch('/api/unmatched/suggest', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ path: reclassifyPath }),
-                });
-                if (!resp.ok) throw new Error('LLM request failed');
-                const result = await resp.json();
-
-                if (result.suggested_filename) {
-                    document.getElementById('reclassify-filename').value = result.suggested_filename;
-                }
-                if (result.suggested_directory) {
-                    document.getElementById('reclassify-directory').value = result.suggested_directory;
-                }
-                if (result.reasoning) {
-                    document.getElementById('reclassify-reasoning').textContent = result.reasoning;
-                    document.getElementById('reclassify-suggestion').classList.remove('hidden');
-                }
-            } catch (e) {
-                showToast('AI suggestion failed', 'error');
-            } finally {
-                btn.disabled = false;
-                btn.innerHTML = '<span class="material-symbols-outlined text-sm">psychology</span> Ask AI';
-            }
-        }
-
-        async function submitReclassify() {
-            const filename = document.getElementById('reclassify-filename').value.trim();
-            const directory = document.getElementById('reclassify-directory').value.trim();
-            if (!filename || !directory) {
-                showToast('Filename and directory are required', 'warning');
-                return;
-            }
-
-            try {
-                const resp = await fetch('/api/unmatched/reclassify', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ path: reclassifyPath, filename, directory }),
-                });
-                if (!resp.ok) {
-                    const err = await resp.json().catch(() => ({}));
-                    showToast(err.detail || 'Reclassify failed', 'error');
-                    return;
-                }
-                showToast('Document reclassified and filed', 'success', 3000);
-                closeReclassifyModal();
-                loadUnmatched();
-            } catch (e) {
-                showToast('Network error', 'error');
-            }
-        }
-
+        // ---- Load pending queue ----
         async function loadQueue() {
             const resp = await fetch('/api/queue');
             const data = await resp.json();
-            queueItems = data.items;
-            document.getElementById('tab-pending-count').textContent = queueItems.length > 0 ? `(${queueItems.length})` : '';
+            queueItems = data.items || [];
+            if (sessionTotal === 0 && queueItems.length > 0) sessionTotal = queueItems.length;
+            document.getElementById('tab-pending-count').textContent = queueItems.length || '';
 
-            // Also fetch unmatched count for the tab badge
+            // Also fetch unmatched count
             fetch('/api/unmatched').then(r => r.json()).then(d => {
-                document.getElementById('tab-unmatched-count').textContent = d.count > 0 ? `(${d.count})` : '';
+                unmatchedFiles = d.files || [];
+                document.getElementById('tab-unmatched-count').textContent = d.count > 0 ? d.count : '';
             }).catch(() => {});
 
-            if (queueItems.length === 0) {
-                document.getElementById('empty-state').classList.remove('hidden');
-                document.getElementById('review-workspace').classList.add('hidden');
-                document.getElementById('queue-strip').classList.add('hidden');
+            renderView();
+        }
+
+        // ---- Load unmatched ----
+        async function loadUnmatched() {
+            const resp = await fetch('/api/unmatched');
+            const data = await resp.json();
+            unmatchedFiles = data.files || [];
+            document.getElementById('tab-unmatched-count').textContent = data.count > 0 ? data.count : '';
+            renderView();
+        }
+
+        // ---- Render the view based on current state ----
+        function renderView() {
+            const items = activeItems();
+            const isEmpty = items.length === 0;
+
+            document.getElementById('empty-state').classList.toggle('hidden', !isEmpty);
+            document.getElementById('workspace').classList.toggle('hidden', isEmpty);
+
+            if (isEmpty) {
+                if (currentTab === 'pending') {
+                    document.getElementById('empty-title').textContent = 'All caught up';
+                    document.getElementById('empty-sub').textContent = 'No documents are waiting for review. Nice work.';
+                } else {
+                    document.getElementById('empty-title').textContent = 'Nothing unmatched';
+                    document.getElementById('empty-sub').textContent = 'Every file has been matched and filed.';
+                }
                 return;
             }
 
-            document.getElementById('empty-state').classList.add('hidden');
-            document.getElementById('review-workspace').classList.remove('hidden');
-            document.getElementById('queue-strip').classList.remove('hidden');
-            renderQueueStrip();
-            selectItem(0);
+            // Clamp index
+            if (currentIndex >= items.length) currentIndex = Math.max(0, items.length - 1);
+
+            // Update progress
+            if (currentTab === 'pending') {
+                const reviewed = Math.max(0, sessionTotal - queueItems.length);
+                const pct = sessionTotal > 0 ? Math.round((reviewed / sessionTotal) * 100) : 0;
+                document.getElementById('review-progress').style.width = pct + '%';
+                document.getElementById('review-progress-text').textContent = `${items.length} left \u00b7 ${reviewed} of ${sessionTotal} reviewed`;
+            }
+
+            renderQueueList();
+            selectItem(currentIndex);
+            updateBulkUI();
         }
 
-        function renderQueueStrip() {
-            const strip = document.getElementById('queue-items');
-            strip.innerHTML = queueItems.map((item, i) => {
-                const isActive = i === currentIndex;
-                const cls = isActive
-                    ? 'flex-shrink-0 w-44 bg-primary rounded-xl p-3 flex gap-3 shadow-lg ring-4 ring-primary/10'
-                    : 'flex-shrink-0 w-44 bg-white/50 rounded-xl p-3 flex gap-3 hover:bg-white/80 transition-colors cursor-pointer';
-                const textCls = isActive ? 'text-white' : 'text-primary';
-                const subCls = isActive ? 'text-white/60' : 'text-outline';
+        // ---- Queue rail ----
+        function renderQueueList() {
+            const items = activeItems();
+            document.getElementById('queue-count').textContent = items.length;
+            const list = document.getElementById('queue-list');
 
-                return `<div class="${cls}" onclick="selectItem(${i})">
-                    <div class="flex flex-col min-w-0">
-                        <span class="text-[10px] font-bold ${subCls} truncate uppercase">${item.institution || 'Unknown'}</span>
-                        <span class="text-xs font-bold ${textCls} truncate">${item.doc_type || 'Document'}</span>
-                        <div class="mt-1 h-1 w-full bg-${isActive ? 'white/20' : 'slate-100'} rounded-full overflow-hidden">
-                            <div class="bg-${isActive ? 'tertiary-fixed-dim' : 'secondary'} h-full" style="width:${Math.round(item.confidence * 100)}%"></div>
+            list.innerHTML = items.map((it, i) => {
+                const isActive = i === currentIndex;
+                const isSel = !!selected[it.id];
+                const ci = confidenceInfo(it.confidence);
+                const confPct = it.confidence == null ? '—' : Math.round(it.confidence * 100);
+                const barW = it.confidence == null ? 8 : Math.round(it.confidence * 100);
+
+                const borderStyle = isActive ? 'border-ink bg-white shadow-active' : 'border-transparent bg-transparent';
+                const checkStyle = isSel
+                    ? 'border border-ink bg-ink'
+                    : 'border-[1.5px] border-border-check bg-white';
+
+                return `<div class="flex gap-[10px] items-start p-[10px_11px] rounded-card-sm cursor-pointer transition-all duration-150 border ${borderStyle}" onclick="selectItem(${i})">
+                    <button onclick="event.stopPropagation(); toggleSelect('${it.id}')"
+                        class="w-5 h-5 flex-shrink-0 mt-px rounded-sm flex items-center justify-center cursor-pointer transition-all duration-150 ${checkStyle}">
+                        ${isSel ? '<span class="ms fill" style="font-size:15px;color:#fff;">check</span>' : ''}
+                    </button>
+                    <div class="flex-1 min-w-0">
+                        <p class="m-0 text-[10px] font-bold tracking-[.06em] uppercase text-text-label truncate">${it.institution || 'Unknown'}</p>
+                        <p class="m-0 mt-[2px] mb-[6px] text-[13px] font-bold text-ink truncate">${it.doc_type || 'Document'}</p>
+                        <div class="h-1 rounded-pill bg-[#E2DBCC] overflow-hidden">
+                            <div class="h-full rounded-pill" style="width:${barW}%;background:${ci.color};"></div>
                         </div>
                     </div>
+                    <span class="text-[11px] font-bold py-[2px] px-[7px] rounded-pill whitespace-nowrap self-center" style="color:${ci.color};background:${ci.bg};">${confPct}</span>
                 </div>`;
             }).join('');
         }
 
+        // ---- Select item ----
         function selectItem(index) {
+            const items = activeItems();
+            if (index < 0 || index >= items.length) return;
             currentIndex = index;
             currentPageIdx = 0;
-            const item = queueItems[index];
-            if (!item) return;
+            const it = items[index];
 
-            renderQueueStrip();
+            // Re-render queue to update active highlight
+            renderQueueList();
 
-            // Fill preview
-            document.getElementById('preview-text').textContent = item.raw_text_preview || '(No text available)';
+            // Update decision panel
+            const ci = confidenceInfo(it.confidence);
+            const pct = it.confidence == null ? '—' : Math.round(it.confidence * 100);
+
+            // Confidence header
+            document.getElementById('conf-header').style.background = ci.bg;
+            document.getElementById('conf-ring-inner').style.background = ci.bg;
+            document.getElementById('conf-pct').style.color = ci.color;
+            document.getElementById('conf-pct').innerHTML = pct + (it.confidence != null ? '<span class="text-[9px]">%</span>' : '');
+            document.getElementById('conf-label').style.color = ci.color;
+            document.getElementById('conf-label').textContent = ci.label;
+            document.getElementById('conf-why').textContent = it.notes || '';
+
+            // Ring gradient
+            if (it.confidence != null) {
+                const deg = Math.round(it.confidence * 360);
+                document.getElementById('conf-ring').style.background = `conic-gradient(${ci.color} ${deg}deg, #EDE7DA ${deg}deg)`;
+            } else {
+                document.getElementById('conf-ring').style.background = 'conic-gradient(#C9C3B3 200deg, #EDE7DA 200deg)';
+            }
+
+            // Fields
+            document.getElementById('edit-filename').value = it.suggested_filename || '';
+            document.getElementById('edit-directory').value = it.suggested_directory || '';
+            updateDirChips();
+
+            document.getElementById('fact-type').textContent = it.doc_type || '—';
+            document.getElementById('fact-period').textContent = it.period || '—';
+            const pageCount = (it.pages || []).length;
+            document.getElementById('fact-pages').textContent = pageCount + (pageCount !== 1 ? ' pages' : ' page');
+
+            document.getElementById('reasoning-text').textContent = it.reasoning || it.notes || 'No reasoning available.';
+
+            // Button labels
+            document.getElementById('approve-label').innerHTML = currentTab === 'pending' ? 'Approve &amp; File' : 'File Document';
+            document.getElementById('ask-ai-label').textContent = currentTab === 'pending' ? 'Ask AI' : 'Ask AI to classify';
+
+            // Preview
             loadPagePreview();
-
-            // Fill metadata
-            document.getElementById('reasoning-text').textContent = item.notes || 'No reasoning available.';
-            document.getElementById('edit-filename').value = item.suggested_filename || '';
-            document.getElementById('edit-directory').value = item.suggested_directory || '';
-            document.getElementById('doc-type-badge').textContent = item.doc_type || 'Unknown';
-            document.getElementById('doc-period').textContent = item.period || '—';
-            document.getElementById('doc-pages').textContent = (item.pages || []).join(', ');
         }
 
+        function updateDirChips() {
+            const dir = document.getElementById('edit-directory').value;
+            const chips = document.getElementById('dir-chips');
+            const parts = dir ? dir.split('/').filter(Boolean) : [];
+            if (parts.length > 0) {
+                chips.classList.remove('hidden');
+                chips.innerHTML = '<span class="ms" style="font-size:16px;color:#B5751F;">folder</span>' +
+                    parts.map(p => `<span class="font-mono text-[12px] font-medium text-ink bg-canvas py-[3px] px-2 rounded-[7px]">${p}</span>`).join('');
+            } else {
+                chips.classList.add('hidden');
+            }
+        }
+
+        // Listen for directory input changes
+        document.getElementById('edit-directory').addEventListener('input', updateDirChips);
+
+        // ---- Selection / bulk ----
+        function toggleSelect(id) {
+            selected[id] = !selected[id];
+            if (!selected[id]) delete selected[id];
+            renderQueueList();
+            updateBulkUI();
+        }
+
+        function onSelectAll() {
+            const items = activeItems();
+            const allSel = items.length > 0 && items.every(it => selected[it.id]);
+            selected = {};
+            if (!allSel) items.forEach(it => selected[it.id] = true);
+            renderQueueList();
+            updateBulkUI();
+        }
+
+        function updateBulkUI() {
+            const items = activeItems();
+            const count = items.filter(it => selected[it.id]).length;
+            const allSel = items.length > 0 && items.every(it => selected[it.id]);
+            document.getElementById('select-all-btn').textContent = allSel ? 'Clear' : 'Select all';
+            document.getElementById('bulk-approve').classList.toggle('hidden', count === 0);
+            document.getElementById('bulk-count').textContent = count;
+        }
+
+        async function onBulkApprove() {
+            const items = activeItems();
+            const toApprove = items.filter(it => selected[it.id]);
+            if (toApprove.length === 0) return;
+
+            for (const it of toApprove) {
+                try {
+                    await fetch(`/api/queue/approve/${it.id}`, { method: 'POST' });
+                } catch (e) { /* continue */ }
+            }
+            selected = {};
+            showUndoSnackbar(`Filed ${toApprove.length} documents`, null);
+            if (currentTab === 'pending') await loadQueue();
+            else await loadUnmatched();
+        }
+
+        // ---- Actions ----
         async function doAction(action) {
-            const item = queueItems[currentIndex];
+            const items = activeItems();
+            const item = items[currentIndex];
             if (!item) return;
 
             let url, body;
-            if (action === 'approve') {
-                url = `/api/queue/approve/${item.id}`;
-            } else if (action === 'skip') {
-                url = `/api/queue/skip/${item.id}`;
-            } else if (action === 'correct') {
-                url = `/api/queue/correct/${item.id}`;
-                body = JSON.stringify({
-                    filename: document.getElementById('edit-filename').value,
-                    directory: document.getElementById('edit-directory').value,
-                });
+            if (currentTab === 'pending') {
+                if (action === 'approve') {
+                    // If user edited filename/directory, use correct endpoint
+                    const fn = document.getElementById('edit-filename').value;
+                    const dir = document.getElementById('edit-directory').value;
+                    if (fn !== item.suggested_filename || dir !== item.suggested_directory) {
+                        url = `/api/queue/correct/${item.id}`;
+                        body = JSON.stringify({ filename: fn, directory: dir });
+                    } else {
+                        url = `/api/queue/approve/${item.id}`;
+                    }
+                } else if (action === 'skip') {
+                    url = `/api/queue/skip/${item.id}`;
+                }
+            } else {
+                // Unmatched tab
+                if (action === 'approve') {
+                    const fn = document.getElementById('edit-filename').value.trim();
+                    const dir = document.getElementById('edit-directory').value.trim();
+                    if (!fn || !dir) {
+                        showToast('Filename and directory are required', 'warning');
+                        return;
+                    }
+                    try {
+                        const resp = await fetch('/api/unmatched/reclassify', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ path: item.source_pdf, filename: fn, directory: dir }),
+                        });
+                        if (!resp.ok) {
+                            const err = await resp.json().catch(() => ({}));
+                            showToast(err.detail || 'Filing failed', 'error');
+                            return;
+                        }
+                        showUndoSnackbar(`Filed "${fn}"`, null);
+                        await loadUnmatched();
+                        return;
+                    } catch (e) {
+                        showToast('Network error', 'error');
+                        return;
+                    }
+                } else if (action === 'skip') {
+                    // Skip for unmatched — just advance
+                    currentIndex = Math.min(currentIndex + 1, activeItems().length - 1);
+                    renderView();
+                    return;
+                }
             }
+
+            if (!url) return;
 
             try {
                 const resp = await fetch(url, {
@@ -527,31 +558,32 @@
                 });
                 if (!resp.ok) {
                     const err = await resp.json().catch(() => ({}));
-                    showToast(err.detail || `Action failed`, 'error');
+                    showToast(err.detail || 'Action failed', 'error');
                     return;
                 }
-                const messages = { approve: 'Approved and filed', skip: 'Skipped', correct: 'Corrected and filed' };
-                showToast(messages[action] || 'Done', 'success', 3000);
+
+                const label = action === 'approve'
+                    ? `Filed "${document.getElementById('edit-filename').value || item.suggested_filename}"`
+                    : `Skipped "${item.institution || item.suggested_filename}"`;
+                showUndoSnackbar(label, null);
             } catch (e) {
-                showToast('Network error — could not complete action', 'error');
+                showToast('Network error', 'error');
                 return;
             }
 
-            // Reload queue
             await loadQueue();
         }
 
-        document.getElementById('btn-approve').addEventListener('click', () => doAction('approve'));
-        document.getElementById('btn-skip').addEventListener('click', () => doAction('skip'));
-        document.getElementById('btn-correct').addEventListener('click', () => doAction('correct'));
-
-        async function askAiForPending() {
-            const item = queueItems[currentIndex];
+        // ---- Ask AI ----
+        async function askAI() {
+            const items = activeItems();
+            const item = items[currentIndex];
             if (!item) return;
 
             const btn = document.getElementById('btn-ask-ai');
             btn.disabled = true;
-            btn.innerHTML = '<span class="material-symbols-outlined text-sm animate-spin">progress_activity</span> Thinking...';
+            const origLabel = document.getElementById('ask-ai-label').textContent;
+            document.getElementById('ask-ai-label').textContent = 'Thinking...';
 
             try {
                 const resp = await fetch('/api/unmatched/suggest', {
@@ -562,46 +594,42 @@
                 if (!resp.ok) throw new Error('LLM request failed');
                 const result = await resp.json();
 
-                if (result.suggested_filename) {
-                    document.getElementById('edit-filename').value = result.suggested_filename;
-                }
-                if (result.suggested_directory) {
-                    document.getElementById('edit-directory').value = result.suggested_directory;
-                }
-                if (result.reasoning) {
-                    document.getElementById('reasoning-text').textContent = result.reasoning;
-                }
+                if (result.suggested_filename) document.getElementById('edit-filename').value = result.suggested_filename;
+                if (result.suggested_directory) { document.getElementById('edit-directory').value = result.suggested_directory; updateDirChips(); }
+                if (result.reasoning) document.getElementById('reasoning-text').textContent = result.reasoning;
                 showToast('AI suggestion applied', 'success', 3000);
             } catch (e) {
                 showToast('AI suggestion failed', 'error');
             } finally {
                 btn.disabled = false;
-                btn.innerHTML = '<span class="material-symbols-outlined text-sm">psychology</span> Ask AI';
+                document.getElementById('ask-ai-label').textContent = origLabel;
             }
         }
 
+        // ---- Preview ----
         function setPreviewMode(mode) {
             previewMode = mode;
             const imgBtn = document.getElementById('btn-view-image');
             const txtBtn = document.getElementById('btn-view-text');
-            const imgContainer = document.getElementById('preview-image-container');
-            const txtContainer = document.getElementById('preview-text-container');
+            const activeStyle = 'flex items-center gap-[5px] border-none rounded-tile py-[6px] px-[11px] font-bold text-[11.5px] cursor-pointer transition-all duration-150 bg-white text-ink shadow-[0_1px_3px_rgba(20,23,28,.1)]';
+            const inactiveStyle = 'flex items-center gap-[5px] border-none rounded-tile py-[6px] px-[11px] font-bold text-[11.5px] cursor-pointer transition-all duration-150 bg-transparent text-text-olive';
 
             if (mode === 'image') {
-                imgBtn.className = 'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-primary text-on-primary transition-colors';
-                txtBtn.className = 'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-surface-container text-outline transition-colors';
-                imgContainer.classList.remove('hidden');
-                txtContainer.classList.add('hidden');
+                imgBtn.className = activeStyle;
+                txtBtn.className = inactiveStyle;
+                document.getElementById('preview-image-container').classList.remove('hidden');
+                document.getElementById('preview-text-container').classList.add('hidden');
             } else {
-                txtBtn.className = 'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-primary text-on-primary transition-colors';
-                imgBtn.className = 'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-surface-container text-outline transition-colors';
-                txtContainer.classList.remove('hidden');
-                imgContainer.classList.add('hidden');
+                txtBtn.className = activeStyle;
+                imgBtn.className = inactiveStyle;
+                document.getElementById('preview-text-container').classList.remove('hidden');
+                document.getElementById('preview-image-container').classList.add('hidden');
             }
         }
 
         function loadPagePreview() {
-            const item = queueItems[currentIndex];
+            const items = activeItems();
+            const item = items[currentIndex];
             if (!item || !item.pages || item.pages.length === 0) return;
 
             const pages = item.pages;
@@ -615,71 +643,76 @@
                 pageNav.classList.add('hidden');
             }
 
-            const pageNum = pages[currentPageIdx];
+            // Image preview
             const img = document.getElementById('preview-image');
-            img.src = '';
-            img.alt = 'Loading page preview...';
-            img.src = `/api/preview/${item.id}/${pageNum}`;
-            img.onerror = () => {
-                img.alt = 'Preview unavailable';
-                img.src = '';
-            };
+            const skeleton = document.getElementById('preview-skeleton');
+            const pageNum = pages[currentPageIdx];
+
+            if (item._unmatched) {
+                img.src = `/api/preview/file?path=${encodeURIComponent(item.source_pdf)}&page=${currentPageIdx + 1}`;
+            } else {
+                img.src = `/api/preview/${item.id}/${pageNum}`;
+            }
+            img.style.display = 'none';
+            skeleton.style.display = '';
+            img.onload = () => { img.style.display = ''; skeleton.style.display = 'none'; };
+            img.onerror = () => { skeleton.style.display = ''; };
+
+            // OCR text
+            document.getElementById('preview-text').textContent = item.raw_text_preview || '(No text available)';
         }
 
         function prevPage() {
-            const item = queueItems[currentIndex];
-            if (!item) return;
             currentPageIdx = Math.max(0, currentPageIdx - 1);
             loadPagePreview();
+            document.getElementById('page-indicator').textContent = `Page ${currentPageIdx + 1} of ${activeItems()[currentIndex].pages.length}`;
         }
 
         function nextPage() {
-            const item = queueItems[currentIndex];
+            const item = activeItems()[currentIndex];
             if (!item) return;
             currentPageIdx = Math.min(item.pages.length - 1, currentPageIdx + 1);
             loadPagePreview();
+            document.getElementById('page-indicator').textContent = `Page ${currentPageIdx + 1} of ${item.pages.length}`;
         }
 
-        // Keyboard shortcuts
+        // ---- Zoom modal ----
+        function openZoom() {
+            const img = document.getElementById('preview-image');
+            if (!img.src) return;
+            document.getElementById('zoom-image').src = img.src;
+            document.getElementById('zoom-modal').classList.remove('hidden');
+        }
+
+        function closeZoom() {
+            document.getElementById('zoom-modal').classList.add('hidden');
+        }
+
+        // ---- Keyboard shortcuts ----
         document.addEventListener('keydown', (e) => {
-            // Don't trigger shortcuts when typing in input fields
+            // Zoom modal
+            const zoom = document.getElementById('zoom-modal');
+            if (zoom && !zoom.classList.contains('hidden')) {
+                if (e.key === 'Escape') closeZoom();
+                return;
+            }
+
+            // Skip if typing in input
             if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
                 if (e.key === 'Escape') e.target.blur();
                 return;
             }
-            if (queueItems.length === 0) return;
 
-            switch (e.key.toLowerCase()) {
-                case 'a':
-                    doAction('approve');
-                    break;
-                case 's':
-                    doAction('skip');
-                    break;
-                case 'c':
-                    document.getElementById('edit-filename').focus();
-                    document.getElementById('edit-filename').select();
-                    break;
-                case 'enter':
-                    // If filename/directory was just edited, submit correction
-                    if (document.activeElement === document.getElementById('edit-filename') ||
-                        document.activeElement === document.getElementById('edit-directory')) {
-                        document.activeElement.blur();
-                        doAction('correct');
-                    }
-                    break;
-                case 'arrowleft':
-                    e.preventDefault();
-                    if (e.shiftKey) { prevPage(); } else { selectItem(Math.max(0, currentIndex - 1)); }
-                    break;
-                case 'arrowright':
-                    e.preventDefault();
-                    if (e.shiftKey) { nextPage(); } else { selectItem(Math.min(queueItems.length - 1, currentIndex + 1)); }
-                    break;
-                case 'v':
-                    setPreviewMode(previewMode === 'image' ? 'text' : 'image');
-                    break;
-            }
+            const items = activeItems();
+            if (!items.length) return;
+
+            const k = e.key.toLowerCase();
+            if (k === 'a') { e.preventDefault(); doAction('approve'); }
+            else if (k === 's') { e.preventDefault(); doAction('skip'); }
+            else if (k === 'u') { e.preventDefault(); triggerUndo(); }
+            else if (k === 'arrowdown' || k === 'j') { e.preventDefault(); selectItem(Math.min(items.length - 1, currentIndex + 1)); }
+            else if (k === 'arrowup' || k === 'k') { e.preventDefault(); selectItem(Math.max(0, currentIndex - 1)); }
+            else if (k === 'v') { e.preventDefault(); setPreviewMode(previewMode === 'image' ? 'text' : 'image'); }
         });
 
         loadQueue();
