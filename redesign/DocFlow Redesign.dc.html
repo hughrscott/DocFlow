@@ -1,0 +1,1059 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400..800&family=Inter:wght@400..700&family=JetBrains+Mono:wght@400..600&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL@20..48,400..600,0..1&display=swap" rel="stylesheet"/>
+<style>
+  *{box-sizing:border-box;}
+  body{margin:0;}
+  .ms{font-family:'Material Symbols Outlined';font-weight:normal;font-style:normal;line-height:1;letter-spacing:normal;text-transform:none;display:inline-block;white-space:nowrap;word-wrap:normal;direction:ltr;font-variation-settings:'FILL' 0,'wght' 400,'GRAD' 0,'opsz' 24;-webkit-font-smoothing:antialiased;user-select:none;}
+  .ms.fill{font-variation-settings:'FILL' 1,'wght' 500;}
+  @keyframes dfspin{to{transform:rotate(360deg)}}
+  @keyframes dfup{from{transform:translateY(14px);opacity:0}to{transform:translateY(0);opacity:1}}
+  @keyframes dffade{from{opacity:0}to{opacity:1}}
+  .df-scroll::-webkit-scrollbar{width:10px;height:10px;}
+  .df-scroll::-webkit-scrollbar-thumb{background:rgba(20,23,28,.14);border-radius:8px;border:3px solid transparent;background-clip:content-box;}
+  .df-scroll::-webkit-scrollbar-thumb:hover{background:rgba(20,23,28,.26);background-clip:content-box;}
+  input::placeholder{color:#A9A595;}
+</style>
+</helmet>
+<div style="display:flex;min-height:100vh;width:100%;background:#F4F1EA;color:#15171C;font-family:'Inter',sans-serif;-webkit-font-smoothing:antialiased;">
+
+  <!-- ================= SIDEBAR ================= -->
+  <aside style="width:248px;flex-shrink:0;background:#ECE7DC;border-right:1px solid #E0D9CB;display:flex;flex-direction:column;padding:26px 18px;position:sticky;top:0;height:100vh;">
+    <div style="padding:0 8px 4px;">
+      <div style="display:flex;align-items:center;gap:9px;">
+        <div style="width:28px;height:28px;border-radius:8px;background:#15171C;display:flex;align-items:center;justify-content:center;">
+          <span class="ms fill" style="color:#F4F1EA;font-size:18px;">inventory_2</span>
+        </div>
+        <h1 style="margin:0;font-family:'Manrope',sans-serif;font-weight:800;font-size:21px;letter-spacing:-.02em;color:#15171C;">DocFlow</h1>
+      </div>
+      <p style="margin:9px 0 0;font-size:9.5px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:#9A9482;">The Digital Archivist</p>
+    </div>
+
+    <button onClick="{{ scanMail }}" style="margin:24px 0 22px;display:flex;align-items:center;justify-content:center;gap:8px;background:#15171C;color:#F4F1EA;border:none;border-radius:12px;padding:13px;font-family:'Inter',sans-serif;font-weight:700;font-size:13.5px;cursor:pointer;box-shadow:0 6px 16px rgba(20,23,28,.16);transition:transform .12s;" style-hover="transform:translateY(-1px);">
+      <span class="ms" style="font-size:18px;">add</span> Scan Mail
+    </button>
+
+    <nav style="display:flex;flex-direction:column;gap:4px;flex:1;">
+      <sc-for list="{{ navItems }}" as="item" hint-placeholder-count="4">
+        <button onClick="{{ item.onClick }}" style="{{ item.wrapStyle }}">
+          <span class="ms {{ item.iconCls }}" style="font-size:20px;">{{ item.icon }}</span>
+          <span style="flex:1;text-align:left;">{{ item.label }}</span>
+          <sc-if value="{{ item.badge }}" hint-placeholder-val="">
+            <span style="background:#B5751F;color:#fff;font-size:10.5px;font-weight:700;border-radius:999px;padding:1px 7px;">{{ item.badge }}</span>
+          </sc-if>
+        </button>
+      </sc-for>
+    </nav>
+
+    <div style="border-top:1px solid #E0D9CB;padding-top:12px;display:flex;flex-direction:column;gap:2px;">
+      <button onClick="{{ noop }}" style="display:flex;align-items:center;gap:12px;padding:10px 14px;border-radius:12px;border:none;background:transparent;color:#6B6D78;font:600 13.5px Inter,sans-serif;cursor:pointer;" style-hover="background:#E3DCCD;">
+        <span class="ms" style="font-size:20px;">dark_mode</span> Dark Mode
+      </button>
+      <button onClick="{{ noop }}" style="display:flex;align-items:center;gap:12px;padding:10px 14px;border-radius:12px;border:none;background:transparent;color:#6B6D78;font:600 13.5px Inter,sans-serif;cursor:pointer;" style-hover="background:#E3DCCD;">
+        <span class="ms" style="font-size:20px;">help</span> Support
+      </button>
+    </div>
+  </aside>
+
+  <!-- ================= MAIN ================= -->
+  <div style="flex:1;display:flex;flex-direction:column;min-width:0;height:100vh;">
+    <!-- Header -->
+    <header style="display:flex;align-items:center;justify-content:space-between;padding:20px 34px;border-bottom:1px solid #E6E0D4;background:rgba(244,241,234,.86);backdrop-filter:blur(10px);flex-shrink:0;z-index:20;">
+      <h2 style="margin:0;font-family:'Manrope',sans-serif;font-weight:700;font-size:20px;letter-spacing:-.01em;">{{ headerTitle }}</h2>
+      <div style="display:flex;align-items:center;gap:16px;">
+        <div style="position:relative;">
+          <input placeholder="Search archive…" style="background:#fff;border:1px solid #E6E0D4;border-radius:999px;padding:9px 16px 9px 38px;font:500 13px Inter,sans-serif;width:240px;outline:none;color:#15171C;" />
+          <span class="ms" style="position:absolute;left:13px;top:9px;font-size:18px;color:#A9A595;">search</span>
+        </div>
+        <button onClick="{{ noop }}" style="position:relative;width:40px;height:40px;border-radius:12px;border:1px solid #E6E0D4;background:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer;">
+          <span class="ms" style="font-size:20px;color:#4A4D57;">notifications</span>
+          <span style="position:absolute;top:9px;right:10px;width:7px;height:7px;border-radius:999px;background:#BE4029;border:1.5px solid #fff;"></span>
+        </button>
+      </div>
+    </header>
+
+    <!-- Screen body -->
+    <div class="df-scroll" style="flex:1;overflow-y:auto;position:relative;">
+
+      <!-- ===== DASHBOARD ===== -->
+      <sc-if value="{{ isDashboard }}" hint-placeholder-val="{{ true }}">
+      <div style="padding:34px;max-width:1180px;margin:0 auto;">
+        <!-- Upload (compact drop bar) -->
+        <div onClick="{{ scanMail }}" style="display:flex;align-items:center;gap:15px;border:1.5px dashed #D6CDB9;background:#FBFAF6;border-radius:14px;padding:13px 16px;cursor:pointer;transition:border-color .15s,background .15s;" style-hover="border-color:#15171C;background:#fff;">
+          <div style="width:40px;height:40px;border-radius:11px;background:#F1ECE0;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+            <span class="ms" style="font-size:22px;color:#15171C;">upload_file</span>
+          </div>
+          <div style="flex:1;min-width:0;">
+            <p style="margin:0;font-weight:700;font-size:14px;color:#15171C;">Upload scanned mail</p>
+            <p style="margin:2px 0 0;color:#9A9482;font-size:12px;">Drag &amp; drop a batch PDF, or click to browse &middot; PDF, batch enabled</p>
+          </div>
+          <div style="display:flex;align-items:center;gap:6px;background:#15171C;color:#F4F1EA;padding:9px 15px;border-radius:10px;font-weight:700;font-size:12.5px;flex-shrink:0;">
+            <span class="ms" style="font-size:16px;">folder_open</span> Browse
+          </div>
+        </div>
+
+        <!-- Review callout -->
+        <sc-if value="{{ hasPending }}" hint-placeholder-val="{{ true }}">
+        <div onClick="{{ goReview }}" style="margin-top:18px;display:flex;align-items:center;gap:18px;background:#FBF1DF;border:1px solid #EBD9B6;border-radius:18px;padding:20px 24px;cursor:pointer;transition:transform .12s;" style-hover="transform:translateY(-1px);">
+          <div style="width:46px;height:46px;border-radius:13px;background:#F2E2C4;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+            <span class="ms fill" style="font-size:24px;color:#B5751F;">rate_review</span>
+          </div>
+          <div style="flex:1;">
+            <p style="margin:0;font-weight:700;font-size:15px;color:#15171C;">{{ pendingCount }} documents need your review</p>
+            <p style="margin:3px 0 0;font-size:12.5px;color:#9C7B3C;">Low-confidence filings waiting for a quick approve or correction.</p>
+          </div>
+          <div style="display:flex;align-items:center;gap:7px;background:#15171C;color:#F4F1EA;padding:11px 18px;border-radius:11px;font-weight:700;font-size:13px;">
+            Open Review Queue <span class="ms" style="font-size:18px;">arrow_forward</span>
+          </div>
+        </div>
+        </sc-if>
+
+        <!-- Stats -->
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-top:18px;">
+          <sc-for list="{{ stats }}" as="s" hint-placeholder-count="4">
+            <div style="background:#fff;border:1px solid #EDE7DA;border-radius:16px;padding:18px 20px;box-shadow:0 1px 2px rgba(20,23,28,.03);">
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
+                <span class="ms" style="font-size:18px;color:{{ s.color }};">{{ s.icon }}</span>
+                <span style="font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#9A9482;">{{ s.label }}</span>
+              </div>
+              <p style="margin:0;font-family:'Manrope',sans-serif;font-weight:800;font-size:26px;letter-spacing:-.02em;">{{ s.value }}</p>
+            </div>
+          </sc-for>
+        </div>
+
+        <!-- Recent activity -->
+        <div style="margin-top:30px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+            <h3 style="margin:0;font-family:'Manrope',sans-serif;font-weight:700;font-size:16px;">Recent Activity</h3>
+            <button onClick="{{ goArchive }}" style="background:none;border:none;color:#7B7C84;font:600 12.5px Inter,sans-serif;cursor:pointer;display:flex;align-items:center;gap:4px;">View all<span class="ms" style="font-size:16px;">chevron_right</span></button>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:9px;">
+            <sc-for list="{{ recent }}" as="r" hint-placeholder-count="6">
+              <div style="display:flex;align-items:center;gap:14px;background:#fff;border:1px solid #EDE7DA;border-radius:13px;padding:13px 16px;box-shadow:0 1px 2px rgba(20,23,28,.03);">
+                <div style="width:36px;height:36px;border-radius:10px;background:#F4F1EA;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+                  <span class="ms" style="font-size:19px;color:#A9A595;">description</span>
+                </div>
+                <div style="flex:1;min-width:0;">
+                  <p style="margin:0;font-family:'JetBrains Mono',monospace;font-weight:500;font-size:12.5px;color:#15171C;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ r.filename }}</p>
+                  <p style="margin:3px 0 0;font-size:11.5px;color:#9A9482;display:flex;align-items:center;gap:4px;"><span class="ms" style="font-size:13px;">folder</span>{{ r.dir }}</p>
+                </div>
+                <span style="font-size:11px;color:#A9A595;white-space:nowrap;">{{ r.time }}</span>
+                <span style="background:{{ r.confBg }};color:{{ r.confColor }};font-size:11px;font-weight:700;padding:4px 9px;border-radius:999px;white-space:nowrap;">{{ r.confPct }}% Match</span>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+      </div>
+      </sc-if>
+
+      <!-- ===== REVIEW QUEUE ===== -->
+      <sc-if value="{{ isReview }}" hint-placeholder-val="">
+      <div style="height:100%;display:flex;flex-direction:column;min-height:0;min-width:1060px;">
+
+        <!-- Tabs + progress -->
+        <div style="display:flex;align-items:center;gap:20px;padding:18px 28px 0;flex-shrink:0;">
+          <div style="display:flex;gap:4px;background:#ECE7DC;padding:4px;border-radius:13px;">
+            <button onClick="{{ switchPending }}" style="{{ pendingTabStyle }}">Pending Review<span style="opacity:.55;margin-left:5px;">{{ pendingTabCount }}</span></button>
+            <button onClick="{{ switchUnmatched }}" style="{{ unmatchedTabStyle }}">Unmatched &amp; Skipped<span style="opacity:.55;margin-left:5px;">{{ unmatchedTabCount }}</span></button>
+          </div>
+          <sc-if value="{{ isPending }}" hint-placeholder-val="{{ true }}">
+          <div style="flex:1;display:flex;align-items:center;gap:12px;min-width:0;">
+            <div style="flex:1;max-width:300px;height:7px;border-radius:999px;background:#E2DBCC;overflow:hidden;">
+              <div style="height:100%;background:#0E8A5E;border-radius:999px;width:{{ progressPct }}%;transition:width .3s;"></div>
+            </div>
+            <span style="font-size:12px;font-weight:600;color:#8A8B72;white-space:nowrap;">{{ remaining }} left &middot; {{ reviewedSession }} of {{ sessionTotal }} reviewed</span>
+          </div>
+          </sc-if>
+        </div>
+
+        <!-- Empty state -->
+        <sc-if value="{{ reviewEmpty }}" hint-placeholder-val="">
+        <div style="flex:1;display:flex;align-items:center;justify-content:center;">
+          <div style="text-align:center;">
+            <div style="width:74px;height:74px;border-radius:999px;background:#E2F1E9;display:flex;align-items:center;justify-content:center;margin:0 auto 18px;">
+              <span class="ms fill" style="font-size:38px;color:#0E8A5E;">task_alt</span>
+            </div>
+            <h2 style="margin:0 0 6px;font-family:'Manrope',sans-serif;font-weight:800;font-size:24px;">{{ emptyTitle }}</h2>
+            <p style="margin:0;color:#8A8B72;font-size:14px;">{{ emptySub }}</p>
+          </div>
+        </div>
+        </sc-if>
+
+        <!-- Workspace -->
+        <sc-if value="{{ hasReviewItem }}" hint-placeholder-val="{{ true }}">
+        <div style="flex:1;display:flex;min-height:0;padding:16px 28px 22px;">
+
+          <!-- LEFT: queue rail -->
+          <div style="width:266px;flex-shrink:0;display:flex;flex-direction:column;background:#EFEADF;border:1px solid #E6E0D4;border-radius:16px;padding:12px;margin-right:16px;">
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:2px 6px 9px;">
+              <span style="font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#9A9482;">Queue · {{ remaining }}</span>
+              <button onClick="{{ onSelectAll }}" style="background:none;border:none;color:#6B6D78;font:700 11.5px Inter,sans-serif;cursor:pointer;padding:2px 4px;">{{ selectAllLabel }}</button>
+            </div>
+            <sc-if value="{{ hasSelection }}" hint-placeholder-val="">
+            <button onClick="{{ onApproveSelected }}" style="display:flex;align-items:center;justify-content:center;gap:7px;background:#15171C;color:#F4F1EA;border:none;border-radius:11px;padding:10px;font:700 12.5px Inter,sans-serif;cursor:pointer;margin-bottom:8px;">
+              <span class="ms" style="font-size:17px;">done_all</span> Approve {{ selectedCount }} selected
+            </button>
+            </sc-if>
+            <div class="df-scroll" style="flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:5px;">
+              <sc-for list="{{ queueList }}" as="item" hint-placeholder-count="5">
+                <div style="{{ item.rowStyle }}" onClick="{{ item.onClick }}">
+                  <button onClick="{{ item.onToggle }}" style="{{ item.checkStyle }}">
+                    <sc-if value="{{ item.selected }}" hint-placeholder-val="">
+                      <span class="ms fill" style="font-size:15px;color:#fff;">check</span>
+                    </sc-if>
+                  </button>
+                  <div style="flex:1;min-width:0;">
+                    <p style="margin:0;font-size:10px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#A09A88;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ item.institution }}</p>
+                    <p style="margin:2px 0 6px;font-size:13px;font-weight:700;color:#15171C;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ item.doc_type }}</p>
+                    <div style="height:4px;border-radius:999px;background:#E2DBCC;overflow:hidden;">
+                      <div style="height:100%;border-radius:999px;width:{{ item.barWidth }}%;background:{{ item.barColor }};"></div>
+                    </div>
+                  </div>
+                  <span style="font-size:11px;font-weight:700;color:{{ item.confColor }};background:{{ item.confBg }};padding:2px 7px;border-radius:999px;white-space:nowrap;align-self:center;">{{ item.confPct }}</span>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+
+          <!-- CENTER: preview -->
+          <div style="flex:1;min-width:0;display:flex;flex-direction:column;background:#EFEADF;border:1px solid #E6E0D4;border-radius:16px;padding:14px;margin-right:16px;">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-shrink:0;">
+              <div style="display:flex;gap:3px;background:#E2DBCC;padding:3px;border-radius:10px;">
+                <button onClick="{{ setImg }}" style="{{ imgBtnStyle }}"><span class="ms" style="font-size:15px;">image</span> Page</button>
+                <button onClick="{{ setText }}" style="{{ txtBtnStyle }}"><span class="ms" style="font-size:15px;">subject</span> OCR Text</button>
+              </div>
+              <sc-if value="{{ cur.multiPage }}" hint-placeholder-val="">
+              <div style="margin-left:auto;display:flex;align-items:center;gap:8px;">
+                <button onClick="{{ prevPage }}" style="width:30px;height:30px;border-radius:9px;border:1px solid #E2DBCC;background:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer;"><span class="ms" style="font-size:17px;color:#4A4D57;">chevron_left</span></button>
+                <span style="font-size:12px;font-weight:600;color:#8A8B72;white-space:nowrap;">{{ cur.pageIndicator }}</span>
+                <button onClick="{{ nextPage }}" style="width:30px;height:30px;border-radius:9px;border:1px solid #E2DBCC;background:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer;"><span class="ms" style="font-size:17px;color:#4A4D57;">chevron_right</span></button>
+              </div>
+              </sc-if>
+            </div>
+
+            <div class="df-scroll" style="flex:1;overflow-y:auto;display:flex;align-items:flex-start;justify-content:center;min-height:0;">
+              <!-- Page image (faux scanned doc) -->
+              <sc-if value="{{ isImageMode }}" hint-placeholder-val="{{ true }}">
+              <div onClick="{{ openZoom }}" style="width:100%;max-width:520px;background:#fff;border-radius:6px;box-shadow:0 10px 34px rgba(20,23,28,.14);padding:44px 46px;cursor:zoom-in;position:relative;">
+                <div style="position:absolute;top:14px;right:14px;display:flex;align-items:center;gap:4px;background:rgba(20,23,28,.06);border-radius:8px;padding:5px 8px;">
+                  <span class="ms" style="font-size:15px;color:#8A8B72;">zoom_in</span>
+                </div>
+                <div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #15171C;padding-bottom:14px;margin-bottom:20px;">
+                  <div>
+                    <p style="margin:0;font-family:'Manrope',sans-serif;font-weight:800;font-size:19px;letter-spacing:-.01em;color:#15171C;">{{ cur.institution }}</p>
+                    <p style="margin:4px 0 0;font-size:12px;color:#8A8B72;">{{ cur.doc_type }} &middot; {{ cur.period }}</p>
+                  </div>
+                  <div style="width:44px;height:44px;border-radius:8px;background:#F1ECE0;display:flex;align-items:center;justify-content:center;">
+                    <span class="ms" style="font-size:24px;color:#C9C3B3;">account_balance</span>
+                  </div>
+                </div>
+                <div style="display:flex;flex-direction:column;gap:11px;">
+                  <sc-for list="{{ cur.lines }}" as="ln" hint-placeholder-count="9">
+                    <div style="height:9px;border-radius:3px;background:#EDE7DA;width:{{ ln.w }}%;"></div>
+                  </sc-for>
+                </div>
+                <div style="margin-top:26px;display:flex;gap:10px;">
+                  <div style="flex:1;height:54px;border-radius:6px;background:#F4F1EA;"></div>
+                  <div style="flex:1;height:54px;border-radius:6px;background:#F4F1EA;"></div>
+                </div>
+              </div>
+              </sc-if>
+              <!-- OCR text -->
+              <sc-if value="{{ isTextMode }}" hint-placeholder-val="">
+              <div style="width:100%;max-width:560px;background:#fff;border-radius:6px;box-shadow:0 10px 34px rgba(20,23,28,.10);padding:34px 38px;">
+                <pre style="margin:0;font-family:'JetBrains Mono',monospace;font-size:12.5px;line-height:1.7;color:#3A3D47;white-space:pre-wrap;">{{ cur.ocr }}</pre>
+              </div>
+              </sc-if>
+            </div>
+          </div>
+
+          <!-- RIGHT: decision panel -->
+          <div style="width:362px;flex-shrink:0;display:flex;flex-direction:column;background:#fff;border:1px solid #E6E0D4;border-radius:16px;overflow:hidden;box-shadow:0 8px 26px rgba(20,23,28,.05);">
+            <!-- Confidence header -->
+            <div style="padding:18px 20px;background:{{ cur.confBg }};display:flex;align-items:center;gap:15px;border-bottom:1px solid rgba(20,23,28,.05);">
+              <sc-if value="{{ confStyleRing }}" hint-placeholder-val="{{ true }}">
+              <div style="width:58px;height:58px;border-radius:999px;{{ cur.ringStyle }}display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+                <div style="width:44px;height:44px;border-radius:999px;background:{{ cur.confBg }};display:flex;align-items:center;justify-content:center;">
+                  <span style="font-family:'Manrope',sans-serif;font-weight:800;font-size:15px;color:{{ cur.confColor }};">{{ cur.confPct }}<span style="font-size:9px;">%</span></span>
+                </div>
+              </div>
+              </sc-if>
+              <div style="flex:1;min-width:0;">
+                <p style="margin:0;font-family:'Manrope',sans-serif;font-weight:800;font-size:14px;color:{{ cur.confColor }};">{{ cur.confLabel }}</p>
+                <p style="margin:3px 0 0;font-size:11.5px;line-height:1.4;color:#6B6D78;">{{ cur.why }}</p>
+              </div>
+            </div>
+
+            <div class="df-scroll" style="flex:1;overflow-y:auto;padding:20px;display:flex;flex-direction:column;gap:18px;">
+              <!-- Destination -->
+              <div>
+                <p style="margin:0 0 9px;font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#A09A88;">Files to</p>
+                <sc-if value="{{ cur.hasDir }}" hint-placeholder-val="{{ true }}">
+                <div style="display:flex;flex-wrap:wrap;align-items:center;gap:4px;margin-bottom:8px;">
+                  <span class="ms" style="font-size:16px;color:#B5751F;">folder</span>
+                  <sc-for list="{{ cur.dirChips }}" as="chip" hint-placeholder-count="2">
+                    <span style="font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:500;color:#15171C;background:#F4F1EA;padding:3px 8px;border-radius:7px;">{{ chip }}</span>
+                  </sc-for>
+                </div>
+                </sc-if>
+                <div style="display:flex;gap:7px;">
+                  <input value="{{ cur.directory }}" onInput="{{ onDirInput }}" placeholder="Set a destination folder…" style="flex:1;min-width:0;background:#F7F5EF;border:1px solid #E6E0D4;border-radius:10px;padding:10px 12px;font:500 12px 'JetBrains Mono',monospace;color:#15171C;outline:none;" />
+                  <button onClick="{{ openPicker }}" style="width:42px;flex-shrink:0;background:#F1ECE0;border:1px solid #E6E0D4;border-radius:10px;display:flex;align-items:center;justify-content:center;cursor:pointer;" title="Browse folders"><span class="ms" style="font-size:18px;color:#15171C;">folder_open</span></button>
+                </div>
+              </div>
+
+              <!-- Filename -->
+              <div>
+                <p style="margin:0 0 9px;font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#A09A88;">Filename</p>
+                <input value="{{ cur.filename }}" onInput="{{ onFilenameInput }}" style="width:100%;background:#F7F5EF;border:1px solid #E6E0D4;border-radius:10px;padding:10px 12px;font:500 12px 'JetBrains Mono',monospace;color:#15171C;outline:none;" />
+              </div>
+
+              <!-- Facts -->
+              <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;">
+                <div style="background:#F7F5EF;border-radius:10px;padding:9px 10px;text-align:center;">
+                  <p style="margin:0 0 3px;font-size:9px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#A09A88;">Type</p>
+                  <p style="margin:0;font-size:11.5px;font-weight:700;color:#15171C;line-height:1.2;">{{ cur.doc_type }}</p>
+                </div>
+                <div style="background:#F7F5EF;border-radius:10px;padding:9px 10px;text-align:center;">
+                  <p style="margin:0 0 3px;font-size:9px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#A09A88;">Period</p>
+                  <p style="margin:0;font-size:11.5px;font-weight:700;color:#15171C;line-height:1.2;">{{ cur.period }}</p>
+                </div>
+                <div style="background:#F7F5EF;border-radius:10px;padding:9px 10px;text-align:center;">
+                  <p style="margin:0 0 3px;font-size:9px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#A09A88;">Pages</p>
+                  <p style="margin:0;font-size:11.5px;font-weight:700;color:#15171C;line-height:1.2;">{{ cur.pagesLabel }}</p>
+                </div>
+              </div>
+
+              <!-- Reasoning -->
+              <div style="background:#F0F2F9;border:1px solid #E1E6F3;border-radius:13px;padding:14px;">
+                <div style="display:flex;align-items:center;gap:7px;margin-bottom:8px;">
+                  <span class="ms" style="font-size:16px;color:#34508C;">neurology</span>
+                  <span style="font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#34508C;">Archivist Reasoning</span>
+                </div>
+                <p style="margin:0;font-size:12.5px;line-height:1.55;color:#3C4252;">{{ cur.reasoning }}</p>
+              </div>
+            </div>
+
+            <!-- Actions -->
+            <div style="padding:14px 16px;border-top:1px solid #EDE7DA;background:#FBFAF6;display:flex;flex-direction:column;gap:9px;">
+              <button onClick="{{ onApprove }}" style="display:flex;align-items:center;justify-content:center;gap:9px;background:#15171C;color:#F4F1EA;border:none;border-radius:13px;padding:15px;font:800 14.5px Manrope,sans-serif;cursor:pointer;box-shadow:0 6px 16px rgba(20,23,28,.18);transition:transform .12s;" style-hover="transform:translateY(-1px);">
+                <span class="ms" style="font-size:20px;">check_circle</span> {{ approveLabel }}
+                <span style="font-size:11px;font-weight:600;opacity:.5;border:1px solid rgba(244,241,234,.3);border-radius:5px;padding:1px 5px;">A</span>
+              </button>
+              <div style="display:flex;gap:9px;">
+                <button onClick="{{ onSkip }}" style="flex:1;display:flex;align-items:center;justify-content:center;gap:6px;background:#fff;color:#6B6D78;border:1px solid #E6E0D4;border-radius:12px;padding:12px;font:700 13px Inter,sans-serif;cursor:pointer;" style-hover="background:#F4F1EA;">
+                  Skip <span style="font-size:10.5px;opacity:.6;border:1px solid #D6CFBF;border-radius:5px;padding:1px 5px;">S</span>
+                </button>
+                <button onClick="{{ onAskAI }}" style="flex:1;display:flex;align-items:center;justify-content:center;gap:6px;background:#EEF1F9;color:#34508C;border:1px solid #DCE3F4;border-radius:12px;padding:12px;font:700 13px Inter,sans-serif;cursor:pointer;" style-hover="background:#E4E9F6;">
+                  <span class="ms" style="font-size:17px;">auto_awesome</span> {{ askAiLabel }}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+        </sc-if>
+      </div>
+      </sc-if>
+
+      <!-- REVIEW-ANCHOR -->
+      <!-- ===== ARCHIVE BROWSER ===== -->
+      <sc-if value="{{ isArchive }}" hint-placeholder-val="">
+      <div style="padding:30px 34px;max-width:1180px;min-width:1020px;margin:0 auto;display:flex;gap:28px;align-items:flex-start;">
+        <!-- Folder tree -->
+        <aside style="width:236px;flex-shrink:0;position:sticky;top:0;">
+          <p style="margin:0 0 12px;font-size:10.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:#9A9482;">File System</p>
+          <div style="display:flex;flex-direction:column;gap:1px;">
+            <sc-for list="{{ archiveNodes }}" as="node" hint-placeholder-count="10">
+              <div style="display:flex;align-items:center;gap:8px;padding:7px 8px;padding-left:{{ node.pad }}px;border-radius:9px;cursor:pointer;transition:background .12s;" style-hover="background:#ECE7DC;">
+                <span class="ms" style="font-size:17px;color:#C0A86E;">folder</span>
+                <span style="flex:1;font-size:13px;color:#4A4D57;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ node.name }}</span>
+                <span style="font-size:10.5px;color:#A9A595;font-weight:600;">{{ node.count }}</span>
+              </div>
+            </sc-for>
+          </div>
+        </aside>
+
+        <!-- Filing history -->
+        <section style="flex:1;min-width:0;">
+          <div style="display:flex;align-items:center;gap:6px;font-size:12.5px;color:#9A9482;margin-bottom:12px;">
+            <span class="ms" style="font-size:15px;">home</span> Archive <span class="ms" style="font-size:14px;">chevron_right</span> <span style="color:#4A4D57;font-weight:600;">All filings</span>
+          </div>
+          <h2 style="margin:0;font-family:'Manrope',sans-serif;font-weight:800;font-size:24px;letter-spacing:-.01em;">Filing History</h2>
+          <p style="margin:5px 0 18px;color:#8A8B72;font-size:13.5px;">{{ historySummary }}</p>
+
+          <div style="background:#fff;border:1px solid #E6E0D4;border-radius:16px;overflow:hidden;box-shadow:0 1px 2px rgba(20,23,28,.03);">
+            <div style="display:grid;grid-template-columns:minmax(0,2.1fr) minmax(0,1.5fr) 168px 104px;gap:14px;padding:13px 22px;background:#F7F5EF;border-bottom:1px solid #EDE7DA;">
+              <span style="font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#A09A88;">Document</span>
+              <span style="font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#A09A88;">Filing Path</span>
+              <span style="font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#A09A88;">Rule</span>
+              <span style="font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#A09A88;text-align:right;">Confidence</span>
+            </div>
+            <sc-for list="{{ history }}" as="row" hint-placeholder-count="8">
+              <div style="display:grid;grid-template-columns:minmax(0,2.1fr) minmax(0,1.5fr) 168px 104px;gap:14px;padding:14px 22px;align-items:center;border-bottom:1px solid #F2EDE2;transition:background .12s;" style-hover="background:#FBFAF6;">
+                <div style="display:flex;align-items:center;gap:11px;min-width:0;">
+                  <span class="ms" style="font-size:19px;color:#C9C3B3;flex-shrink:0;">description</span>
+                  <span style="font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:500;color:#15171C;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ row.filename }}</span>
+                </div>
+                <span style="font-family:'JetBrains Mono',monospace;font-size:11.5px;color:#6B6D78;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ row.path }}</span>
+                <div style="display:flex;align-items:center;gap:6px;min-width:0;">
+                  <span style="width:6px;height:6px;border-radius:999px;flex-shrink:0;background:{{ row.ruleColor }};"></span>
+                  <span style="font-size:11.5px;color:#6B6D78;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ row.rule }}</span>
+                </div>
+                <div style="text-align:right;">
+                  <span style="font-size:11px;font-weight:700;color:{{ row.confColor }};background:{{ row.confBg }};padding:3px 9px;border-radius:999px;white-space:nowrap;">{{ row.confPct }}% Match</span>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+        </section>
+      </div>
+      </sc-if>
+
+      <!-- ARCHIVE-ANCHOR -->
+      <!-- ===== SETTINGS ===== -->
+      <sc-if value="{{ isSettings }}" hint-placeholder-val="">
+      <div style="padding:32px 34px;max-width:1180px;min-width:1020px;margin:0 auto;display:flex;gap:28px;align-items:flex-start;">
+        <!-- Left column -->
+        <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:34px;">
+          <!-- Entities -->
+          <section>
+            <h3 style="margin:0;font-family:'Manrope',sans-serif;font-weight:800;font-size:22px;letter-spacing:-.01em;">Entities &amp; Family Members</h3>
+            <p style="margin:5px 0 18px;color:#8A8B72;font-size:13.5px;">Profiles and business entities the archivist uses to route filings.</p>
+            <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px;">
+              <sc-for list="{{ entities }}" as="e" hint-placeholder-count="8">
+                <div style="display:flex;align-items:center;gap:13px;background:#fff;border:1px solid #EDE7DA;border-radius:14px;padding:14px 16px;box-shadow:0 1px 2px rgba(20,23,28,.03);">
+                  <div style="width:38px;height:38px;border-radius:11px;background:{{ e.iconBg }};display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+                    <span class="ms" style="font-size:20px;color:{{ e.iconColor }};">{{ e.icon }}</span>
+                  </div>
+                  <div style="min-width:0;">
+                    <p style="margin:0;font-weight:700;font-size:13.5px;color:#15171C;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ e.name }}</p>
+                    <p style="margin:2px 0 0;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#A09A88;">{{ e.relation }}</p>
+                  </div>
+                </div>
+              </sc-for>
+            </div>
+          </section>
+
+          <!-- Storage -->
+          <section>
+            <h3 style="margin:0 0 16px;font-family:'Manrope',sans-serif;font-weight:800;font-size:22px;letter-spacing:-.01em;">Storage &amp; Paths</h3>
+            <div style="display:flex;flex-direction:column;gap:14px;">
+              <div>
+                <label style="display:block;font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#A09A88;margin-bottom:7px;">Archive Root Directory</label>
+                <input value="{{ archiveRoot }}" style="width:100%;background:#fff;border:1px solid #E6E0D4;border-radius:11px;padding:12px 14px;font:500 12.5px 'JetBrains Mono',monospace;color:#15171C;outline:none;" />
+              </div>
+              <div>
+                <label style="display:block;font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#A09A88;margin-bottom:7px;">Scan Watch Folder</label>
+                <input value="{{ watchFolder }}" style="width:100%;background:#fff;border:1px solid #E6E0D4;border-radius:11px;padding:12px 14px;font:500 12.5px 'JetBrains Mono',monospace;color:#15171C;outline:none;" />
+              </div>
+            </div>
+          </section>
+
+          <!-- AI engine -->
+          <section style="background:#15171C;border-radius:18px;padding:28px;color:#F4F1EA;">
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:22px;">
+              <span class="ms" style="font-size:22px;color:#C0A86E;">auto_awesome</span>
+              <h3 style="margin:0;font-family:'Manrope',sans-serif;font-weight:800;font-size:20px;">AI Processing Engine</h3>
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:18px;">
+              <div>
+                <label style="display:block;font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#8E8F86;margin-bottom:9px;">Provider</label>
+                <div style="display:flex;align-items:center;justify-content:space-between;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.14);border-radius:11px;padding:12px 14px;font-size:13px;font-weight:600;">{{ provider }} <span class="ms" style="font-size:18px;opacity:.6;">expand_more</span></div>
+              </div>
+              <div>
+                <label style="display:block;font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#8E8F86;margin-bottom:9px;">Model</label>
+                <div style="background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.14);border-radius:11px;padding:12px 14px;font:500 12px 'JetBrains Mono',monospace;">{{ model }}</div>
+              </div>
+              <div>
+                <label style="display:block;font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#8E8F86;margin-bottom:9px;">API Endpoint</label>
+                <div style="background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.14);border-radius:11px;padding:12px 14px;font:500 11px 'JetBrains Mono',monospace;color:#C5C6BD;">https://openrouter.ai/api/v1</div>
+              </div>
+              <div>
+                <label style="display:block;font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#8E8F86;margin-bottom:9px;">API Key</label>
+                <div style="background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.14);border-radius:11px;padding:12px 14px;font:500 12px 'JetBrains Mono',monospace;color:#C5C6BD;">••••••• configured</div>
+              </div>
+            </div>
+            <!-- Threshold -->
+            <div style="margin-top:24px;max-width:460px;">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:11px;">
+                <label style="font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#8E8F86;">Confidence Threshold</label>
+                <span style="font-family:'Manrope',sans-serif;font-weight:800;color:#C0A86E;font-size:15px;">{{ threshold }}%</span>
+              </div>
+              <input type="range" min="50" max="100" value="{{ threshold }}" onInput="{{ onThreshold }}" style="width:100%;accent-color:#C0A86E;cursor:pointer;" />
+              <div style="display:flex;justify-content:space-between;margin-top:7px;font-size:10px;color:#73746C;">
+                <span>More auto-filing</span><span>More review</span>
+              </div>
+            </div>
+            <div style="margin-top:24px;display:flex;gap:10px;flex-wrap:wrap;">
+              <button onClick="{{ noop }}" style="background:#F4F1EA;color:#15171C;border:none;border-radius:11px;padding:11px 20px;font:700 13px Inter,sans-serif;cursor:pointer;">Save Settings</button>
+              <button onClick="{{ noop }}" style="background:rgba(255,255,255,.08);color:#F4F1EA;border:1px solid rgba(255,255,255,.18);border-radius:11px;padding:11px 18px;font:700 13px Inter,sans-serif;cursor:pointer;display:flex;align-items:center;gap:7px;"><span class="ms" style="font-size:17px;">cable</span> Test Connection</button>
+              <button onClick="{{ noop }}" style="background:rgba(255,255,255,.08);color:#F4F1EA;border:1px solid rgba(255,255,255,.18);border-radius:11px;padding:11px 18px;font:700 13px Inter,sans-serif;cursor:pointer;display:flex;align-items:center;gap:7px;"><span class="ms" style="font-size:17px;">folder_open</span> Verify Paths</button>
+            </div>
+          </section>
+        </div>
+
+        <!-- Right column -->
+        <div style="width:316px;flex-shrink:0;display:flex;flex-direction:column;gap:18px;">
+          <!-- Filing rules -->
+          <div style="background:#fff;border:1px solid #E6E0D4;border-radius:16px;padding:20px;box-shadow:0 1px 2px rgba(20,23,28,.03);">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
+              <h4 style="margin:0;font-family:'Manrope',sans-serif;font-weight:700;font-size:15px;display:flex;align-items:center;gap:7px;"><span class="ms" style="font-size:19px;color:#B5751F;">rule</span> Filing Rules</h4>
+              <span style="background:#E2F1E9;color:#0E8A5E;font-size:10.5px;font-weight:700;padding:3px 9px;border-radius:999px;">{{ ruleCount }} Active</span>
+            </div>
+            <div class="df-scroll" style="display:flex;flex-direction:column;gap:7px;max-height:360px;overflow-y:auto;">
+              <sc-for list="{{ rules }}" as="r" hint-placeholder-count="8">
+                <div style="background:#F7F5EF;border-radius:11px;padding:11px 13px;">
+                  <p style="margin:0;font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:600;color:#15171C;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ r.id }}</p>
+                  <p style="margin:3px 0 0;font-size:11px;color:#9A9482;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ r.file_to }}</p>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+
+          <!-- System health -->
+          <div style="background:#fff;border:1px solid #E6E0D4;border-radius:16px;padding:20px;box-shadow:0 1px 2px rgba(20,23,28,.03);">
+            <h4 style="margin:0 0 16px;font-family:'Manrope',sans-serif;font-weight:700;font-size:15px;">System Health</h4>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+              <span style="font-size:12.5px;color:#8A8B72;">LLM Provider</span>
+              <span style="font-family:'Manrope',sans-serif;font-weight:700;font-size:13px;color:#15171C;">{{ healthModel }}</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+              <span style="font-size:12.5px;color:#8A8B72;">API Status</span>
+              <span style="display:flex;align-items:center;gap:6px;font-size:12.5px;font-weight:700;color:#0E8A5E;"><span style="width:7px;height:7px;border-radius:999px;background:#0E8A5E;"></span> Connected</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      </sc-if>
+
+      <!-- SETTINGS-ANCHOR -->
+
+    </div>
+
+    <!-- Footer status bar -->
+    <footer style="display:flex;align-items:center;justify-content:space-between;padding:8px 34px;border-top:1px solid #E6E0D4;background:#EFEADF;flex-shrink:0;">
+      <p style="margin:0;font-size:10.5px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:#8A8B72;">
+        Watch Folder: <span style="color:#0E8A5E;font-weight:700;">Active</span> &nbsp;•&nbsp; LLM Status: <span style="color:#0E8A5E;font-weight:700;">Ready</span>
+      </p>
+      <span style="font-size:10.5px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:#A9A595;cursor:pointer;">System Logs</span>
+    </footer>
+  </div>
+
+  <!-- Undo snackbar -->
+  <sc-if value="{{ undoOpen }}" hint-placeholder-val="">
+  <div style="position:fixed;bottom:26px;left:50%;transform:translateX(-50%);z-index:120;display:flex;align-items:center;gap:14px;background:#15171C;color:#F4F1EA;border-radius:14px;padding:12px 14px 12px 18px;box-shadow:0 12px 34px rgba(20,23,28,.3);">
+    <span class="ms fill" style="font-size:20px;color:#7FD7AB;">check_circle</span>
+    <span style="font-size:13.5px;font-weight:600;">{{ undoLabel }}</span>
+    <button onClick="{{ onUndo }}" style="display:flex;align-items:center;gap:6px;background:rgba(255,255,255,.1);color:#F4F1EA;border:none;border-radius:9px;padding:8px 13px;font:700 12.5px Inter,sans-serif;cursor:pointer;" style-hover="background:rgba(255,255,255,.2);"><span class="ms" style="font-size:16px;">undo</span> Undo <span style="opacity:.5;font-size:10.5px;border:1px solid rgba(244,241,234,.3);border-radius:4px;padding:0 4px;">U</span></button>
+  </div>
+  </sc-if>
+  <!-- Folder picker modal -->
+  <sc-if value="{{ pickerOpen }}" hint-placeholder-val="">
+  <div style="position:fixed;inset:0;z-index:200;display:flex;align-items:center;justify-content:center;">
+    <div onClick="{{ closePicker }}" style="position:absolute;inset:0;background:rgba(20,23,28,.42);backdrop-filter:blur(3px);"></div>
+    <div style="position:relative;width:440px;max-height:74vh;display:flex;flex-direction:column;background:#FBFAF6;border-radius:18px;box-shadow:0 24px 60px rgba(20,23,28,.32);overflow:hidden;">
+      <div style="padding:18px 20px 14px;border-bottom:1px solid #EDE7DA;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:13px;">
+          <h3 style="margin:0;font-family:'Manrope',sans-serif;font-weight:800;font-size:16px;">Choose Filing Location</h3>
+          <button onClick="{{ closePicker }}" style="width:30px;height:30px;border:none;background:#F1ECE0;border-radius:9px;display:flex;align-items:center;justify-content:center;cursor:pointer;"><span class="ms" style="font-size:18px;color:#8A8B72;">close</span></button>
+        </div>
+        <div style="position:relative;">
+          <input value="{{ pickerFilter }}" onInput="{{ onPickerFilter }}" placeholder="Filter folders…" style="width:100%;background:#fff;border:1px solid #E6E0D4;border-radius:10px;padding:10px 12px 10px 36px;font:500 13px Inter,sans-serif;color:#15171C;outline:none;" />
+          <span class="ms" style="position:absolute;left:11px;top:10px;font-size:17px;color:#A9A595;">search</span>
+        </div>
+      </div>
+      <div class="df-scroll" style="flex:1;overflow-y:auto;padding:8px;">
+        <sc-for list="{{ pickerNodes }}" as="node" hint-placeholder-count="8">
+          <div onClick="{{ node.onClick }}" style="display:flex;align-items:center;gap:9px;padding:9px 10px;padding-left:{{ node.pad }}px;border-radius:9px;cursor:pointer;transition:background .12s;" style-hover="background:#ECE7DC;">
+            <span class="ms" style="font-size:18px;color:#C0A86E;">folder</span>
+            <span style="flex:1;font-size:13px;color:#3C4252;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ node.name }}</span>
+            <span style="font-size:10.5px;color:#A9A595;font-weight:600;">{{ node.count }}</span>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+  </div>
+  </sc-if>
+
+  <!-- Zoom modal -->
+  <sc-if value="{{ zoomOpen }}" hint-placeholder-val="">
+  <div onClick="{{ closeZoom }}" style="position:fixed;inset:0;z-index:300;background:rgba(20,23,28,.86);backdrop-filter:blur(6px);display:flex;align-items:center;justify-content:center;padding:40px;cursor:zoom-out;">
+    <button onClick="{{ closeZoom }}" style="position:absolute;top:24px;right:26px;width:42px;height:42px;border:none;background:rgba(255,255,255,.12);border-radius:11px;display:flex;align-items:center;justify-content:center;cursor:pointer;"><span class="ms" style="font-size:24px;color:#fff;">close</span></button>
+    <div style="width:640px;max-width:100%;max-height:88vh;overflow-y:auto;background:#fff;border-radius:6px;box-shadow:0 30px 80px rgba(0,0,0,.5);padding:56px 60px;">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #15171C;padding-bottom:18px;margin-bottom:26px;">
+        <div>
+          <p style="margin:0;font-family:'Manrope',sans-serif;font-weight:800;font-size:26px;color:#15171C;white-space:nowrap;">{{ cur.institution }}</p>
+          <p style="margin:6px 0 0;font-size:14px;color:#8A8B72;">{{ cur.doc_type }} &middot; {{ cur.period }}</p>
+        </div>
+        <div style="width:58px;height:58px;border-radius:9px;background:#F1ECE0;display:flex;align-items:center;justify-content:center;"><span class="ms" style="font-size:32px;color:#C9C3B3;">account_balance</span></div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:15px;">
+        <sc-for list="{{ cur.lines }}" as="ln" hint-placeholder-count="9">
+          <div style="height:11px;border-radius:3px;background:#EDE7DA;width:{{ ln.w }}%;"></div>
+        </sc-for>
+      </div>
+      <div style="margin-top:34px;display:flex;gap:14px;">
+        <div style="flex:1;height:74px;border-radius:6px;background:#F4F1EA;"></div>
+        <div style="flex:1;height:74px;border-radius:6px;background:#F4F1EA;"></div>
+      </div>
+    </div>
+  </div>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1440,&quot;height&quot;:900},&quot;autoAdvance&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;},&quot;confidenceStyle&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;Ring&quot;,&quot;Bar&quot;],&quot;default&quot;:&quot;Ring&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;denseQueue&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;}}">
+class Component extends DCLogic {
+  state = {
+    screen: 'dashboard',
+    tab: 'pending',
+    queue: [
+      { id:'q1', institution:'Lloyds Bank', doc_type:'Bank Statement', period:'Feb 2026', pages:[1,2,3], confidence:0.62,
+        filename:'LloydsBankAccountStatementFebruary2026', directory:'UK Finance/Lloyds', why:'No filing rule matched — AI suggestion',
+        reasoning:'Masthead and sort-code format clearly identify Lloyds Bank. The account holder name is partially obscured by a fold, and "February 2026" was inferred from the statement period rather than a printed issue date.' },
+      { id:'q2', institution:'Guardian Health', doc_type:'Insurance EOB', period:'May 2026', pages:[1,2], confidence:0.71,
+        filename:'GuardianHealthEOBMay2026BrodieScott', directory:'Insurance/Guardian Health', why:'Rule guardian_insurance_eob matched 2 of 3 signals',
+        reasoning:'Explanation of Benefits from Guardian Health. Member ID maps to Brodie Scott (known family member). Claim date present, but provider NPI did not match the rule exactly.' },
+      { id:'q3', institution:'Cirro Energy', doc_type:'Utility Bill', period:'Jun 2026', pages:[1], confidence:0.58,
+        filename:'CirroEnergyJune2026', directory:'SORHeights/Utilities', why:'Ambiguous — two service addresses on file', conflict:true,
+        reasoning:'Utility bill from Cirro Energy. The service address could be either the SOR Heights or West University property — both are on file under your entities. Defaulting to SOR Heights.' },
+      { id:'q4', institution:'PNC Bank', doc_type:'LOC Notice', period:'Jun 2026', pages:[1], confidence:0.66,
+        filename:'PNCPersonalLOCNoticeJune2026', directory:'PNC/Personal/LOC', why:'Rule pnc_personal_loc matched on institution only',
+        reasoning:'Line-of-credit notice from PNC. Institution and product type match the pnc_personal_loc rule, but the document lacks an explicit account number to confirm it is the personal (not business) line.' },
+      { id:'q5', institution:'Bettencourt & Assoc.', doc_type:'Tax Document', period:'2025', pages:[1,2,3,4], confidence:0.49,
+        filename:'BettencourtTaxDocument2025', directory:'', why:'No rule matched — destination needs to be set', low:true,
+        reasoning:'Appears to be a prepared tax return packet from Bettencourt & Associates for tax year 2025. No filing rule covers this preparer yet, and no obvious entity folder was found.' },
+    ],
+    unmatched: [
+      { id:'u1', name:'scan_2026-05-12_093311.pdf', folder:'_Unmatched', pages:2, size:184320, kind:'unmatched' },
+      { id:'u2', name:'AmexPlatinumStatementApril2026.pdf', folder:'_Skipped', pages:3, size:402980, kind:'skipped' },
+      { id:'u3', name:'scan_2026-04-30_171204.pdf', folder:'_Unmatched', pages:1, size:96440, kind:'unmatched' },
+    ],
+    currentIndex: 0,
+    selected: {},
+    previewMode: 'image',
+    pageIdx: 0,
+    editFilename: '',
+    editDirectory: '',
+    filedToday: 6,
+    autoFileRate: 91,
+    undo: null,
+    pickerOpen: false,
+    pickerFilter: '',
+    zoomOpen: false,
+    threshold: 75,
+  };
+
+  _undoTimer = null;
+
+  componentDidMount() {
+    const it = this.state.queue[0];
+    if (it) this.setState({ editFilename: it.filename, editDirectory: it.directory });
+    this._key = (e) => this._onKey(e);
+    window.addEventListener('keydown', this._key);
+  }
+  componentWillUnmount() { window.removeEventListener('keydown', this._key); }
+
+  go(screen) { this.setState({ screen }); }
+
+  // ---------- confidence helpers ----------
+  conf(c) {
+    if (c >= 0.75) return { t:'#0E8A5E', b:'#E2F1E9', l:'Confident' };
+    if (c >= 0.6)  return { t:'#B5751F', b:'#F6E9D3', l:'Needs a look' };
+    return { t:'#BE4029', b:'#F7E3DD', l:'Low confidence' };
+  }
+  ring(c) {
+    const col = this.conf(c).t;
+    const deg = Math.round(c * 360);
+    return `background:conic-gradient(${col} ${deg}deg, #EDE7DA ${deg}deg);`;
+  }
+
+  listKey() { return this.state.tab === 'pending' ? 'queue' : 'unmatched'; }
+  activeItems() {
+    if (this.state.tab === 'pending') return this.state.queue;
+    return this.state.unmatched.map(u => ({
+      id: u.id,
+      institution: u.kind === 'skipped' ? 'Skipped file' : 'Unmatched file',
+      doc_type: u.name.replace(/\.pdf$/, ''),
+      period: '—',
+      pages: Array.from({ length: u.pages }, (_, i) => i + 1),
+      confidence: null,
+      filename: u.name.replace(/\.pdf$/, ''),
+      directory: '',
+      why: u.kind === 'skipped' ? 'Previously skipped — never filed' : 'Never matched a filing rule',
+      reasoning: 'This file is sitting in your ToBeOrganized folder and was never filed. Ask the archivist to suggest a destination, or set one yourself.',
+      kind: u.kind,
+    }));
+  }
+  _seedFrom(it, key) {
+    if (!it) return { editFilename: '', editDirectory: '' };
+    if (key === 'unmatched') return { editFilename: it.name.replace(/\.pdf$/, ''), editDirectory: '' };
+    return { editFilename: it.filename, editDirectory: it.directory };
+  }
+  selectItem(i) {
+    const it = this.activeItems()[i];
+    this.setState({ currentIndex: i, pageIdx: 0, editFilename: it ? it.filename : '', editDirectory: it ? it.directory : '' });
+  }
+
+  // ---------- actions ----------
+  _removeAt(indices, type, label) {
+    const key = this.listKey();
+    const q = this.state[key];
+    const removed = indices.map(i => ({ item: q[i], pos: i })).sort((a, b) => a.pos - b.pos);
+    const set = new Set(indices);
+    const newQ = q.filter((_, i) => !set.has(i));
+    let ci = this.state.currentIndex;
+    if (this.props.autoAdvance === false) ci = Math.min(ci, newQ.length - 1);
+    else ci = Math.min(indices[0], newQ.length - 1);
+    ci = Math.max(0, ci);
+    const sel = { ...this.state.selected };
+    indices.forEach(i => { if (q[i]) delete sel[q[i].id]; });
+    const nextSeed = this._seedFrom(newQ[ci], key);
+    this.setState({
+      [key]: newQ, currentIndex: ci, selected: sel, pageIdx: 0,
+      editFilename: nextSeed.editFilename, editDirectory: nextSeed.editDirectory,
+      filedToday: type === 'filed' ? this.state.filedToday + removed.length : this.state.filedToday,
+      undo: { type, removed, label, key },
+    });
+    clearTimeout(this._undoTimer);
+    this._undoTimer = setTimeout(() => this.setState({ undo: null }), 6000);
+  }
+  approve() {
+    const items = this.activeItems();
+    if (!items.length) return;
+    const i = this.state.currentIndex;
+    const name = this.state.editFilename || items[i].filename;
+    this._removeAt([i], 'filed', `Filed “${name}”`);
+  }
+  skip() {
+    const items = this.activeItems();
+    if (!items.length) return;
+    const i = this.state.currentIndex;
+    this._removeAt([i], 'skipped', `Skipped “${items[i].institution || items[i].filename}”`);
+  }
+  approveSelected() {
+    const ids = Object.keys(this.state.selected).filter(k => this.state.selected[k]);
+    if (!ids.length) return;
+    const items = this.activeItems();
+    const idx = items.map((it, i) => ids.includes(it.id) ? i : -1).filter(i => i >= 0);
+    this._removeAt(idx, 'filed', `Filed ${idx.length} documents`);
+  }
+  toggleSelect(id) {
+    const sel = { ...this.state.selected };
+    sel[id] = !sel[id];
+    this.setState({ selected: sel });
+  }
+  selectAll() {
+    const items = this.activeItems();
+    const all = items.length > 0 && items.every(it => this.state.selected[it.id]);
+    const sel = {};
+    if (!all) items.forEach(it => sel[it.id] = true);
+    this.setState({ selected: sel });
+  }
+  undo() {
+    if (!this.state.undo) return;
+    const { removed, type, key } = this.state.undo;
+    const arr = [...this.state[key]];
+    removed.forEach(({ item, pos }) => arr.splice(Math.min(pos, arr.length), 0, item));
+    this.setState({
+      [key]: arr, undo: null,
+      filedToday: type === 'filed' ? Math.max(0, this.state.filedToday - removed.length) : this.state.filedToday,
+    });
+    clearTimeout(this._undoTimer);
+  }
+  _ocrFor(it) {
+    return `${(it.institution || '').toUpperCase()}\n${it.doc_type || ''}\nStatement period: ${it.period || ''}\n\nAccount holder: B. SCOTT\nReference no.: ****-****-${String(it.id || '00').slice(-2)}\n\nThis is OCR-extracted text from the scanned page. The\narchivist reads this text — not only the image — to\nclassify each document and route it to a destination.\n\nOpening balance ............ see page 1\nTransactions ............... 14 items\nClosing balance ............ see final page`;
+  }
+
+  askAI() {
+    if (this.state.tab === 'pending') {
+      const i = this.state.currentIndex;
+      const it = this.state.queue[i];
+      if (!it) return;
+      const q = [...this.state.queue];
+      const nc = Math.min(0.9, (it.confidence || 0.5) + 0.22);
+      q[i] = { ...it, confidence: nc, why: 'Re-analyzed — archivist is more certain now',
+        reasoning: 'On a second pass the archivist cross-referenced the document body against your entities and filing rules, resolving the earlier ambiguity. The suggested destination has been confirmed.' };
+      this.setState({ queue: q, editFilename: q[i].filename, editDirectory: q[i].directory });
+    } else {
+      const it = this.activeItems()[this.state.currentIndex];
+      if (!it) return;
+      this.setState({ editFilename: it.filename || 'ReclassifiedDocument', editDirectory: 'UK Finance/Lloyds' });
+    }
+  }
+
+  // ---------- preview ----------
+  setPreview(mode) { this.setState({ previewMode: mode }); }
+  prevPage() { this.setState({ pageIdx: Math.max(0, this.state.pageIdx - 1) }); }
+  nextPage() {
+    const it = this.activeItems()[this.state.currentIndex];
+    if (it) this.setState({ pageIdx: Math.min(it.pages.length - 1, this.state.pageIdx + 1) });
+  }
+
+  // ---------- picker / zoom ----------
+  openPicker() { this.setState({ pickerOpen: true, pickerFilter: '' }); }
+  closePicker() { this.setState({ pickerOpen: false }); }
+  choosePath(p) { this.setState({ editDirectory: p, pickerOpen: false }); }
+  openZoom() { this.setState({ zoomOpen: true }); }
+  closeZoom() { this.setState({ zoomOpen: false }); }
+
+  switchTab(tab) {
+    const items = tab === 'pending' ? this.state.queue : this.state.unmatched;
+    const seed = this._seedFrom(items[0], tab === 'pending' ? 'queue' : 'unmatched');
+    this.setState({ tab, currentIndex: 0, pageIdx: 0, selected: {}, editFilename: seed.editFilename, editDirectory: seed.editDirectory });
+  }
+
+  _onKey(e) {
+    if (this.state.screen !== 'review') return;
+    const tag = e.target.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA') { if (e.key === 'Escape') e.target.blur(); return; }
+    const items = this.activeItems();
+    if (!items.length) return;
+    const k = e.key.toLowerCase();
+    if (k === 'a') { e.preventDefault(); this.approve(); }
+    else if (k === 's') { e.preventDefault(); this.skip(); }
+    else if (k === 'u') { e.preventDefault(); this.undo(); }
+    else if (k === 'arrowdown' || k === 'j') { e.preventDefault(); this.selectItem(Math.min(items.length - 1, this.state.currentIndex + 1)); }
+    else if (k === 'arrowup' || k === 'k') { e.preventDefault(); this.selectItem(Math.max(0, this.state.currentIndex - 1)); }
+    else if (k === 'v') { e.preventDefault(); this.setPreview(this.state.previewMode === 'image' ? 'text' : 'image'); }
+  }
+
+  // ---------- static data ----------
+  _archiveTree() {
+    return [
+      { name:'Auto', count:1, depth:0 },
+      { name:'Vehicle Maintenance', count:1, depth:1 },
+      { name:'Silverado', count:1, depth:2 },
+      { name:'BBVA', count:121, depth:0 },
+      { name:'Brokerage', count:7, depth:1 },
+      { name:'Checking', count:32, depth:1 },
+      { name:'HELOC', count:18, depth:1 },
+      { name:'MoneyMarket', count:11, depth:1 },
+      { name:'SOR', count:15, depth:1 },
+      { name:'Insurance', count:24, depth:0 },
+      { name:'Guardian Health', count:24, depth:1 },
+      { name:'UK Finance', count:38, depth:0 },
+      { name:'Lloyds', count:38, depth:1 },
+      { name:'Medical', count:19, depth:0 },
+      { name:'Pesikoff', count:19, depth:1 },
+      { name:'SORHeights', count:12, depth:0 },
+      { name:'Utilities', count:12, depth:1 },
+    ];
+  }
+  _history() {
+    const rows = [
+      ['CirroEnergyJune2026.pdf','SORHeights/Utilities','Rule: cirro_energy_sor','rule',1.0],
+      ['CityOfWestUniversityPlaceUtilityBillJune2026.pdf','Utilities/CityOfWestUniversityPlace','AI Suggested','ai',0.95],
+      ['PesikoffCoreVisitBillJune2026BrodieScott.pdf','Medical/Pesikoff','Rule: medical_pesikoff','rule',0.95],
+      ['LloydsBankAccountStatementFebruary2026.pdf','UK Finance/Lloyds','Rule: lloyds_uk','rule',1.0],
+      ['LloydsBankAccountStatement.pdf','UK Finance/Lloyds','Rule: lloyds_uk','rule',0.92],
+      ['LloydsBankAccountStatementFebruary2026.pdf','UK Finance/Lloyds','Rule: lloyds_uk','rule',0.86],
+      ['GuardianHealthEOBMarch2026.pdf','Insurance/Guardian Health','Rule: guardian_insurance_eob','rule',1.0],
+      ['SilveradoServiceRecordMay2026.pdf','Auto/Vehicle Maintenance/Silverado','AI Suggested','ai',0.88],
+    ];
+    return rows.map(r => {
+      const c = this.conf(r[4]);
+      return { filename:r[0], path:r[1], rule:r[2], ruleColor:r[3]==='ai'?'#34508C':(r[3]==='none'?'#BE4029':'#0E8A5E'),
+        confPct:Math.round(r[4]*100), confColor:c.t, confBg:c.b };
+    });
+  }
+  _entities() {
+    return [
+      { name:'Vivian Scott', relation:'Spouse', kind:'person' },
+      { name:'Brodie Scott', relation:'Son', kind:'person' },
+      { name:'Kirstie Scott', relation:'Daughter', kind:'person' },
+      { name:'Sulis Solar LLC', relation:'Business', kind:'biz' },
+      { name:'School of Rock The Heights', relation:'Business', kind:'biz' },
+      { name:'School of Rock West U', relation:'Business', kind:'biz' },
+      { name:'Together Solar', relation:'Investment', kind:'biz' },
+      { name:'GreatScott Consulting', relation:'Business', kind:'biz' },
+    ];
+  }
+  _rules() {
+    return [
+      { id:'pnc_sulis_solar_checking', file_to:'SulisSolar/PNC' },
+      { id:'pnc_personal_loc', file_to:'PNC/Personal/LOC' },
+      { id:'frost_sor_houston_sw', file_to:'Frost/SORHoustonSW/Checking' },
+      { id:'guardian_insurance_eob', file_to:'Insurance/Guardian Health' },
+      { id:'houston_alarm', file_to:'SOR/SORHeights' },
+      { id:'bettencourt_tax', file_to:'Tax/Bettencourt' },
+      { id:'lloyds_uk', file_to:'UK Finance/Lloyds' },
+      { id:'cirro_energy_sor', file_to:'SORHeights/Utilities' },
+    ];
+  }
+  _pickerNodes() {
+    const f = (this.state.pickerFilter || '').toLowerCase();
+    const stack = [];
+    const out = [];
+    for (const n of this._archiveTree()) {
+      stack[n.depth] = n.name;
+      stack.length = n.depth + 1;
+      const path = stack.join('/');
+      if (!f || n.name.toLowerCase().includes(f) || path.toLowerCase().includes(f)) out.push({ ...n, path });
+    }
+    return out;
+  }
+
+  renderVals() {
+    const S = this.state;
+    const screen = S.screen;
+    const titles = { dashboard:'Dashboard', review:'Review Queue', archive:'Archive Browser', settings:'Settings' };
+    const navDef = [
+      { id:'dashboard', label:'Dashboard', icon:'dashboard' },
+      { id:'review', label:'Review Queue', icon:'mark_email_unread', badge: S.queue.length || '' },
+      { id:'archive', label:'Archive Browser', icon:'inventory_2' },
+      { id:'settings', label:'Settings', icon:'settings' },
+    ];
+    const navItems = navDef.map(n => {
+      const active = n.id === screen;
+      return {
+        label:n.label, icon:n.icon, badge:n.badge || '',
+        iconCls: active ? 'fill' : '',
+        onClick: () => this.go(n.id),
+        wrapStyle: `display:flex;align-items:center;gap:12px;padding:11px 14px;border-radius:12px;border:none;width:100%;cursor:pointer;font:600 13.5px Inter,sans-serif;` +
+          (active ? 'background:#15171C;color:#F4F1EA;' : 'background:transparent;color:#5A5C66;'),
+      };
+    });
+
+    // dashboard data
+    const recent = this._history().slice(0,6).map(r => ({ filename:r.filename, dir:r.path, time:'Jun 23, 12:46 PM', confPct:r.confPct, confColor:r.confColor, confBg:r.confBg }));
+    const stats = [
+      { label:'To Review', value:String(S.queue.length), icon:'rate_review', color:'#B5751F' },
+      { label:'Filed Today', value:String(S.filedToday), icon:'task_alt', color:'#0E8A5E' },
+      { label:'Total Archived', value:'141', icon:'inventory_2', color:'#15171C' },
+      { label:'Auto-file Rate', value:S.autoFileRate + '%', icon:'bolt', color:'#34508C' },
+    ];
+
+    // ---- review view models ----
+    const items = this.activeItems();
+    const isPending = S.tab === 'pending';
+    const sessionTotal = 5;
+    const reviewedSession = Math.max(0, sessionTotal - S.queue.length);
+    const progressPct = Math.round((reviewedSession / sessionTotal) * 100);
+    const ciR = items.length ? Math.min(S.currentIndex, items.length - 1) : 0;
+    const greyConf = { t: '#8A8B72', b: '#ECE7DC', l: 'Unclassified' };
+    const queueList = items.map((it, i) => {
+      const c = it.confidence == null ? greyConf : this.conf(it.confidence);
+      const isAct = i === ciR;
+      return {
+        id: it.id, institution: it.institution, doc_type: it.doc_type,
+        confPct: it.confidence == null ? '—' : Math.round(it.confidence * 100),
+        confColor: c.t, confBg: c.b,
+        active: isAct, selected: !!S.selected[it.id],
+        barWidth: it.confidence == null ? 8 : Math.round(it.confidence * 100),
+        barColor: c.t,
+        checkStyle: 'width:20px;height:20px;flex-shrink:0;margin-top:1px;border-radius:6px;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all .12s;' + (S.selected[it.id] ? 'border:1px solid #15171C;background:#15171C;' : 'border:1.5px solid #D6CFBF;background:#fff;'),
+        rowStyle: 'display:flex;gap:10px;align-items:flex-start;padding:10px 11px;border-radius:13px;cursor:pointer;transition:background .12s;border:1px solid ' + (isAct ? '#15171C' : 'transparent') + ';background:' + (isAct ? '#FFFFFF' : 'transparent') + ';box-shadow:' + (isAct ? '0 4px 14px rgba(20,23,28,.08)' : 'none') + ';',
+        onClick: () => this.selectItem(i),
+        onToggle: (e) => { if (e && e.stopPropagation) e.stopPropagation(); this.toggleSelect(it.id); },
+      };
+    });
+    const selectedCount = items.filter(it => S.selected[it.id]).length;
+    const allSelected = items.length > 0 && items.every(it => S.selected[it.id]);
+    const curRaw = items[ciR];
+    let cur = null;
+    if (curRaw) {
+      const c = curRaw.confidence == null ? greyConf : this.conf(curRaw.confidence);
+      const dir = S.editDirectory;
+      const dirChips = dir ? dir.split('/').filter(Boolean) : [];
+      const lseed = (String(curRaw.id).charCodeAt(1) || 5);
+      const lines = Array.from({ length: 9 }, (_, i) => ({ w: 38 + ((lseed * 7 + i * 29) % 56) }));
+      cur = {
+        institution: curRaw.institution, doc_type: curRaw.doc_type, period: curRaw.period,
+        pagesLabel: curRaw.pages.length + (curRaw.pages.length > 1 ? ' pages' : ' page'),
+        multiPage: curRaw.pages.length > 1,
+        pageIndicator: 'Page ' + (S.pageIdx + 1) + ' of ' + curRaw.pages.length,
+        confPct: curRaw.confidence == null ? '—' : Math.round(curRaw.confidence * 100),
+        confColor: c.t, confBg: c.b, confLabel: c.l,
+        unclassified: curRaw.confidence == null,
+        ringStyle: curRaw.confidence == null ? 'background:conic-gradient(#C9C3B3 200deg,#EDE7DA 200deg);' : this.ring(curRaw.confidence),
+        reasoning: curRaw.reasoning, why: curRaw.why, conflict: !!curRaw.conflict,
+        filename: S.editFilename, directory: dir, dirChips, hasDir: dirChips.length > 0,
+        lines, ocr: this._ocrFor(curRaw),
+      };
+    }
+    const reviewEmpty = items.length === 0;
+    const emptyTitle = isPending ? 'All caught up' : 'Nothing unmatched';
+    const emptySub = isPending ? 'No documents are waiting for review. Nice work.' : 'Every file has been matched and filed.';
+    const archiveNodes = this._archiveTree().map(n => ({ name: n.name, count: n.count, depth: n.depth, pad: 10 + n.depth * 18 }));
+    const history = this._history();
+    const entities = this._entities().map(e => ({
+      name: e.name, relation: e.relation,
+      iconBg: e.kind === 'person' ? '#E9EDF7' : '#F6E9D3',
+      iconColor: e.kind === 'person' ? '#34508C' : '#B5751F',
+      icon: e.kind === 'person' ? 'person' : 'apartment',
+    }));
+    const rulesData = this._rules();
+
+    return {
+      // shell
+      headerTitle: titles[screen] || 'DocFlow',
+      navItems,
+      isDashboard: screen === 'dashboard',
+      isReview: screen === 'review',
+      isArchive: screen === 'archive',
+      isSettings: screen === 'settings',
+      noop: () => {},
+      scanMail: () => this.go('dashboard'),
+      goReview: () => this.go('review'),
+      goArchive: () => this.go('archive'),
+      // dashboard
+      hasPending: S.queue.length > 0,
+      pendingCount: S.queue.length,
+      stats, recent,
+      // review
+      isPending, isUnmatched: !isPending, tab: S.tab,
+      pendingTabStyle: 'border:none;border-radius:10px;padding:8px 14px;font:700 13px Inter,sans-serif;cursor:pointer;transition:all .12s;' + (isPending ? 'background:#fff;color:#15171C;box-shadow:0 2px 6px rgba(20,23,28,.08);' : 'background:transparent;color:#8A8B72;'),
+      unmatchedTabStyle: 'border:none;border-radius:10px;padding:8px 14px;font:700 13px Inter,sans-serif;cursor:pointer;transition:all .12s;' + (!isPending ? 'background:#fff;color:#15171C;box-shadow:0 2px 6px rgba(20,23,28,.08);' : 'background:transparent;color:#8A8B72;'),
+      imgBtnStyle: 'display:flex;align-items:center;gap:5px;border:none;border-radius:8px;padding:6px 11px;font:700 11.5px Inter,sans-serif;cursor:pointer;transition:all .12s;' + (S.previewMode === 'image' ? 'background:#fff;color:#15171C;box-shadow:0 1px 3px rgba(20,23,28,.1);' : 'background:transparent;color:#8A8B72;'),
+      txtBtnStyle: 'display:flex;align-items:center;gap:5px;border:none;border-radius:8px;padding:6px 11px;font:700 11.5px Inter,sans-serif;cursor:pointer;transition:all .12s;' + (S.previewMode === 'text' ? 'background:#fff;color:#15171C;box-shadow:0 1px 3px rgba(20,23,28,.1);' : 'background:transparent;color:#8A8B72;'),
+      switchPending: () => this.switchTab('pending'),
+      switchUnmatched: () => this.switchTab('unmatched'),
+      pendingTabCount: S.queue.length, unmatchedTabCount: S.unmatched.length,
+      queueList, reviewEmpty, emptyTitle, emptySub, hasReviewItem: !reviewEmpty,
+      cur, progressPct, reviewedSession, sessionTotal, remaining: items.length,
+      selectedCount, hasSelection: selectedCount > 0, allSelected,
+      selectAllLabel: allSelected ? 'Clear' : 'Select all',
+      approveLabel: isPending ? 'Approve & File' : 'File Document',
+      askAiLabel: isPending ? 'Ask AI' : 'Ask AI to classify',
+      onApprove: () => this.approve(), onSkip: () => this.skip(), onAskAI: () => this.askAI(),
+      onApproveSelected: () => this.approveSelected(), onSelectAll: () => this.selectAll(),
+      onFilenameInput: (e) => this.setState({ editFilename: e.target.value }),
+      onDirInput: (e) => this.setState({ editDirectory: e.target.value }),
+      openPicker: () => this.openPicker(),
+      prevPage: () => this.prevPage(), nextPage: () => this.nextPage(),
+      setImg: () => this.setPreview('image'), setText: () => this.setPreview('text'),
+      isImageMode: S.previewMode === 'image', isTextMode: S.previewMode === 'text',
+      openZoom: () => this.openZoom(),
+      confStyleRing: (this.props.confidenceStyle ?? 'Ring') === 'Ring',
+      undoOpen: !!S.undo, undoLabel: S.undo ? S.undo.label : '',
+      undoIsFiled: S.undo ? S.undo.type === 'filed' : false, onUndo: () => this.undo(),
+      pickerOpen: S.pickerOpen,
+      pickerNodes: this._pickerNodes().map(n => ({ name: n.name, count: n.count, pad: 10 + n.depth * 16, onClick: () => this.choosePath(n.path) })),
+      pickerFilter: S.pickerFilter,
+      onPickerFilter: (e) => this.setState({ pickerFilter: e.target.value }),
+      closePicker: () => this.closePicker(),
+      zoomOpen: S.zoomOpen, closeZoom: () => this.closeZoom(),
+      archiveNodes, history, historySummary: '141 documents filed across 41 sessions',
+      entities, rules: rulesData, ruleCount: '23',
+      archiveRoot: '~/Library/Mobile Documents/com~apple~CloudDocs/ElectronicFiles',
+      watchFolder: '~/Library/Mobile Documents/com~apple~CloudDocs/ElectronicFiles/ToBeOrganized',
+      provider: 'OpenRouter', model: 'google/gemini-2.0-flash-001',
+      threshold: S.threshold, onThreshold: (e) => this.setState({ threshold: parseInt(e.target.value) }),
+      healthModel: 'gemini-2.0-flash-001',
+    };
+  }
+}
+</script>
+</body>
+</html>
