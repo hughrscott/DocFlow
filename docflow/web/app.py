@@ -7,8 +7,9 @@ import logging
 import os
 import shutil
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
+from typing import Annotated
 
 import yaml
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
@@ -18,8 +19,8 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from pypdf import PdfReader, PdfWriter
 from sse_starlette.sse import EventSourceResponse
 
-from docflow.review.queue import load_review_queue, update_queue_item, save_review_queue
 from docflow.filing.filer import ensure_directory
+from docflow.review.queue import load_review_queue, save_review_queue, update_queue_item
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +30,7 @@ app = FastAPI(title="DocFlow — The Digital Archivist")
 _config: dict = {}
 _processing_state: dict = {}  # Active processing state for SSE
 _state_store = None  # docflow.state.repositories.StateStore backing /api/v1
+_filer = None  # docflow.filing.operations.DurableFiler backing job retry
 
 # Mount static files
 _static_dir = Path(__file__).parent / "static"
@@ -58,10 +60,11 @@ def configure(config: dict, config_path: Path | None = None) -> None:
 _config_path: Path | None = None
 
 
-def configure_state(store) -> None:
-    """Attach the local application-state store used by /api/v1 routes."""
-    global _state_store
+def configure_state(store, filer=None) -> None:
+    """Attach the local application-state store (and durable filer) used by /api/v1 routes."""
+    global _state_store, _filer
     _state_store = store
+    _filer = filer
 
 
 def _persist_config() -> None:
@@ -91,8 +94,14 @@ def _persist_config() -> None:
             yaml.dump(existing, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
 
         logger.info("Settings persisted to %s", _config_path)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - legacy best-effort persist; settings save must not fail
         logger.warning("Failed to persist config: %s", exc)
+
+
+def _local_iso(timestamp: float | None = None) -> str:
+    """Naive local-time ISO string (the legacy UI format), derived from an aware time."""
+    moment = datetime.now(UTC) if timestamp is None else datetime.fromtimestamp(timestamp, UTC)
+    return moment.astimezone().replace(tzinfo=None).isoformat()
 
 
 def _archive_root() -> Path:
@@ -134,15 +143,14 @@ async def settings_page():
 # ---------------------------------------------------------------------------
 
 @app.post("/api/upload")
-async def upload_pdf(file: UploadFile = File(...)):
+async def upload_pdf(file: Annotated[UploadFile, File()]):
     """Upload a PDF for processing."""
     if not file.filename or not file.filename.lower().endswith(".pdf"):
         raise HTTPException(400, "Only PDF files are supported")
 
     upload_path = _upload_dir() / file.filename
-    with open(upload_path, "wb") as f:
-        content = await file.read()
-        f.write(content)
+    content = await file.read()
+    await asyncio.to_thread(upload_path.write_bytes, content)
 
     return {"filename": file.filename, "path": str(upload_path), "size": len(content)}
 
@@ -165,7 +173,7 @@ async def process_pdf(request: Request):
         "documents": [],
         "auto_filed": 0,
         "review_queue": 0,
-        "started": datetime.now().isoformat(),
+        "started": _local_iso(),
     }
 
     # Run pipeline in background
@@ -228,21 +236,20 @@ async def process_stream(job_id: str):
 
 async def _run_pipeline_async(job_id: str, pdf_path: Path) -> None:
     """Run the processing pipeline, updating state as we go."""
-    import yaml
     state = _processing_state[job_id]
 
     try:
+        from docflow.classification.classifier import classify_candidates
+        from docflow.clustering.clusterer import cluster_pages
+        from docflow.extraction.extractor import extract_documents
+        from docflow.filing.confidence_gate import gate_decisions
+        from docflow.filing.dedup import build_initial_index, is_empty
+        from docflow.ingestion.archiver import archive_original
         from docflow.ingestion.loader import load_pdf
         from docflow.ocr.analyzer import analyze_pages
-        from docflow.clustering.clusterer import cluster_pages
-        from docflow.classification.classifier import classify_candidates
-        from docflow.filing.confidence_gate import gate_decisions
-        from docflow.extraction.extractor import extract_documents
         from docflow.summary.generator import generate_summary
-        from docflow.ingestion.archiver import archive_original
 
         # 0. Build dedup index on first run
-        from docflow.filing.dedup import is_empty, build_initial_index
         if is_empty():
             state.update({"step": "Building duplicate index (first run)", "progress": 2, "status": "processing"})
             await asyncio.to_thread(
@@ -310,22 +317,26 @@ async def _run_pipeline_async(job_id: str, pdf_path: Path) -> None:
         state.update({"step": "Generating summary", "progress": 90})
         try:
             await asyncio.to_thread(generate_summary, auto_file, review_queue, _config)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - legacy cosmetic step, documented as non-fatal
             logger.warning("Summary generation failed (non-fatal): %s", exc)
 
         # 8. Archive
         state.update({"step": "Archiving original", "progress": 95})
         archived_path = await asyncio.to_thread(archive_original, pdf_path, _config)
 
-        # If the original also exists in the watch folder (user uploaded a copy),
-        # remove it so it doesn't get processed again
+        # If the watch folder holds a byte-identical copy of the retained original,
+        # remove it so it isn't processed again. A different file is never removed.
+        from docflow.ingestion.loader import raw_sha256
+
         watch_folder = Path(os.path.expanduser(
             _config.get("scan_watch_folder", "~/DocFlowExample/inbox")
         ))
         watch_copy = watch_folder / pdf_path.name
-        if watch_copy.exists() and watch_copy != pdf_path:
+        if (watch_copy.is_file() and not watch_copy.is_symlink() and watch_copy != pdf_path
+                and watch_copy != archived_path
+                and raw_sha256(watch_copy) == raw_sha256(archived_path)):
             watch_copy.unlink()
-            logger.info("Removed watch folder copy: %s", watch_copy)
+            logger.info("Removed identical watch folder copy: %s", watch_copy.name)
 
         # Save review queue
         if review_queue:
@@ -440,14 +451,14 @@ async def get_unmatched():
             try:
                 reader = PdfReader(str(pdf))
                 page_count = len(reader.pages)
-            except Exception:
+            except Exception:  # noqa: BLE001 - legacy listing shows 0 pages for unreadable PDFs
                 page_count = 0
             files.append({
                 "name": pdf.name,
                 "path": str(pdf),
                 "folder": folder_name,
                 "size": pdf.stat().st_size,
-                "modified": datetime.fromtimestamp(pdf.stat().st_mtime).isoformat(),
+                "modified": _local_iso(pdf.stat().st_mtime),
                 "pages": page_count,
             })
     files.sort(key=lambda f: f["modified"], reverse=True)
@@ -505,8 +516,8 @@ def _confined_archive_pdf(roots: list[Path], candidate: Path) -> Path:
 
 def _ocr_first_page(source: Path) -> tuple[str, int]:
     """Local OCR of page 1. Images never leave this function."""
-    from pdf2image import convert_from_path
     import pytesseract
+    from pdf2image import convert_from_path
 
     images = convert_from_path(str(source), first_page=1, last_page=1, dpi=150)
     raw_text = pytesseract.image_to_string(images[0]) if images else ""
@@ -520,7 +531,9 @@ def _suggest_filing(gateway, raw_text: str, page_count: int, feature) -> dict:
     from docflow.config.rules_manager import load_rules_md, parse_rules_md
     from docflow.llm.gateway import LocalRule
     from docflow.llm.schemas import (
-        InvalidModelOutput, validate_filename, validate_relative_directory,
+        InvalidModelOutput,
+        validate_filename,
+        validate_relative_directory,
     )
 
     rules_md = load_rules_md(_config)
@@ -674,8 +687,7 @@ async def search_archive(q: str = ""):
     # Search filing logs
     for log_file in root.glob("filing_log_*.json"):
         try:
-            with open(log_file) as fh:
-                data = json.load(fh)
+            data = json.loads(await asyncio.to_thread(log_file.read_text))
             for entry in data.get("entries", []):
                 filename = entry.get("filename", "")
                 directory = entry.get("target_directory", "")
@@ -687,7 +699,7 @@ async def search_archive(q: str = ""):
                         "confidence": entry.get("confidence"),
                         "rule": rule,
                         "icon": "description",
-                        "url": f"/archive",
+                        "url": "/archive",
                     })
         except (json.JSONDecodeError, KeyError):
             continue
@@ -697,16 +709,16 @@ async def search_archive(q: str = ""):
         for pdf in root.rglob("*.pdf"):
             if pdf.name.startswith(".") or "/_" in str(pdf):
                 continue
-            if query in pdf.name.lower():
-                # Avoid duplicates from log search
-                if not any(r["filename"] == pdf.name for r in results):
-                    rel = str(pdf.relative_to(root))
-                    results.append({
-                        "filename": pdf.name,
-                        "directory": str(pdf.parent.relative_to(root)),
-                        "icon": "folder_open",
-                        "url": f"/archive",
-                    })
+            # Avoid duplicates from log search
+            if query in pdf.name.lower() and not any(
+                r["filename"] == pdf.name for r in results
+            ):
+                results.append({
+                    "filename": pdf.name,
+                    "directory": str(pdf.parent.relative_to(root)),
+                    "icon": "folder_open",
+                    "url": "/archive",
+                })
 
     # Limit results
     return {"results": results[:20]}
@@ -763,7 +775,7 @@ async def archive_files(path: str = ""):
                 "name": f.name,
                 "path": str(f.relative_to(root)),
                 "size": f.stat().st_size,
-                "modified": datetime.fromtimestamp(f.stat().st_mtime).isoformat(),
+                "modified": _local_iso(f.stat().st_mtime),
             })
     return {"files": files, "path": path}
 
@@ -774,9 +786,7 @@ async def archive_logs():
     root = _archive_root()
     logs = []
     for f in sorted(root.glob("filing_log_*.json"), reverse=True):
-        with open(f) as fh:
-            data = json.load(fh)
-            logs.append(data)
+        logs.append(json.loads(await asyncio.to_thread(f.read_text)))
     return {"logs": logs}
 
 
@@ -1190,6 +1200,60 @@ async def v1_connection_test(request: Request):
     return result
 
 
+class _RetryRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    archive_scope_id: str = Field(min_length=1, max_length=128)
+    idempotency_key: str = Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9._:-]+$")
+
+
+_RETRY_CONFLICTS = {
+    "job_not_retryable": "Job is not in a retryable state.",
+    "source_changed": "The source no longer matches the admitted scan.",
+    "source_unavailable": "The source is not available yet; retry later.",
+}
+
+
+def _v1_job_error(code: str) -> _V1Error:
+    if code == "job_not_found":
+        return _V1Error(404, "job_not_found", "Job not found in this scope.")
+    if code in _RETRY_CONFLICTS:
+        return _V1Error(409, code, _RETRY_CONFLICTS[code])
+    return _V1Error(422, "invalid_request", "Request body does not match the contract.")
+
+
+@app.get("/api/v1/jobs/{job_id}")
+async def v1_get_job(job_id: str, request: Request):
+    """Durable job status, page accounting, filing journal and recovery state."""
+    from docflow.filing.operations import RetryRejected, job_payload
+
+    _v1_require_state()
+    scope_id = request.query_params.get("archive_scope_id", "")
+    if not 1 <= len(scope_id) <= 128:
+        raise _V1Error(422, "invalid_request", "archive_scope_id query parameter is required.")
+    scope = _v1_scope(scope_id)
+    try:
+        return job_payload(_state_store, scope.id, job_id)
+    except RetryRejected as exc:
+        raise _v1_job_error(exc.code) from None
+
+
+@app.post("/api/v1/jobs/{job_id}/retry")
+async def v1_retry_job(job_id: str, request: Request):
+    """Resume an interrupted filing or requeue a failed job, once per idempotency key."""
+    from docflow.filing.operations import RetryRejected
+
+    _v1_require_state()
+    if _filer is None:
+        raise _V1Error(503, "state_unavailable", "Local application state is not configured.")
+    body = await _v1_body(request, _RetryRequest)
+    scope = _v1_scope(body.archive_scope_id)
+    try:
+        return await asyncio.to_thread(_filer.retry, scope.id, job_id,
+                                       idempotency_key=body.idempotency_key)
+    except RetryRejected as exc:
+        raise _v1_job_error(exc.code) from None
+
+
 @app.post("/api/settings/validate-paths")
 async def validate_paths():
     """Validate that configured paths exist and are writable."""
@@ -1252,7 +1316,7 @@ async def reprocess_job(job_id: str):
         "documents": [],
         "auto_filed": 0,
         "review_queue": 0,
-        "started": datetime.now().isoformat(),
+        "started": _local_iso(),
     }
     asyncio.create_task(_run_pipeline_async(new_job_id, upload_path))
     return {"job_id": new_job_id}

@@ -23,7 +23,10 @@ from docflow.state.paths import validate_archive_root
 from docflow.state.schema import (
     JOB_STATUSES,
     JOB_TRANSITIONS,
+    OPERATION_STATUSES,
+    PAGE_STATUSES,
     REVIEW_TRANSITIONS,
+    STEP_STATUSES,
     TERMINAL_JOB_STATUSES,
     VOLATILE_JOB_STATUSES,
 )
@@ -154,6 +157,46 @@ class ReviewItem:
 
 
 @dataclass(frozen=True)
+class FileRecord:
+    id: str
+    archive_scope_id: str
+    job_id: str | None
+    relative_path: str
+    content_sha256: str
+    page_numbers: list[int]
+    role: str
+    created_at: str
+
+
+@dataclass(frozen=True)
+class Operation:
+    id: str
+    archive_scope_id: str
+    job_id: str | None
+    kind: str
+    status: str
+    request: dict
+    result: dict | None
+    created_at: str
+    completed_at: str | None
+    undone_at: str | None
+
+
+@dataclass(frozen=True)
+class OperationStep:
+    id: str
+    archive_scope_id: str
+    operation_id: str
+    ordinal: int
+    kind: str
+    source_locator: str | None
+    destination_relative_path: str | None
+    expected_sha256: str | None
+    status: str
+    error_code: str | None
+
+
+@dataclass(frozen=True)
 class RecoveryReport:
     reset_job_ids: list[str]
     pending_jobs: list[Job]
@@ -274,6 +317,61 @@ class JobRepository(_Repository):
         )
         return {status: count for status, count in rows}
 
+    def find_unfinished_by_source(
+        self, scope_id: str, *, source_fingerprint: str, source_locator: str
+    ) -> Job | None:
+        """The oldest admitted (page-fingerprinted) job for this exact unfinished source.
+
+        Jobs imported by legacy migration carry no page fingerprints and are never reused.
+        """
+        self.require_scope(scope_id)
+        row = self.conn.execute(
+            "SELECT * FROM jobs j WHERE archive_scope_id = ? AND source_fingerprint = ? "
+            "AND source_locator = ? AND status NOT IN ('completed', 'undone') "
+            "AND NOT EXISTS (SELECT 1 FROM job_pages p WHERE p.job_id = j.id "
+            "AND p.content_sha256 IS NULL) "
+            "ORDER BY created_at, id LIMIT 1",
+            (scope_id, source_fingerprint, validate_source_locator(source_locator)),
+        ).fetchone()
+        return Job(**dict(row)) if row else None
+
+    def record_page_fingerprints(
+        self, scope_id: str, job_id: str, pages: list[tuple[int, str, str]]
+    ) -> None:
+        """Store ``(page_number, content_sha256, dhash64)`` for every existing page row."""
+        self.require_scope(scope_id)
+        with self.write() as conn:
+            for number, content, perceptual in pages:
+                cursor = conn.execute(
+                    "UPDATE job_pages SET content_sha256 = ?, perceptual_fingerprint = ? "
+                    "WHERE archive_scope_id = ? AND job_id = ? AND page_number = ?",
+                    (content, perceptual, scope_id, job_id, number),
+                )
+                if cursor.rowcount != 1:
+                    raise UnsafeValueError("page fingerprint does not match a job page")
+
+    def pages(self, scope_id: str, job_id: str) -> list[sqlite3.Row]:
+        self.require_scope(scope_id)
+        return self.conn.execute(
+            "SELECT page_number, content_sha256, perceptual_fingerprint, status FROM job_pages "
+            "WHERE archive_scope_id = ? AND job_id = ? ORDER BY page_number", (scope_id, job_id),
+        ).fetchall()
+
+    def set_page_status(self, scope_id: str, job_id: str, pages: list[int], status: str) -> None:
+        """Move pending pages to a terminal status; repeating the same status is a no-op."""
+        self.require_scope(scope_id)
+        if status not in PAGE_STATUSES or status == "pending":
+            raise InvalidTransitionError(f"page status {status!r} is not terminal")
+        with self.write() as conn:
+            for page in pages:
+                cursor = conn.execute(
+                    "UPDATE job_pages SET status = ? WHERE archive_scope_id = ? AND job_id = ? "
+                    "AND page_number = ? AND status IN ('pending', ?)",
+                    (status, scope_id, job_id, page, status),
+                )
+                if cursor.rowcount != 1:
+                    raise InvalidTransitionError("page already has a different outcome")
+
     def transition(
         self, scope_id: str, job_id: str, *, expected: str, new: str,
         error_code: str | None = None,
@@ -287,6 +385,18 @@ class JobRepository(_Repository):
                 "UPDATE jobs SET status = ?, attempt = attempt + ?, updated_at = ?, "
                 "last_error_code = ? WHERE id = ? AND archive_scope_id = ? AND status = ?",
                 (new, 1 if new == "ocr" else 0, utc_now(), error_code, job_id, scope_id, expected),
+            )
+        return cursor.rowcount == 1
+
+    def set_error(self, scope_id: str, job_id: str, *, expected: str,
+                  error_code: str | None) -> bool:
+        """Record (or clear) a visible error code without changing the job status."""
+        self.require_scope(scope_id)
+        with self.write() as conn:
+            cursor = conn.execute(
+                "UPDATE jobs SET last_error_code = ?, updated_at = ? "
+                "WHERE id = ? AND archive_scope_id = ? AND status = ?",
+                (error_code, utc_now(), job_id, scope_id, expected),
             )
         return cursor.rowcount == 1
 
@@ -400,6 +510,220 @@ class ReviewRepository(_Repository):
         return correction_id
 
 
+class FileRecordRepository(_Repository):
+    @staticmethod
+    def _from_row(row: sqlite3.Row) -> FileRecord:
+        data = dict(row)
+        data["page_numbers"] = json.loads(data.pop("page_numbers_json"))
+        return FileRecord(**data)
+
+    def add(
+        self,
+        scope_id: str,
+        *,
+        job_id: str | None,
+        relative_path: str,
+        content_sha256: str,
+        page_numbers: list[int],
+        role: str,
+    ) -> FileRecord:
+        """Record a verified archive file; an existing record for the path is kept as-is."""
+        self.require_scope(scope_id)
+        relative = archive_relative(relative_path)
+        with self.write() as conn:
+            conn.execute(
+                "INSERT INTO file_records(id, archive_scope_id, job_id, relative_path, "
+                "content_sha256, page_numbers_json, role, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING",
+                (stable_id("file_record", scope_id, relative), scope_id, job_id, relative,
+                 content_sha256, json.dumps(sorted(page_numbers)), role, utc_now()),
+            )
+        record = self.get_by_path(scope_id, relative)
+        assert record is not None
+        return record
+
+    def get_by_path(self, scope_id: str, relative_path: str) -> FileRecord | None:
+        self.require_scope(scope_id)
+        row = self.conn.execute(
+            "SELECT * FROM file_records WHERE archive_scope_id = ? AND relative_path = ?",
+            (scope_id, archive_relative(relative_path)),
+        ).fetchone()
+        return self._from_row(row) if row else None
+
+
+    def list_for_job(self, scope_id: str, job_id: str) -> list[FileRecord]:
+        self.require_scope(scope_id)
+        rows = self.conn.execute(
+            "SELECT * FROM file_records WHERE archive_scope_id = ? AND job_id = ? "
+            "ORDER BY role, relative_path", (scope_id, job_id),
+        )
+        return [self._from_row(r) for r in rows]
+
+    def list_filed_from_jobs(self, scope_id: str) -> list[FileRecord]:
+        """Filed records created by jobs (their page fingerprints live in ``job_pages``)."""
+        self.require_scope(scope_id)
+        rows = self.conn.execute(
+            "SELECT * FROM file_records WHERE archive_scope_id = ? AND role = 'filed' "
+            "AND job_id IS NOT NULL ORDER BY created_at, relative_path", (scope_id,),
+        )
+        return [self._from_row(r) for r in rows]
+
+    def find_by_content(self, scope_id: str, content_sha256: str, role: str) -> list[FileRecord]:
+        self.require_scope(scope_id)
+        rows = self.conn.execute(
+            "SELECT * FROM file_records WHERE archive_scope_id = ? AND content_sha256 = ? "
+            "AND role = ? ORDER BY created_at, relative_path", (scope_id, content_sha256, role),
+        )
+        return [self._from_row(r) for r in rows]
+
+
+class OperationRepository(_Repository):
+    @staticmethod
+    def _from_row(row: sqlite3.Row) -> Operation:
+        data = dict(row)
+        data["request"] = json.loads(data.pop("request_json"))
+        result = data.pop("result_json")
+        data["result"] = json.loads(result) if result is not None else None
+        return Operation(**data)
+
+    def create(
+        self,
+        scope_id: str,
+        *,
+        job_id: str | None,
+        kind: str,
+        request: dict,
+        steps: list[dict],
+        status: str = "running",
+        operation_id: str | None = None,
+    ) -> Operation:
+        """Journal an operation and all of its planned steps in one transaction."""
+        self.require_scope(scope_id)
+        operation_id = operation_id or uuid.uuid4().hex
+        with self.write() as conn:
+            conn.execute(
+                "INSERT INTO operations(id, archive_scope_id, job_id, kind, status, request_json, "
+                "created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (operation_id, scope_id, job_id, kind, status, check_safe_json(request),
+                 utc_now()),
+            )
+            for ordinal, step in enumerate(steps):
+                conn.execute(
+                    "INSERT INTO operation_steps(id, archive_scope_id, operation_id, ordinal, "
+                    "kind, source_locator, destination_relative_path, expected_sha256, status) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'planned')",
+                    (stable_id("operation_step", operation_id, str(ordinal)), scope_id,
+                     operation_id, ordinal, step["kind"], step.get("source_locator"),
+                     step.get("destination_relative_path"), step.get("expected_sha256")),
+                )
+        operation = self.get(scope_id, operation_id)
+        assert operation is not None
+        return operation
+
+    def get(self, scope_id: str, operation_id: str) -> Operation | None:
+        self.require_scope(scope_id)
+        row = self.conn.execute(
+            "SELECT * FROM operations WHERE archive_scope_id = ? AND id = ?",
+            (scope_id, operation_id),
+        ).fetchone()
+        return self._from_row(row) if row else None
+
+    def steps(self, scope_id: str, operation_id: str) -> list[OperationStep]:
+        self.require_scope(scope_id)
+        rows = self.conn.execute(
+            "SELECT * FROM operation_steps WHERE archive_scope_id = ? AND operation_id = ? "
+            "ORDER BY ordinal", (scope_id, operation_id),
+        )
+        return [OperationStep(**dict(r)) for r in rows]
+
+    def update_step(
+        self,
+        scope_id: str,
+        step_id: str,
+        *,
+        expected: str,
+        status: str,
+        destination_relative_path: str | None = None,
+        error_code: str | None = None,
+    ) -> bool:
+        """Compare-and-set a step's status, optionally recording its destination."""
+        self.require_scope(scope_id)
+        if status not in STEP_STATUSES:
+            raise InvalidTransitionError(f"unknown step status {status!r}")
+        destination = (None if destination_relative_path is None
+                       else archive_relative(destination_relative_path))
+        with self.write() as conn:
+            cursor = conn.execute(
+                "UPDATE operation_steps SET status = ?, error_code = ?, "
+                "destination_relative_path = COALESCE(?, destination_relative_path) "
+                "WHERE archive_scope_id = ? AND id = ? AND status = ?",
+                (status, error_code, destination, scope_id, step_id, expected),
+            )
+        return cursor.rowcount == 1
+
+    def fail_planned_steps(self, scope_id: str, operation_id: str, error_code: str) -> None:
+        self.require_scope(scope_id)
+        with self.write() as conn:
+            conn.execute(
+                "UPDATE operation_steps SET status = 'failed', error_code = ? "
+                "WHERE archive_scope_id = ? AND operation_id = ? AND status = 'planned'",
+                (error_code, scope_id, operation_id),
+            )
+
+    def record_step_evidence(
+        self, scope_id: str, operation_id: str, ordinal: int, evidence: dict
+    ) -> None:
+        """Merge verified per-step evidence (hashes, paths) into ``result_json``."""
+        with self.write() as conn:
+            operation = self.get(scope_id, operation_id)
+            assert operation is not None
+            result = dict(operation.result or {})
+            result.setdefault("steps", {})[str(ordinal)] = evidence
+            conn.execute("UPDATE operations SET result_json = ? WHERE id = ?",
+                         (check_safe_json(result), operation_id))
+
+    def list_running(self, scope_id: str, kind: str) -> list[Operation]:
+        self.require_scope(scope_id)
+        rows = self.conn.execute(
+            "SELECT * FROM operations WHERE archive_scope_id = ? AND kind = ? AND status = "
+            "'running' ORDER BY created_at, rowid", (scope_id, kind),
+        )
+        return [self._from_row(r) for r in rows]
+
+    def latest_for_job(self, scope_id: str, job_id: str, kind: str) -> Operation | None:
+        self.require_scope(scope_id)
+        row = self.conn.execute(
+            "SELECT * FROM operations WHERE archive_scope_id = ? AND job_id = ? AND kind = ? "
+            "ORDER BY created_at DESC, rowid DESC LIMIT 1", (scope_id, job_id, kind),
+        ).fetchone()
+        return self._from_row(row) if row else None
+
+    def finish_with_result(self, scope_id: str, operation_id: str, *, expected: str,
+                           status: str, result: dict) -> bool:
+        self.require_scope(scope_id)
+        if status not in OPERATION_STATUSES:
+            raise InvalidTransitionError(f"unknown operation status {status!r}")
+        with self.write() as conn:
+            cursor = conn.execute(
+                "UPDATE operations SET status = ?, result_json = ?, completed_at = ? "
+                "WHERE archive_scope_id = ? AND id = ? AND status = ?",
+                (status, check_safe_json(result), utc_now(), scope_id, operation_id, expected),
+            )
+        return cursor.rowcount == 1
+
+    def finish(self, scope_id: str, operation_id: str, *, expected: str, status: str) -> bool:
+        self.require_scope(scope_id)
+        if status not in OPERATION_STATUSES:
+            raise InvalidTransitionError(f"unknown operation status {status!r}")
+        with self.write() as conn:
+            cursor = conn.execute(
+                "UPDATE operations SET status = ?, completed_at = ? "
+                "WHERE archive_scope_id = ? AND id = ? AND status = ?",
+                (status, utc_now(), scope_id, operation_id, expected),
+            )
+        return cursor.rowcount == 1
+
+
 class SettingsRepository(_Repository):
     @staticmethod
     def _encode(key: str, value: Any) -> str:
@@ -457,6 +781,8 @@ class StateStore:
         self.jobs = JobRepository(db)
         self.reviews = ReviewRepository(db)
         self.settings = SettingsRepository(db)
+        self.files = FileRecordRepository(db)
+        self.operations = OperationRepository(db)
 
     def recover_after_restart(self, scope_id: str) -> RecoveryReport:
         """Reload pending work; reset jobs whose memory-only lookup state was lost.

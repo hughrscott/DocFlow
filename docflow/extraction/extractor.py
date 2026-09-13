@@ -1,58 +1,42 @@
-"""Extraction: use pypdf to extract pages and write named PDFs."""
+"""Extraction: write named PDFs for filing decisions without overwriting or duplicating.
+
+This is the legacy (non-journaled) adapter used by the CLI and web pipelines. Outputs
+are staged outside the archive, reopened and verified against rendered-pixel page
+fingerprints, then placed atomically under a collision-safe name. No filing log or
+hash index is written to the archive; durable jobs use ``docflow.filing.operations``.
+"""
 from __future__ import annotations
 
-import json
 import logging
-from datetime import datetime
+import os
+import tempfile
 from pathlib import Path
 
-from pypdf import PdfReader, PdfWriter
+from pypdf import PdfReader
 
 from docflow.classification.classifier import FilingDecision
 from docflow.filing.filer import ensure_directory
-from docflow.filing.dedup import is_duplicate, register_file, hash_pages, _load_hashes
+from docflow.filing.operations import (
+    FilingError,
+    check_page_numbers,
+    collision_candidates,
+    partial_path,
+    place_without_replacing,
+    verified_fingerprint,
+    write_pdf_pages,
+)
+from docflow.ingestion.loader import document_sha256, fingerprint_pdf
 
 logger = logging.getLogger(__name__)
 
 
-def _is_likely_duplicate(existing_path: Path, new_page_count: int) -> bool:
-    """Check if an existing file is likely the same document.
-
-    Compares page count as a quick heuristic. Same page count from same
-    filename template = likely duplicate.
-    """
-    try:
-        existing_reader = PdfReader(str(existing_path))
-        return len(existing_reader.pages) == new_page_count
-    except Exception:
+def _renders_as(path: Path, expected: str) -> bool:
+    if path.is_symlink() or not path.is_file():
         return False
-
-
-def _unique_path(path: Path, page_count: int = 0) -> Path | None:
-    """Resolve filename collisions.
-
-    If *path* already exists:
-    - If it's a likely duplicate (same page count), return None to skip.
-    - If it's a different document, append _2, _3, etc.
-
-    Returns the path to write to, or None if it's a duplicate to skip.
-    """
-    if not path.exists():
-        return path
-
-    if page_count > 0 and _is_likely_duplicate(path, page_count):
-        logger.info("Skipping likely duplicate: %s", path)
-        return None
-
-    stem = path.stem
-    suffix = path.suffix
-    parent = path.parent
-    counter = 2
-    while True:
-        candidate = parent / f"{stem}_{counter}{suffix}"
-        if not candidate.exists():
-            return candidate
-        counter += 1
+    try:
+        return fingerprint_pdf(path).document_sha256 == expected
+    except Exception:  # noqa: BLE001 - any unreadable file is a different document
+        return False
 
 
 def extract_documents(
@@ -60,98 +44,45 @@ def extract_documents(
     decisions: list[FilingDecision],
     config: dict,
 ) -> list[Path]:
-    """Extract pages from *source_pdf* and write each FilingDecision to disk.
+    """Extract pages from *source_pdf* for each FilingDecision.
 
-    Returns a list of paths to the written files.
+    Returns, per decision, the path now holding that document: a newly written file,
+    or an existing file whose rendered pages are identical (exact duplicate).
+    Duplicate, out-of-range or empty page assignments raise before anything is written.
     """
-    reader = PdfReader(str(source_pdf))
-    written_files: list[Path] = []
+    with open(source_pdf, "rb") as fh:
+        page_count = len(PdfReader(fh).pages)
+    check_page_numbers(page_count, [d.candidate.pages for d in decisions], require_all=False)
+    source = fingerprint_pdf(source_pdf)
+    hashes = {p.page_number: p.content_sha256 for p in source.pages}
+    written: list[Path] = []
 
-    for decision in decisions:
-        target_dir = Path(decision.target_directory)
-        ensure_directory(target_dir)
+    with tempfile.TemporaryDirectory(prefix="docflow-stage-") as staging:
+        for index, decision in enumerate(decisions):
+            pages = decision.candidate.pages
+            expected = document_sha256([hashes[n] for n in pages])
+            target_dir = Path(decision.target_directory)
+            ensure_directory(target_dir)
+            staged = Path(staging) / f"{index}.pdf"
+            write_pdf_pages(source_pdf, pages, staged)
+            verified_fingerprint(staged, len(pages), expected)
+            for relative in collision_candidates(".", decision.filename):
+                candidate = target_dir / Path(relative).name
+                if os.path.lexists(candidate):
+                    if _renders_as(candidate, expected):
+                        logger.info("Duplicate: pages %s already filed as %s", pages, candidate)
+                        decision.notes = f"Duplicate — already filed as {candidate.name}"
+                        break
+                    continue
+                try:
+                    place_without_replacing(staged, candidate,
+                                            partial_path(target_dir, "extract", index))
+                except FileExistsError:
+                    continue
+                logger.info("Extracted: pages %s → %s", pages, candidate)
+                break
+            else:
+                raise FilingError("collision_limit_exceeded")
+            written.append(candidate)
 
-        # Check content hash BEFORE writing — hash pages from source PDF
-        content_hash = hash_pages(reader, decision.candidate.pages)
-        hashes = _load_hashes()
-        if content_hash in hashes:
-            existing = Path(hashes[content_hash])
-            if existing.exists() and str(existing) != str(target_dir / decision.filename):
-                logger.info(
-                    "Duplicate detected: pages %s already filed as %s",
-                    decision.candidate.pages, existing,
-                )
-                decision.notes = f"Duplicate — already filed as {existing.name}"
-                written_files.append(existing)
-                continue
-
-        page_count = len(decision.candidate.pages)
-        output_path = _unique_path(
-            target_dir / decision.filename, page_count=page_count
-        )
-
-        if output_path is None:
-            logger.info(
-                "Skipped duplicate: pages %s → %s",
-                decision.candidate.pages, decision.filename,
-            )
-            written_files.append(target_dir / decision.filename)
-            continue
-
-        writer = PdfWriter()
-
-        for page_num in decision.candidate.pages:
-            writer.add_page(reader.pages[page_num - 1])
-
-        with open(output_path, "wb") as f:
-            writer.write(f)
-
-        register_file(output_path)
-        written_files.append(output_path)
-        logger.info(
-            "Extracted: pages %s → %s",
-            decision.candidate.pages, output_path,
-        )
-
-    # Write filing log
-    _write_filing_log(decisions, written_files, config)
-
-    return written_files
-
-
-def _write_filing_log(
-    decisions: list[FilingDecision],
-    written_files: list[Path],
-    config: dict,
-) -> Path:
-    """Write a JSON filing log to the archive root."""
-    import os
-    archive_root = Path(os.path.expanduser(
-        config.get("archive_root", "~/DocFlowExample/archive")
-    ))
-    ensure_directory(archive_root)
-
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    log_path = archive_root / f"filing_log_{timestamp}.json"
-
-    entries = []
-    filed_at = datetime.now().isoformat()
-    for decision, file_path in zip(decisions, written_files):
-        entries.append({
-            "filename": decision.filename,
-            "target_directory": decision.target_directory,
-            "rule_matched": decision.rule_matched,
-            "confidence": decision.confidence,
-            "filed_at": filed_at,
-            "pages_extracted": decision.candidate.pages,
-            "institution": decision.candidate.institution,
-            "doc_type": decision.candidate.doc_type,
-            "period": decision.candidate.period,
-            "file_size_bytes": file_path.stat().st_size if file_path.exists() else 0,
-        })
-
-    with open(log_path, "w") as f:
-        json.dump({"timestamp": timestamp, "entries": entries}, f, indent=2)
-
-    logger.info("Filing log written: %s", log_path)
-    return log_path
+    return written
