@@ -14,6 +14,7 @@ import yaml
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from pypdf import PdfReader, PdfWriter
 from sse_starlette.sse import EventSourceResponse
 
@@ -27,6 +28,7 @@ app = FastAPI(title="DocFlow — The Digital Archivist")
 # Config and state
 _config: dict = {}
 _processing_state: dict = {}  # Active processing state for SSE
+_state_store = None  # docflow.state.repositories.StateStore backing /api/v1
 
 # Mount static files
 _static_dir = Path(__file__).parent / "static"
@@ -56,6 +58,12 @@ def configure(config: dict, config_path: Path | None = None) -> None:
 _config_path: Path | None = None
 
 
+def configure_state(store) -> None:
+    """Attach the local application-state store used by /api/v1 routes."""
+    global _state_store
+    _state_store = store
+
+
 def _persist_config() -> None:
     """Write current config back to the YAML file so changes survive restart."""
     if not _config_path or not _config_path.exists():
@@ -68,7 +76,7 @@ def _persist_config() -> None:
         # Update scalar settings
         persist_keys = {
             "confidence_threshold", "archive_root", "scan_watch_folder",
-            "llm_provider", "llm_model", "llm_base_url", "llm_api_key",
+            "llm_provider", "llm_model", "llm_base_url", "llm_api_key", "privacy_mode",
         }
         for key in persist_keys:
             if key in _config and _config[key] not in ("", "••••••••", None):
@@ -252,14 +260,18 @@ async def _run_pipeline_async(job_id: str, pdf_path: Path) -> None:
         page_records = await asyncio.to_thread(analyze_pages, page_images)
         state.update({"step": "OCR complete", "progress": 40})
 
+        # One gateway per job: placeholders are consistent within this scan only.
+        from docflow.llm.gateway import CloudPromptGateway
+        gateway = CloudPromptGateway(_config)
+
         # 3. Clustering
         state.update({"step": "Clustering documents (AI)", "progress": 45})
-        candidates = await asyncio.to_thread(cluster_pages, page_records, _config)
+        candidates = await asyncio.to_thread(cluster_pages, page_records, _config, gateway)
         state.update({"step": f"Found {len(candidates)} documents", "progress": 60})
 
         # 4. Classification
         state.update({"step": "Classifying documents", "progress": 65})
-        decisions = await asyncio.to_thread(classify_candidates, candidates, _config)
+        decisions = await asyncio.to_thread(classify_candidates, candidates, _config, gateway)
         state.update({"progress": 75})
 
         # 5. Confidence gate
@@ -478,67 +490,101 @@ async def reclassify_unmatched(request: Request):
     return {"status": "reclassified", "target": str(target)}
 
 
+def _confined_archive_pdf(roots: list[Path], candidate: Path) -> Path:
+    """Resolve a PDF beneath one of ``roots``, rejecting traversal and symlink escape."""
+    resolved = candidate.resolve()
+    inside = any(root.resolve() in resolved.parents for root in roots)
+    if not inside or candidate.is_symlink():
+        raise HTTPException(403, "Access denied")
+    if not resolved.is_file():
+        raise HTTPException(404, "File not found")
+    if resolved.suffix.lower() != ".pdf":
+        raise HTTPException(400, "Only PDF files are supported")
+    return resolved
+
+
+def _ocr_first_page(source: Path) -> tuple[str, int]:
+    """Local OCR of page 1. Images never leave this function."""
+    from pdf2image import convert_from_path
+    import pytesseract
+
+    images = convert_from_path(str(source), first_page=1, last_page=1, dpi=150)
+    raw_text = pytesseract.image_to_string(images[0]) if images else ""
+    return raw_text, len(PdfReader(str(source)).pages)
+
+
+def _suggest_filing(gateway, raw_text: str, page_count: int, feature) -> dict:
+    """Validated filing suggestion for one local PDF via CloudPromptGateway."""
+    from docflow.classification.classifier import _extract_year, _generate_filename
+    from docflow.clustering.clusterer import DocumentCandidate
+    from docflow.config.rules_manager import load_rules_md, parse_rules_md
+    from docflow.llm.gateway import LocalRule
+    from docflow.llm.schemas import (
+        InvalidModelOutput, validate_filename, validate_relative_directory,
+    )
+
+    rules_md = load_rules_md(_config)
+    rules = ([LocalRule.from_rules_md(r) for r in parse_rules_md(rules_md)] if rules_md
+             else [LocalRule.from_yaml(r) for r in _config.get("filing_rules", [])])
+    document = {"pages": list(range(1, page_count + 1)), "text_preview": raw_text[:500]}
+    result = gateway.classify(document, rules, feature=feature)
+    filename, directory = result.filename, result.relative_directory
+    rule = result.rule
+    if rule is not None and rule.file_to and rule.filename_template:
+        candidate = DocumentCandidate(document["pages"], "unknown", None, result.period,
+                                      result.doc_type, 0.0, {})
+        try:
+            filename = validate_filename(_generate_filename(rule.filename_template, candidate))
+            directory = gateway.confine(validate_relative_directory(
+                rule.file_to.format(year=_extract_year(result.period))
+                if "{year}" in rule.file_to else rule.file_to))
+        except (KeyError, IndexError, ValueError, InvalidModelOutput):
+            filename = directory = None
+    return {
+        "rule_matched": rule.key if rule else None,
+        "suggested_filename": filename,
+        "suggested_directory": directory,
+        "doc_type": result.doc_type,
+        "period": result.period,
+        "confidence": result.confidence,
+        "reasoning": result.reasoning,
+    }
+
+
+def _refusal_status(exc) -> int:
+    from docflow.llm.gateway import LocalOnlyMode, TransportFailure
+
+    if isinstance(exc, LocalOnlyMode):
+        return 409
+    if isinstance(exc, TransportFailure):
+        return 502
+    return 422
+
+
 @app.post("/api/unmatched/suggest")
 async def suggest_classification(request: Request):
-    """Ask the LLM to suggest classification for an unmatched file."""
+    """Ask the model (through CloudPromptGateway) to suggest filing for an archive PDF."""
+    from docflow.llm.gateway import CloudPromptGateway, Feature
+    from docflow.privacy.types import NoModelResult
+
     body = await request.json()
     source_path = body.get("path", "").strip()
     if not source_path:
         raise HTTPException(400, "path is required")
+    watch_folder = Path(os.path.expanduser(
+        _config.get("scan_watch_folder", "~/DocFlowExample/inbox")
+    ))
+    source = _confined_archive_pdf([_archive_root(), watch_folder], Path(source_path))
 
-    source = Path(source_path)
-    if not source.exists():
-        raise HTTPException(404, f"File not found: {source_path}")
-
-    # OCR the first page
-    from pdf2image import convert_from_path
-    import pytesseract
-
-    images = await asyncio.to_thread(
-        convert_from_path, str(source), first_page=1, last_page=1, dpi=150,
-    )
-    raw_text = ""
-    if images:
-        raw_text = await asyncio.to_thread(pytesseract.image_to_string, images[0])
-
-    from docflow.llm.client import chat_json
-    from docflow.config.rules_manager import load_rules_md
-
-    document_summary = {
-        "pages": list(range(1, len(PdfReader(str(source)).pages) + 1)),
-        "institution": "unknown",
-        "doc_type": "unknown",
-        "period": "unknown",
-        "account": "unknown",
-        "raw_text_preview": raw_text[:500],
-    }
-
-    rules_md = load_rules_md(_config)
-    if rules_md:
-        from docflow.llm.prompts import build_rules_md_classification_prompt
-        prompt = build_rules_md_classification_prompt(
-            document_summary,
-            rules_md,
-            _config.get("entities", []),
-            _config.get("family", []),
-            _config.get("user", {}),
-        )
-    else:
-        from docflow.llm.prompts import build_classification_prompt
-        prompt = build_classification_prompt(
-            document_summary,
-            _config.get("filing_rules", []),
-            _config.get("entities", []),
-            _config.get("family", []),
-            _config.get("user", {}),
-        )
-
+    gateway = CloudPromptGateway(_config)
+    if gateway.local_only:
+        raise HTTPException(409, {"code": "local_only"})
     try:
-        result = await asyncio.to_thread(chat_json, prompt, config=_config)
-        return result
-    except Exception as exc:
-        logger.exception("LLM suggestion failed")
-        raise HTTPException(500, f"LLM error: {str(exc)}")
+        raw_text, page_count = await asyncio.to_thread(_ocr_first_page, source)
+        return await asyncio.to_thread(_suggest_filing, gateway, raw_text, page_count,
+                                       Feature.UNMATCHED_SUGGESTION)
+    except NoModelResult as exc:
+        raise HTTPException(_refusal_status(exc), {"code": exc.code}) from None
 
 
 @app.get("/api/preview/file")
@@ -740,12 +786,16 @@ async def archive_logs():
 
 @app.get("/api/settings")
 async def get_settings():
-    """Return current config (mask sensitive data)."""
+    """Return current config (mask sensitive data) plus the privacy mode and warning."""
+    from docflow.llm.gateway import PSEUDONYMIZATION_WARNING
+
     safe = dict(_config)
     # Mask API key — just indicate if one is set
     if safe.get("llm_api_key"):
         safe["llm_api_key"] = "••••••••"
     safe.pop("openrouter_api_key", None)
+    safe.setdefault("privacy_mode", "cloud")
+    safe["privacy_warning"] = PSEUDONYMIZATION_WARNING
     return safe
 
 
@@ -753,10 +803,12 @@ async def get_settings():
 async def update_settings(request: Request):
     """Update config values."""
     body = await request.json()
+    if "privacy_mode" in body and body["privacy_mode"] not in ("cloud", "local_only"):
+        raise HTTPException(400, "privacy_mode must be 'cloud' or 'local_only'")
     allowed = {
         "confidence_threshold", "archive_root", "scan_watch_folder",
         "llm_provider", "llm_model", "llm_base_url", "llm_api_key",
-        "openrouter_model",
+        "openrouter_model", "privacy_mode",
     }
     for key in body:
         if key in allowed:
@@ -975,26 +1027,167 @@ async def health():
     }
 
 
+_CONNECTION_MESSAGES = {
+    "local_only": "Local-only mode is on: no model connection was attempted.",
+    "transport_unavailable": "The model provider is not configured or unavailable.",
+    "timeout": "The model provider timed out.",
+    "transport_error": "The model provider returned an error.",
+    "invalid_model_output": "The model provider returned an unexpected reply.",
+}
+
+
 @app.post("/api/settings/test-connection")
 async def test_connection():
-    """Test LLM connectivity with a trivial prompt."""
+    """Test model connectivity with a synthetic probe through CloudPromptGateway."""
+    from docflow.llm.gateway import CloudPromptGateway
+    from docflow.privacy.types import NoModelResult
+
     try:
-        from docflow.llm.client import _get_client
-        client = _get_client(_config)
-        # Send a trivial prompt to verify connectivity
-        response = await asyncio.to_thread(
-            client.chat.completions.create,
-            model=_config.get("llm_model") or _config.get("openrouter_model", "google/gemini-2.0-flash-001"),
-            messages=[{"role": "user", "content": "Reply with OK"}],
-            max_tokens=5,
-        )
-        reply = (response.choices[0].message.content or "").strip() if response.choices else ""
-        return {"status": "connected", "reply": reply, "model": response.model}
-    except Exception as exc:
-        return JSONResponse(
-            status_code=200,
-            content={"status": "error", "error": str(exc)},
-        )
+        result = await asyncio.to_thread(CloudPromptGateway(_config).test_connection)
+    except NoModelResult as exc:
+        return {
+            "status": "local_only" if exc.code == "local_only" else "error",
+            "error_code": exc.code,
+            "error": _CONNECTION_MESSAGES.get(exc.code, "The model call was refused."),
+        }
+    return {"status": "connected", "reply": "OK", "model": result.model}
+
+
+# ---------------------------------------------------------------------------
+# API v1: model features (scoped, routed exclusively through CloudPromptGateway)
+# ---------------------------------------------------------------------------
+
+class _V1Error(Exception):
+    def __init__(self, status: int, code: str, message: str) -> None:
+        super().__init__(message)
+        self.status, self.code, self.message = status, code, message
+
+
+@app.exception_handler(_V1Error)
+async def _v1_error_handler(request: Request, exc: _V1Error):
+    return JSONResponse(status_code=exc.status,
+                        content={"error": {"code": exc.code, "message": exc.message}})
+
+
+async def _v1_body(request: Request, model):
+    try:
+        return model.model_validate(await request.json(), strict=True)
+    except (ValidationError, ValueError):
+        raise _V1Error(422, "invalid_request", "Request body does not match the contract.") from None
+
+
+def _v1_require_state() -> None:
+    if _state_store is None:
+        raise _V1Error(503, "state_unavailable", "Local application state is not configured.")
+
+
+def _v1_scope(scope_id: str):
+    from docflow.state.repositories import ScopeRequiredError
+
+    try:
+        return _state_store.scopes.get(scope_id)
+    except ScopeRequiredError:
+        raise _V1Error(404, "scope_not_found", "Archive scope is not registered.") from None
+
+
+def _v1_gateway(scope):
+    """Per-request gateway confined to the scope root; local-only per config or scope."""
+    from docflow.llm.gateway import CloudPromptGateway
+
+    config = {**_config, "archive_root": scope.canonical_root}
+    if _state_store.settings.get(scope.id, "privacy_mode") == "local_only":
+        config["privacy_mode"] = "local_only"
+    return CloudPromptGateway(config)
+
+
+def _v1_privacy(gateway) -> dict:
+    from docflow.llm.gateway import PSEUDONYMIZATION_WARNING
+
+    return {"mode": "local_only" if gateway.local_only else "cloud",
+            "warning": PSEUDONYMIZATION_WARNING}
+
+
+def _v1_status(exc) -> str:
+    from docflow.llm.gateway import LocalOnlyMode, TransportFailure
+    from docflow.llm.schemas import InvalidModelOutput
+
+    if isinstance(exc, LocalOnlyMode):
+        return "local_only"
+    if isinstance(exc, TransportFailure):
+        return "unavailable"
+    if isinstance(exc, InvalidModelOutput):
+        return "invalid_model_output"
+    return "blocked"
+
+
+class _AskAIRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    archive_scope_id: str = Field(min_length=1, max_length=128)
+    relative_path: str = Field(min_length=1, max_length=1024)
+
+
+class _ConnectionTestRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    archive_scope_id: str = Field(min_length=1, max_length=128)
+
+
+@app.post("/api/v1/ask-ai")
+async def v1_ask_ai(request: Request):
+    """Pseudonymized filing suggestion for one archive-relative PDF in a scope."""
+    from docflow.llm.gateway import Feature
+    from docflow.privacy.types import NoModelResult
+    from docflow.state.repositories import UnsafeValueError, archive_relative
+
+    _v1_require_state()
+    body = await _v1_body(request, _AskAIRequest)
+    scope = _v1_scope(body.archive_scope_id)
+    try:
+        relative = archive_relative(body.relative_path)
+    except UnsafeValueError:
+        raise _V1Error(400, "invalid_path", "Path must be archive-relative.") from None
+    try:
+        root = Path(scope.canonical_root)
+        source = _confined_archive_pdf([root], root / relative)
+    except HTTPException as exc:
+        if exc.status_code == 404:
+            raise _V1Error(404, "file_not_found", "No PDF at that path.") from None
+        raise _V1Error(400, "invalid_path", "Path must resolve to a PDF inside the scope.") from None
+
+    gateway = _v1_gateway(scope)
+    result = {"status": "suggested", "error_code": None, "suggestion": None,
+              "privacy": _v1_privacy(gateway)}
+    if gateway.local_only:
+        result.update(status="local_only", error_code="local_only")
+        return result
+    try:
+        raw_text, page_count = await asyncio.to_thread(_ocr_first_page, source)
+        suggestion = await asyncio.to_thread(_suggest_filing, gateway, raw_text, page_count,
+                                             Feature.ASK_AI)
+    except NoModelResult as exc:
+        result.update(status=_v1_status(exc), error_code=exc.code)
+        return result
+    suggestion["suggested_relative_directory"] = suggestion.pop("suggested_directory")
+    result["suggestion"] = suggestion
+    return result
+
+
+@app.post("/api/v1/connection-test")
+async def v1_connection_test(request: Request):
+    """Verify provider connectivity with a synthetic probe for an explicit scope."""
+    from docflow.privacy.types import NoModelResult
+
+    _v1_require_state()
+    body = await _v1_body(request, _ConnectionTestRequest)
+    scope = _v1_scope(body.archive_scope_id)
+    gateway = _v1_gateway(scope)
+    result = {"status": "connected", "model": None, "error_code": None,
+              "privacy": _v1_privacy(gateway)}
+    try:
+        result["model"] = (await asyncio.to_thread(gateway.test_connection)).model
+    except NoModelResult as exc:
+        result.update(status="local_only" if exc.code == "local_only" else "error",
+                      error_code=exc.code)
+    return result
 
 
 @app.post("/api/settings/validate-paths")

@@ -1,8 +1,9 @@
 """Clustering: group PageRecords into DocumentCandidates.
 
 Strategy: LLM-first with rule-based fallback.
-The LLM sees OCR text + extracted signals and determines document boundaries.
-Rule-based clustering is only used when the LLM is unavailable.
+The LLM sees pseudonymized OCR text + extracted signals through CloudPromptGateway
+and determines document boundaries. Rule-based clustering is used whenever no
+validated model result is available (local-only mode, privacy block, failure).
 """
 from __future__ import annotations
 
@@ -107,7 +108,9 @@ def _build_candidates_from_groups(
 # Main entry point: LLM-first, rule-based fallback
 # ---------------------------------------------------------------------------
 
-def cluster_pages(page_records: list[PageRecord], config: dict) -> list[DocumentCandidate]:
+def cluster_pages(
+    page_records: list[PageRecord], config: dict, gateway=None
+) -> list[DocumentCandidate]:
     """Group *page_records* into document candidates.
 
     Strategy: LLM-first with rule-based fallback.
@@ -115,6 +118,8 @@ def cluster_pages(page_records: list[PageRecord], config: dict) -> list[Document
        and extracted signals, and determines document boundaries.
     2. If LLM fails (network error, bad response), fall back to rule-based.
     3. For single-page PDFs, skip LLM (nothing to cluster).
+
+    Pass the job's ``gateway`` so placeholders stay consistent across calls.
     """
     if not page_records:
         return []
@@ -124,7 +129,7 @@ def cluster_pages(page_records: list[PageRecord], config: dict) -> list[Document
         return _build_candidates_from_groups([page_records], source="single")
 
     # Try LLM clustering first
-    llm_candidates = _llm_cluster(page_records, config)
+    llm_candidates = _llm_cluster(page_records, config, gateway)
     if llm_candidates:
         candidates = llm_candidates
     else:
@@ -148,76 +153,35 @@ def cluster_pages(page_records: list[PageRecord], config: dict) -> list[Document
 # ---------------------------------------------------------------------------
 
 def _llm_cluster(
-    page_records: list[PageRecord], config: dict
+    page_records: list[PageRecord], config: dict, gateway=None
 ) -> list[DocumentCandidate] | None:
-    """Use OpenRouter LLM to cluster pages into documents.
+    """Cluster pages with the model through CloudPromptGateway.
 
-    Sends all pages with their OCR text and extracted signals.
-    Returns a list of DocumentCandidates, or None if the LLM call fails.
+    Returns a list of DocumentCandidates, or None when no validated result exists.
     """
-    from docflow.llm.client import chat_json
-    from docflow.llm.prompts import build_clustering_prompt
+    from docflow.llm.gateway import CloudPromptGateway
+    from docflow.privacy.types import NoModelResult
 
-    # Build rich page summaries for the prompt
-    page_summaries = []
-    for r in page_records:
-        text = r.raw_text.strip()
-        # Give the LLM substantial text — 800 chars is enough to identify
-        # letterheads, institutions, account numbers, and document type
-        first_lines = text[:800] if text else "(blank page)"
-
-        page_summaries.append({
-            "page_number": r.page_number,
-            "first_lines": first_lines,
-            "institution_hint": r.institution,
-            "account_hint": r.account_hint,
-            "period_hint": r.period_hint,
-            "doc_type_hint": r.doc_type_hint,
-            "page_of_n": r.page_of_n,
-        })
-
-    prompt = build_clustering_prompt(page_summaries)
-
+    gateway = gateway or CloudPromptGateway(config)
     try:
-        result = chat_json(prompt, config=config)
-    except Exception:
-        logger.exception("LLM clustering call failed")
-        return None
-
-    # Parse LLM response into DocumentCandidates
-    documents = result.get("documents", [])
-    if not documents:
-        logger.warning("LLM returned no documents")
+        documents = gateway.cluster(page_records)
+    except NoModelResult as exc:
+        logger.info("Model clustering unavailable (%s); using local rules", exc.code)
         return None
 
     candidates = []
-    all_assigned: set[int] = set()
-
     for doc in documents:
-        pages = doc.get("pages", [])
-        if not pages:
-            continue
-
-        all_assigned.update(pages)
-
         # Cross-reference with PageRecords to get raw signals
-        doc_records = [r for r in page_records if r.page_number in pages]
+        doc_records = [r for r in page_records if r.page_number in doc.pages]
         institutions = [r.institution for r in doc_records]
         accounts = [r.account_hint for r in doc_records]
         periods = [r.period_hint for r in doc_records]
         doc_types = [r.doc_type_hint for r in doc_records]
 
-        # Prefer OCR-extracted institution, fall back to LLM's guess
-        institution = (
-            _majority(institutions)
-            or doc.get("institution")
-            or "unknown"
-        )
-        period = _majority(periods) or doc.get("period")
-        doc_type = _majority(doc_types) or doc.get("doc_type")
-
-        # LLM provides its own confidence per document
-        llm_confidence = doc.get("confidence", 0.75)
+        # Prefer OCR-extracted institution, fall back to the model's guess
+        institution = _majority(institutions) or doc.institution or "unknown"
+        period = _majority(periods) or doc.period
+        doc_type = _majority(doc_types) or doc.doc_type
 
         raw_signals = {
             "institutions": institutions,
@@ -227,34 +191,25 @@ def _llm_cluster(
             "page_of_n": [r.page_of_n for r in doc_records],
             "raw_texts": [r.raw_text for r in doc_records],
             "clustering_source": "llm",
-            "llm_reasoning": doc.get("reasoning", ""),
-            "llm_institution": doc.get("institution"),
-            "llm_doc_type": doc.get("doc_type"),
+            "llm_reasoning": doc.reasoning,
+            "llm_institution": doc.institution,
+            "llm_doc_type": doc.doc_type,
         }
 
         candidate = DocumentCandidate(
-            pages=sorted(pages),
+            pages=doc.pages,
             institution=institution,
             account=_majority(accounts),
             period=period,
             doc_type=doc_type,
-            clustering_confidence=round(llm_confidence, 3),
+            clustering_confidence=round(doc.confidence, 3),
             raw_signals=raw_signals,
         )
         candidates.append(candidate)
         logger.info(
-            "LLM cluster: pages %s → %s (doc_type=%s, conf=%.2f, reason=%s)",
-            candidate.pages, candidate.institution,
-            candidate.doc_type, llm_confidence,
-            doc.get("reasoning", "")[:80],
+            "LLM cluster: pages %s (doc_type=%s, conf=%.2f)",
+            candidate.pages, candidate.doc_type, doc.confidence,
         )
-
-    # Verify all pages are assigned
-    expected = {r.page_number for r in page_records}
-    if all_assigned != expected:
-        missing = expected - all_assigned
-        logger.warning("LLM missed pages %s — falling back to rule-based", missing)
-        return None
 
     return candidates
 

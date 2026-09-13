@@ -187,6 +187,15 @@ class _Repository:
 
 
 class ScopeRepository(_Repository):
+    def get(self, scope_id: str) -> ArchiveScope:
+        """Return a registered scope; unknown or missing IDs raise ScopeRequiredError."""
+        self.require_scope(scope_id)
+        row = self.conn.execute(
+            "SELECT id, canonical_root, root_fingerprint FROM archive_scopes WHERE id = ?",
+            (scope_id,),
+        ).fetchone()
+        return ArchiveScope(*row)
+
     def register(self, root: Path, *, home: Path, touch: bool = True) -> ArchiveScope:
         """Validate and register an archive root (``POST /api/v1/archive-scopes``)."""
         canonical = str(validate_archive_root(root, home=home, state_root=self.db.paths.root))

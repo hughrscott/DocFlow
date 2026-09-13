@@ -30,7 +30,10 @@ def utc_now() -> str:
 def connect(path: Path, *, readonly: bool = False) -> sqlite3.Connection:
     """Open a connection in explicit-transaction mode with foreign keys enforced."""
     target = f"{Path(path).resolve().as_uri()}?mode=ro" if readonly else str(path)
-    conn = sqlite3.connect(target, isolation_level=None, timeout=5.0, uri=readonly)
+    # The local server uses the single writer from its event-loop thread, which may
+    # differ from the thread that opened it; the file lock still enforces one writer.
+    conn = sqlite3.connect(target, isolation_level=None, timeout=5.0, uri=readonly,
+                           check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     if conn.execute("PRAGMA foreign_keys").fetchone()[0] != 1:

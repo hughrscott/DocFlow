@@ -236,3 +236,22 @@ def test_wal_and_lock_stay_in_state_root(state_root: Path, archive_root: Path) -
         assert db.connection.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
         assert db.paths.wal.exists() and db.paths.lock.exists()
     assert tree_digest(archive_root) == before
+
+
+def test_single_writer_connection_is_usable_from_the_server_event_loop_thread(
+    state_root: Path,
+) -> None:
+    import threading
+
+    errors: list[BaseException] = []
+    with StateDatabase(StatePaths(state_root)) as db:
+        def serve() -> None:
+            try:
+                db.connection.execute("SELECT COUNT(*) FROM archive_scopes").fetchone()
+            except BaseException as exc:  # noqa: BLE001 - surfaced to the main thread
+                errors.append(exc)
+
+        worker = threading.Thread(target=serve)
+        worker.start()
+        worker.join()
+    assert errors == []

@@ -17,6 +17,7 @@ def record_correction(
     corrected_filename: str,
     corrected_directory: str,
     config: dict,
+    gateway=None,
 ) -> None:
     """Record a filing correction and update rules.md if appropriate.
 
@@ -25,6 +26,7 @@ def record_correction(
         corrected_filename: The corrected filename.
         corrected_directory: The corrected directory (relative to archive root).
         config: Pipeline config.
+        gateway: Optional CloudPromptGateway; one is created per correction otherwise.
     """
     archive_root = Path(os.path.expanduser(
         config.get("archive_root", "~/DocFlowExample/archive")
@@ -61,68 +63,30 @@ def record_correction(
                 corrected_filename)
 
     # Try to add a rule to rules.md using LLM
-    _learn_rule_from_correction(correction, config)
+    _learn_rule_from_correction(correction, config, gateway)
 
 
-def _learn_rule_from_correction(correction: dict, config: dict) -> None:
-    """Use the LLM to generate a new rule for rules.md based on a correction."""
-    from docflow.config.rules_manager import load_rules_md, append_rule
+def _learn_rule_from_correction(correction: dict, config: dict, gateway=None) -> None:
+    """Ask the model (through CloudPromptGateway) whether a correction implies a new rule."""
+    from docflow.config.rules_manager import append_rule, load_rules_md, parse_rules_md
+    from docflow.llm.gateway import CloudPromptGateway, LocalRule
+    from docflow.privacy.types import NoModelResult
 
     rules_md = load_rules_md(config)
     if not rules_md:
         return
 
+    gateway = gateway or CloudPromptGateway(config, rules_md=rules_md)
+    rules = [LocalRule.from_rules_md(r) for r in parse_rules_md(rules_md)]
     try:
-        from docflow.llm.client import chat_json
-    except Exception:
-        logger.debug("LLM not available for rule learning")
+        proposal = gateway.learn_rule(correction, rules)
+    except NoModelResult as exc:
+        logger.info("Rule learning unavailable (%s)", exc.code)
         return
 
-    prompt = f"""A user corrected a document filing decision. Based on this correction,
-should we add a new rule to the filing rules?
-
-CORRECTION:
-  Institution: {correction.get('institution', 'unknown')}
-  Document type: {correction.get('doc_type', 'unknown')}
-  Original filename: {correction.get('original_filename', '?')}
-  Original directory: {correction.get('original_directory', '?')}
-  Corrected filename: {correction.get('corrected_filename', '?')}
-  Corrected directory: {correction.get('corrected_directory', '?')}
-  Text preview: {correction.get('raw_text_preview', '(none)')}
-
-EXISTING RULES (for context — avoid duplicating these):
----
-{rules_md[:3000]}
----
-
-INSTRUCTIONS:
-1. Determine if this correction represents a NEW category of document that isn't
-   covered by any existing rule.
-2. If yes, generate a new rule in the following format. The rule should be general
-   enough to catch similar documents in the future.
-3. If an existing rule already covers this type of document (and the correction was
-   just fixing a one-off mistake), set "add_rule" to false.
-
-Respond with JSON:
-{{
-  "add_rule": true or false,
-  "rule_name": "Human-readable rule name (used as the ## heading)",
-  "rule_body": "The rule body in markdown format, e.g.:\\n- **Institution**: ...\\n- **Document types**: ...\\n- **File to**: ...\\n- **Filename**: ...",
-  "reasoning": "why this rule should or should not be added"
-}}"""
-
-    try:
-        result = chat_json(prompt, config=config)
-    except Exception:
-        logger.debug("LLM rule learning call failed")
-        return
-
-    if result.get("add_rule") and result.get("rule_name") and result.get("rule_body"):
-        append_rule(config, result["rule_name"], result["rule_body"])
-        logger.info(
-            "Learned new rule from correction: %s — %s",
-            result["rule_name"], result.get("reasoning", ""),
-        )
+    if proposal is not None:
+        append_rule(config, proposal.rule_name, proposal.body)
+        logger.info("Learned new rule from correction: %s", proposal.rule_name)
 
 
 def suggest_rules(config: dict) -> list[dict]:

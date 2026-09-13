@@ -5,6 +5,13 @@
 archive_root: ~/DocFlowExample/archive
 scan_watch_folder: ~/DocFlowExample/inbox
 confidence_threshold: 0.75
+
+# Model privacy mode. "cloud" sends only locally pseudonymized text (never images)
+# to the configured model provider; "local_only" never calls a model and files with
+# local rules and the review queue. Pseudonymization is not anonymity: undetected
+# personal data can still leave the machine in cloud mode. Prefer local_only for
+# especially sensitive documents.
+privacy_mode: cloud
 ollama_model: llama3.2
 ollama_host: http://localhost:11434
 

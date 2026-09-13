@@ -686,14 +686,22 @@ def _run_pipeline(input_pdf: Path, config_path: Path) -> None:
     console.print("\n[bold]2. OCR + signal extraction...[/bold]")
     page_records = analyze_pages(page_images)
 
+    # One gateway per job: placeholders are consistent within this scan only.
+    from docflow.llm.gateway import PSEUDONYMIZATION_WARNING, CloudPromptGateway
+    gateway = CloudPromptGateway(config)
+    if gateway.local_only:
+        console.print("[dim]Local-only mode: no model calls will be made.[/dim]")
+    else:
+        console.print(f"[dim]{PSEUDONYMIZATION_WARNING}[/dim]")
+
     # 3. Clustering
     console.print("\n[bold]3. Clustering pages into documents...[/bold]")
-    candidates = cluster_pages(page_records, config)
+    candidates = cluster_pages(page_records, config, gateway=gateway)
     console.print(f"   {len(candidates)} document candidates identified")
 
     # 4. Classification
     console.print("\n[bold]4. Classifying and routing...[/bold]")
-    decisions = classify_candidates(candidates, config)
+    decisions = classify_candidates(candidates, config, gateway=gateway)
 
     # 5. Confidence gate
     console.print("\n[bold]5. Confidence gate...[/bold]")
