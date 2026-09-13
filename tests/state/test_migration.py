@@ -9,7 +9,7 @@ import pytest
 import yaml
 
 from docflow.state import migration
-from docflow.state.backup import write_support_export
+from docflow.state.backup import create_backup, write_support_export
 from docflow.state.database import StateDatabase
 from docflow.state.migration import (
     LegacySources,
@@ -19,7 +19,7 @@ from docflow.state.migration import (
 )
 from docflow.state.paths import StatePaths
 from docflow.state.repositories import StateStore
-from tests.state.conftest import tree_digest
+from tests.state.conftest import _write_pdf, tree_digest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 # Sentinels are assembled at runtime so no credential-shaped literal is tracked.
@@ -30,6 +30,8 @@ NOTES = "MODEL-NOTES-" + "SENTINEL-2c9d"
 ACCOUNT = "ACCOUNT-" + "SENTINEL-4e1b"
 PLACEHOLDER = "PLACEHOLDER-" + "SENTINEL-5b1c"
 SENTINELS = (SECRET, SECOND_SECRET, RAW_OCR, NOTES, ACCOUNT, PLACEHOLDER)
+# Harmless value in an allowed field: proves byte scans can see stored content.
+ALLOWED = "ALLOWED-" + "INSTITUTION-SENTINEL-8a6f"
 STATE_TABLES = ("archive_scopes", "settings", "jobs", "job_pages", "review_items",
                 "file_records", "operations", "operation_steps", "corrections")
 
@@ -237,6 +239,29 @@ def test_repeated_migration_yields_identical_rows_and_ids(
     assert sum(first.imported.values()) > 0
 
 
+def test_in_archive_source_appearing_later_keeps_identity(
+    db: StateDatabase, legacy: LegacySources
+) -> None:
+    late = legacy.archive_root / "BeenOrganized033026" / "Scan-late.pdf"
+    queue_path = legacy.archive_root / "review_queue.json"
+    queue = json.loads(queue_path.read_text())
+    queue["items"].append(_queue_item("1_120000", late, [1], "pending"))
+    queue_path.write_text(json.dumps(queue))
+    assert not late.exists()
+
+    first = migrate_legacy(db, legacy)
+    rows_after_first = _snapshot(db)
+    _write_pdf(late, 1, 612)
+    second = migrate_legacy(db, legacy)
+
+    assert _snapshot(db) == rows_after_first
+    assert sum(second.imported.values()) == 0
+    assert first.imported["jobs"] == 3 and first.imported["review_items"] == 5
+    conn = db.connection
+    assert conn.execute("SELECT COUNT(*) FROM jobs").fetchone()[0] == 3
+    assert conn.execute("SELECT COUNT(*) FROM review_items").fetchone()[0] == 5
+
+
 def test_migration_ids_are_stable_across_fresh_databases(
     tmp_path: Path, legacy: LegacySources
 ) -> None:
@@ -289,8 +314,13 @@ def test_malformed_legacy_queue_fails_closed(db: StateDatabase, legacy: LegacySo
 def test_no_secrets_raw_ocr_maps_or_absolute_paths_in_db_backup_or_export(
     db: StateDatabase, legacy: LegacySources, tmp_path: Path
 ) -> None:
+    queue_path = legacy.archive_root / "review_queue.json"
+    queue = json.loads(queue_path.read_text())
+    queue["items"][0]["institution"] = ALLOWED
+    queue_path.write_text(json.dumps(queue))
     report = migrate_legacy(db, legacy)
     conn = db.connection
+    [canonical_root] = [r[0] for r in conn.execute("SELECT canonical_root FROM archive_scopes")]
     dumped = []
     for table in STATE_TABLES:
         for row in conn.execute(f"SELECT * FROM {table}"):
@@ -299,17 +329,31 @@ def test_no_secrets_raw_ocr_maps_or_absolute_paths_in_db_backup_or_export(
                 values.pop("canonical_root")  # the one registered scope root
             dumped.append(json.dumps(values))
     text = "\n".join(dumped)
+    assert ALLOWED in text
     for sentinel in SENTINELS:
         assert sentinel not in text
     assert str(tmp_path) not in text
     assert '"/' not in text
 
-    backup_bytes = report.backup_path.read_bytes()
-    live_bytes = db.paths.database.read_bytes()
+    # The pre-migration backup predates the import, so scan a fresh post-migration
+    # backup, plus the live database with its WAL/SHM where committed rows still live.
+    post_backup = create_backup(db, label="post-migration")
+    assert post_backup != report.backup_path
+    live_paths = (db.paths.database, db.paths.wal, db.paths.shm)
+    assert db.paths.wal.stat().st_size > 0
+    evidence = {
+        "post_migration_backup": post_backup.read_bytes(),
+        "live_db_wal_shm": b"".join(p.read_bytes() for p in live_paths if p.exists()),
+    }
     export_text = write_support_export(db).read_text()
+    for name, blob in evidence.items():
+        assert ALLOWED.encode() in blob, f"positive control not found in {name}"
+        assert canonical_root.encode() in blob, name
+        for sentinel in SENTINELS:
+            assert sentinel.encode() not in blob, name
+        # canonical_root is the only permitted absolute path in stored bytes.
+        assert str(tmp_path).encode() not in blob.replace(canonical_root.encode(), b""), name
     for sentinel in SENTINELS:
-        assert sentinel.encode() not in backup_bytes
-        assert sentinel.encode() not in live_bytes
         assert sentinel not in export_text
     assert str(tmp_path) not in export_text
 

@@ -103,6 +103,36 @@ def test_constraints_reject_invalid_rows(state_root: Path) -> None:
             conn.execute(record, ("f4", "s1", "C/d.pdf", "h", "[1]", "copy", "t"))
 
 
+def test_correction_cannot_reference_review_item_in_another_scope(state_root: Path) -> None:
+    with StateDatabase(StatePaths(state_root)) as db:
+        conn = db.connection
+        for scope in ("scope-a", "scope-b"):
+            conn.execute(
+                "INSERT INTO archive_scopes(id, canonical_root, root_fingerprint, created_at,"
+                " last_seen_at) VALUES (?, ?, ?, 't', 't')", (scope, f"/{scope}", f"fp-{scope}")
+            )
+        conn.execute(
+            "INSERT INTO jobs(id, archive_scope_id, source_fingerprint, source_name, "
+            "source_locator, status, attempt, created_at, updated_at) "
+            "VALUES ('job-a', 'scope-a', 'fp', 'a.pdf', 'upload:a.pdf', 'review', 0, 't', 't')"
+        )
+        conn.execute(
+            "INSERT INTO review_items(id, archive_scope_id, job_id, candidate_json, confidence, "
+            "status, created_at, updated_at) "
+            "VALUES ('review-a', 'scope-a', 'job-a', '{}', 0.5, 'pending', 't', 't')"
+        )
+        correction = (
+            "INSERT INTO corrections(id, archive_scope_id, review_item_id, "
+            "normalized_features_json, chosen_relative_directory, created_at) "
+            "VALUES (?, ?, 'review-a', '{}', 'Tax/2026', 't')"
+        )
+        with pytest.raises(sqlite3.IntegrityError):
+            conn.execute(correction, ("correction-b", "scope-b"))
+        conn.execute(correction, ("correction-a", "scope-a"))
+        assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
+        assert [r[0] for r in conn.execute("SELECT id FROM corrections")] == ["correction-a"]
+
+
 def test_migration_checksum_is_deterministic_and_recorded(state_root: Path) -> None:
     first = [migration_checksum(m) for m in MIGRATIONS]
     assert first == [migration_checksum(m) for m in MIGRATIONS]

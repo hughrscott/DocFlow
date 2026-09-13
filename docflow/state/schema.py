@@ -116,6 +116,7 @@ CREATE TABLE review_items (
     updated_at TEXT NOT NULL,
     CHECK (suggested_relative_directory IS NULL OR
            substr(suggested_relative_directory, 1, 1) NOT IN ('/', '\\', '~')),
+    UNIQUE (id, archive_scope_id),
     FOREIGN KEY (job_id, archive_scope_id) REFERENCES jobs(id, archive_scope_id)
 );
 CREATE INDEX review_items_scope_status ON review_items(archive_scope_id, status);
@@ -170,11 +171,12 @@ CREATE TABLE operation_steps (
 CREATE TABLE corrections (
     id TEXT PRIMARY KEY,
     archive_scope_id TEXT NOT NULL REFERENCES archive_scopes(id),
-    review_item_id TEXT NOT NULL REFERENCES review_items(id),
+    review_item_id TEXT NOT NULL,
     normalized_features_json TEXT NOT NULL CHECK (json_valid(normalized_features_json)),
     chosen_rule_id TEXT,
     chosen_relative_directory TEXT NOT NULL {_relative("chosen_relative_directory")},
-    created_at TEXT NOT NULL
+    created_at TEXT NOT NULL,
+    FOREIGN KEY (review_item_id, archive_scope_id) REFERENCES review_items(id, archive_scope_id)
 );
 """
 

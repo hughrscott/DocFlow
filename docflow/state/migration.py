@@ -242,15 +242,20 @@ def _import_reviews(imp: _Importer) -> None:
 def _import_review_group(imp: _Importer, source: str, group: list[dict]) -> None:
     relative = imp.relative(source)
     pdf = imp.archive_file(relative)
-    if relative is not None and pdf is not None:
-        locator = f"archive:{relative}"
+    # Identity follows the lexical archive-relative path so a source that appears
+    # between runs maps to the same rows; availability only shapes locator/fingerprint.
+    if relative is not None:
         source_key = relative
+    else:
+        source_key = "external:" + hashlib.sha256(source.encode()).hexdigest()
+    if pdf is not None:
+        locator = f"archive:{relative}"
         fingerprint = f"sha256:{_sha256(pdf)}"
     else:
         imp.report.missing_pdfs += 1
-        source_key = "external:" + hashlib.sha256(source.encode()).hexdigest()
         locator = f"unavailable:{_optional_name(Path(source).name) or 'legacy-source'}"
-        fingerprint = source_key
+        fingerprint = (source_key if relative is None
+                       else "missing:" + hashlib.sha256(relative.encode()).hexdigest())
     job_id = stable_id("legacy_job", imp.scope_id, source_key)
     statuses = [str(i.get("status")) if i.get("status") in REVIEW_STATUSES else "pending"
                 for i in group]
