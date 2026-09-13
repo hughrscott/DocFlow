@@ -152,7 +152,8 @@ def test_record_correction_rule_learning_is_intercepted(intercept, tmp_path) -> 
         "file_to": fakes.data(r)["correction"]["corrected_directory"],
         "filename": fakes.data(r)["correction"]["corrected_filename"],
         "reasoning": "new category"})]
-    record_correction(original, s.CORRECTION_FILENAME, str(archive / s.CORRECTION_DIR), config)
+    record_correction(original, s.CORRECTION_FILENAME, str(archive / s.CORRECTION_DIR), config,
+                      log_path=tmp_path / "state" / "corrections.json")
     [request] = intercept.requests
     assert request.feature is Feature.RULE_LEARNING
     s.assert_no_sentinels(request.body)
@@ -169,9 +170,11 @@ def test_record_correction_rejected_or_local_only_learns_nothing(intercept, tmp_
     before = (tmp_path / "rules.md").read_text()
     intercept.responses = [json.dumps({"add_rule": True, "rule_name": "X\n## Injected",
                                        "file_to": "A", "filename": "a.pdf"})]
-    record_correction(original, s.CORRECTION_FILENAME, str(archive / s.CORRECTION_DIR), config)
+    record_correction(original, s.CORRECTION_FILENAME, str(archive / s.CORRECTION_DIR), config,
+                      log_path=tmp_path / "state" / "corrections.json")
     assert len(intercept.requests) == 1
     record_correction(original, s.CORRECTION_FILENAME, str(archive / s.CORRECTION_DIR),
-                      {**config, "privacy_mode": "local_only"})
+                      {**config, "privacy_mode": "local_only"},
+                      log_path=tmp_path / "state" / "corrections.json")
     assert len(intercept.requests) == 1
     assert (tmp_path / "rules.md").read_text() == before

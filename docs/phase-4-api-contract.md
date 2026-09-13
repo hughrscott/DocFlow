@@ -323,13 +323,14 @@ unfinished job.
 | 409 | `idempotency_key_reused` | same key, different source |
 | 503 | `state_unavailable` | state or durable filer not configured |
 
-Legacy adapter: `POST /api/process {"path": ...}` still exists for the dashboard, but only
-accepts a regular `.pdf` inside the upload folder or the configured watch folder (no
-traversal, no symlinks); anything else is `400`. `/api/upload` is unchanged.
+Dashboard adapter: `POST /api/process {"path": ...}` maps the path returned by
+`POST /api/upload` (or a PDF in the configured watch folder) to an `upload:`/`watch:`
+handle and runs the durable processing service of section 14; any other path is `400`.
 
 ## 10. Local bind (X03)
 
-`docflow ui` and `docflow review` bind to `127.0.0.1` by default. `--host` accepts only
+`docflow ui` and `docflow review` (an alias that serves the same durable UI; open `/review`)
+bind to `127.0.0.1` by default. `--host` accepts only
 `localhost` or a loopback IP literal (`127.0.0.0/8`, `::1`); `0.0.0.0`, `::`, LAN addresses
 and host names are rejected before the server starts (no DNS lookup). There is no override.
 
@@ -353,14 +354,15 @@ and host names are rejected before the server starts (no DNS lookup). There is n
 
 - Linux-tested only; Mac acceptance (launch on loopback, durable undo after a browser
   reload, iCloud behavior) is pending human execution.
-- Durable review items are created by `DurableFiler` filing (`POST /api/v1/jobs` admission
-  plus the backend filing service). The legacy `/api/process` pipeline and the CLI pipeline
-  still write the legacy `review_queue.json`; those legacy items are not listed by
-  `/api/v1/review-items` and are not migrated automatically at startup (the Phase 1
-  migration remains an explicit backend step).
+- Pre-existing legacy `review_queue.json` items (from releases before this one) are not
+  imported at startup and are not listed; the Phase 1 migration remains an explicit,
+  non-destructive backend step. Everything processed now is durable (section 14).
 - No page previews for durable review items (the preview pane shows its placeholder); no
   undo of `file_job` operations; no actions for items without page references
-  (privacy-blocked).
+  (privacy-blocked). `POST /api/reprocess/{id}` returns `409`; retry failed jobs with
+  `POST /api/v1/jobs/{id}/retry`.
+- The run summary files (`MailArchivingSummary.xlsx/.txt`) are no longer produced; the
+  durable job record (`GET /api/v1/jobs/{id}`, CLI console output) replaces them.
 - Interrupted filing jobs are not auto-resumed at UI startup; use
   `POST /api/v1/jobs/{id}/retry`. Interrupted review actions and undos resume automatically
   on the next review action or undo.
@@ -381,7 +383,7 @@ before serving; routes are not reachable until this succeeds:
 4. Take the single-writer lock, open/migrate `state.sqlite3`, and register the archive root
    as an archive scope (idempotent: the same root keeps the same scope ID across restarts).
    That scope becomes the active scope returned by section 3.
-5. Configure the durable filer with the upload folder (`<archive_root>/_uploads`, the folder
+5. Configure the durable filer with the upload folder (`<state>/cache/uploads`, the folder
    used by `POST /api/upload`) and, if set, `scan_watch_folder` as the only job-source roots.
 6. Bind to loopback (section 10) and serve. On exit the state is released and the lock
    dropped.
@@ -398,3 +400,49 @@ HTTP callers can never choose the archive root, the state location or the scope;
 ID is only read from section 3 and echoed back. Covered by
 `tests/review_actions/test_localhost_bootstrap.py` (bootstrap, fail-closed cases, and
 list → approve → restart → undo through the configured app).
+
+## 14. Processing workflow and storage planes
+
+There is one processing path. The dashboard upload, `docflow --input <pdf>`, `docflow batch`
+and `docflow watch` all run `docflow.filing.processing.process_scan`:
+
+1. **Handle.** Web: `POST /api/upload` stores the bytes in `<state>/cache/uploads` under a
+   plain `.pdf` name that never replaces an existing upload (names with `/`, `..`, a leading
+   `.`/`~`, or not ending in `.pdf` → `400`); `POST /api/process` turns that path, or a PDF
+   inside `scan_watch_folder`, into an `upload:`/`watch:` handle (anything else → `400`;
+   no state → `503`). CLI: a file inside the watch folder uses `watch:`; any other input is
+   copied (never linked or moved) into the upload folder and left untouched.
+2. **Admission** by `DurableFiler.admit` (stability checks, page fingerprints, job `ready`).
+3. **Local OCR, clustering, classification and confidence gate** (model calls only through
+   `CloudPromptGateway`; local-only mode makes none). Job `ocr → classified`; a failure moves
+   the job to `failed` with `last_error_code: "processing_failed"`.
+4. **Journaled filing** by `DurableFiler.file_job`: auto-filed documents whose destination
+   is a valid archive-relative `.pdf` become `filed`; everything else becomes a durable
+   review item with page references (`reason`: `low_confidence` with the rule's suggestion,
+   `unmatched` without a suggestion, or `unsafe_destination`). The original is retained,
+   collision-safe, in `<archive_root>/BeenOrganized<mmddyy>/`; a watch-folder or upload
+   source is removed only after every output verifies.
+5. Review items are immediately visible in `GET /api/v1/review-items` and actionable with
+   approve/correct/skip/batch and undo (sections 4–7). `GET /api/process/status/{id}` is
+   in-memory progress only; its `durable_job_id` names the durable job.
+
+**Archive plane** receives only filed PDFs and retained originals. **Application state**
+holds jobs, pages, review items, operations, corrections (`state.sqlite3`), the upload
+folder, preview cache (`cache/previews`) and the corrections log used by `docflow learn`
+(`logs/corrections_log.json`). No `review_queue.json`, `MailArchivingSummary.*`,
+`filing_log_*.json`, hash index, preview cache or corrections log is written to the archive.
+
+**Retired legacy state system.** `/api/queue`, `/api/queue/{approve,correct,skip}/{id}`,
+`/api/preview/{item}/{page}`, the separate legacy review server and the archive queue and
+summary writers are removed. Existing legacy files in the archive (`review_queue.json`,
+summaries, filing logs, preview caches) are never read as active state, never modified and
+never deleted at startup or during processing; `/api/search` and `/api/archive/logs` may
+still read old filing logs for display.
+
+**Unmatched tab.** `POST /api/unmatched/reclassify` accepts only a PDF inside
+`<archive_root>/_Unmatched` or `_Skipped` (otherwise `403`/`404`), validates
+`directory`/`filename` with the section 5 destination rules (`400`), places the file under a
+collision-safe name without replacing anything, removes the source only after the copy
+verifies, and returns an archive-relative `target`.
+
+Covered by `tests/review_actions/test_processing_bridge.py`.

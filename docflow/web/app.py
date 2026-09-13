@@ -5,7 +5,6 @@ import asyncio
 import json
 import logging
 import os
-import shutil
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
@@ -16,11 +15,8 @@ from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
-from pypdf import PdfReader, PdfWriter
+from pypdf import PdfReader
 from sse_starlette.sse import EventSourceResponse
-
-from docflow.filing.filer import ensure_directory
-from docflow.review.queue import load_review_queue, save_review_queue, update_queue_item
 
 logger = logging.getLogger(__name__)
 
@@ -111,8 +107,12 @@ def _archive_root() -> Path:
 
 
 def _upload_dir() -> Path:
-    d = _archive_root() / "_uploads"
-    d.mkdir(parents=True, exist_ok=True)
+    """The durable filer's ``upload`` root in application state (never the archive)."""
+    roots = getattr(_filer, "source_roots", {})
+    if "upload" not in roots:
+        raise HTTPException(503, "Local application state is not configured.")
+    d = roots["upload"]
+    d.mkdir(parents=True, exist_ok=True, mode=0o700)
     return d
 
 
@@ -147,56 +147,87 @@ async def settings_page():
 @app.post("/api/upload")
 async def upload_pdf(file: Annotated[UploadFile, File()]):
     """Upload a PDF for processing."""
-    if not file.filename or not file.filename.lower().endswith(".pdf"):
-        raise HTTPException(400, "Only PDF files are supported")
+    from docflow.filing.operations import collision_candidates
+    from docflow.state.repositories import UnsafeValueError, safe_name
 
-    upload_path = _upload_dir() / file.filename
+    try:
+        name = safe_name(file.filename or "")
+    except UnsafeValueError:
+        name = ""
+    if not name.lower().endswith(".pdf") or name.startswith((".", "~")) or ":" in name:
+        raise HTTPException(400, "Only PDF files with a plain file name are supported")
+
     content = await file.read()
-    await asyncio.to_thread(upload_path.write_bytes, content)
+    upload_dir = _upload_dir()
 
-    return {"filename": file.filename, "path": str(upload_path), "size": len(content)}
+    def write_new() -> Path:
+        """Write into the upload folder under a new name; never replace an existing upload."""
+        for relative in collision_candidates(".", name):
+            path = upload_dir / Path(relative).name
+            try:
+                with open(path, "xb") as fh:
+                    fh.write(content)
+                return path
+            except FileExistsError:
+                continue
+        raise HTTPException(409, "Too many uploads with this name")
+
+    upload_path = await asyncio.to_thread(write_new)
+    return {"filename": upload_path.name, "path": str(upload_path), "size": len(content)}
 
 
-def _legacy_process_source(raw: object) -> Path:
-    """A PDF inside the upload folder or configured watch folder; never an arbitrary path."""
+def _legacy_process_locator(raw: object) -> str:
+    """Map an absolute path from ``/api/upload`` or the watch folder to a source handle.
+
+    Only files beneath the durable filer's configured ``upload``/``watch`` roots are
+    accepted (no traversal, no symlinks); any other caller-supplied path is rejected.
+    """
     from docflow.filing.operations import confined
-    from docflow.state.repositories import UnsafeValueError
+    from docflow.state.repositories import UnsafeValueError, validate_source_locator
 
     candidate = Path(raw) if isinstance(raw, str) and raw else None
-    watch_folder = Path(os.path.expanduser(
-        _config.get("scan_watch_folder", "~/DocFlowExample/inbox")))
-    for root in (_upload_dir(), watch_folder) if candidate and candidate.is_absolute() else ():
+    roots = _filer.source_roots if candidate and candidate.is_absolute() else {}
+    for scheme in ("upload", "watch"):
+        if scheme not in roots:
+            continue
         try:
-            relative = candidate.relative_to(root)
-            path = confined(root, relative.as_posix())
+            relative = candidate.relative_to(roots[scheme]).as_posix()
+            locator = validate_source_locator(f"{scheme}:{relative}")
+            path = confined(roots[scheme], relative)
         except (ValueError, UnsafeValueError):
             continue
         if path.is_file() and path.suffix.lower() == ".pdf":
-            return path
+            return locator
     raise HTTPException(400, "PDF must be an uploaded file or in the configured watch folder")
 
 
 @app.post("/api/process")
 async def process_pdf(request: Request):
-    """Start processing a PDF. Returns immediately with a job ID.
-    Use /api/process/status/{job_id} to poll for progress."""
+    """Start durable processing of an uploaded or watch-folder PDF; returns a progress ID.
+
+    Poll ``/api/process/status/{job_id}``; the result is a durable job whose review
+    items appear in ``GET /api/v1/review-items``.
+    """
+    if _state_store is None or _filer is None or _active_scope_id is None:
+        raise HTTPException(503, "Local application state is not configured.")
     body = await request.json()
-    pdf_path = str(_legacy_process_source(body.get("path")))
+    locator = _legacy_process_locator(body.get("path"))
 
     job_id = str(uuid.uuid4())[:8]
     _processing_state[job_id] = {
         "status": "starting",
-        "pdf": pdf_path,
+        "pdf": locator.partition(":")[2].rsplit("/", 1)[-1],
         "progress": 0,
         "step": "Initializing",
         "documents": [],
         "auto_filed": 0,
         "review_queue": 0,
+        "durable_job_id": None,
         "started": _local_iso(),
     }
 
     # Run pipeline in background
-    asyncio.create_task(_run_pipeline_async(job_id, Path(pdf_path)))
+    asyncio.create_task(_run_pipeline_async(job_id, locator))
 
     return {"job_id": job_id}
 
@@ -253,121 +284,62 @@ async def process_stream(job_id: str):
     return EventSourceResponse(event_generator())
 
 
-async def _run_pipeline_async(job_id: str, pdf_path: Path) -> None:
-    """Run the processing pipeline, updating state as we go."""
+async def _run_pipeline_async(job_id: str, locator: str) -> None:
+    """Process one scan through the durable service, publishing in-memory progress only."""
+    from docflow.filing.processing import process_scan
+    from docflow.ingestion.loader import raw_sha256
+
     state = _processing_state[job_id]
+    loop = asyncio.get_running_loop()
+
+    def progress(step: str, percent: int) -> None:
+        loop.call_soon_threadsafe(state.update,
+                                  {"step": step, "progress": percent, "status": "processing"})
 
     try:
-        from docflow.classification.classifier import classify_candidates
-        from docflow.clustering.clusterer import cluster_pages
-        from docflow.extraction.extractor import extract_documents
-        from docflow.filing.confidence_gate import gate_decisions
-        from docflow.filing.dedup import build_initial_index, is_empty
-        from docflow.ingestion.archiver import archive_original
-        from docflow.ingestion.loader import load_pdf
-        from docflow.ocr.analyzer import analyze_pages
-        from docflow.summary.generator import generate_summary
+        result = await asyncio.to_thread(process_scan, _state_store, _filer, _active_scope_id,
+                                         locator, _config, progress=progress)
+        documents = [{
+            "filename": a.filename,
+            "directory": a.relative_directory,
+            "institution": d.candidate.institution,
+            "doc_type": d.candidate.doc_type,
+            "period": d.candidate.period,
+            "pages": list(a.pages),
+            "rule": d.rule_matched,
+            "confidence": d.confidence,
+            "auto_filed": a.outcome == "filed",
+            "notes": a.reason,
+            "reasoning": d.candidate.raw_signals.get("llm_reasoning", ""),
+        } for d, a in zip(result.decisions, result.assignments)]
 
-        # 0. Build dedup index on first run
-        if is_empty():
-            state.update({"step": "Building duplicate index (first run)", "progress": 2, "status": "processing"})
-            await asyncio.to_thread(
-                build_initial_index,
-                _config.get("archive_root", "~/DocFlowExample/archive"),
-            )
+        # A byte-identical copy of the retained original left in the watch folder (for
+        # example the scanner's copy of an uploaded file) is removed so it is not processed
+        # again. A different file is never removed.
+        from docflow.filing.operations import confined
 
-        # 1. Ingestion
-        state.update({"step": "Loading PDF", "progress": 5, "status": "processing"})
-        page_images = await asyncio.to_thread(load_pdf, pdf_path)
-        state.update({"step": f"Loaded {len(page_images)} pages", "progress": 15})
-
-        # 2. OCR
-        state.update({"step": "Running OCR", "progress": 20})
-        page_records = await asyncio.to_thread(analyze_pages, page_images)
-        state.update({"step": "OCR complete", "progress": 40})
-
-        # One gateway per job: placeholders are consistent within this scan only.
-        from docflow.llm.gateway import CloudPromptGateway
-        gateway = CloudPromptGateway(_config)
-
-        # 3. Clustering
-        state.update({"step": "Clustering documents (AI)", "progress": 45})
-        candidates = await asyncio.to_thread(cluster_pages, page_records, _config, gateway)
-        state.update({"step": f"Found {len(candidates)} documents", "progress": 60})
-
-        # 4. Classification
-        state.update({"step": "Classifying documents", "progress": 65})
-        decisions = await asyncio.to_thread(classify_candidates, candidates, _config, gateway)
-        state.update({"progress": 75})
-
-        # 5. Confidence gate
-        auto_file, review_queue = gate_decisions(decisions, _config)
-
-        # Build document list immediately so it's available even if later steps fail
-        documents = []
-        for d in auto_file + review_queue:
-            documents.append({
-                "filename": d.filename,
-                "directory": d.target_directory,
-                "institution": d.candidate.institution,
-                "doc_type": d.candidate.doc_type,
-                "period": d.candidate.period,
-                "pages": d.candidate.pages,
-                "rule": d.rule_matched,
-                "confidence": d.confidence,
-                "auto_filed": d.auto_file,
-                "notes": d.notes,
-                "reasoning": d.candidate.raw_signals.get("llm_reasoning", ""),
-            })
+        watch_root = _filer.source_roots.get("watch")
+        root = Path(_state_store.scopes.get(_active_scope_id).canonical_root)
+        originals = [f["relative_path"] for f in result.payload.get("files", [])
+                     if f["role"] == "original"]
+        if watch_root is not None and originals and locator.startswith("upload:"):
+            watch_copy = confined(watch_root, locator.partition(":")[2])
+            retained = confined(root, originals[0])
+            if (watch_copy.is_file() and not watch_copy.is_symlink()
+                    and raw_sha256(watch_copy) == raw_sha256(retained)):
+                watch_copy.unlink()
+                logger.info("Removed identical watch folder copy")
 
         state.update({
-            "step": "Filing documents",
-            "progress": 80,
-            "auto_filed": len(auto_file),
-            "review_queue": len(review_queue),
-            "documents": documents,
-        })
-
-        # 6. Extract
-        state.update({"step": "Writing files", "progress": 85})
-        await asyncio.to_thread(extract_documents, pdf_path, auto_file, _config)
-
-        # 7. Summary (non-fatal — cosmetic step)
-        state.update({"step": "Generating summary", "progress": 90})
-        try:
-            await asyncio.to_thread(generate_summary, auto_file, review_queue, _config)
-        except Exception as exc:  # noqa: BLE001 - legacy cosmetic step, documented as non-fatal
-            logger.warning("Summary generation failed (non-fatal): %s", exc)
-
-        # 8. Archive
-        state.update({"step": "Archiving original", "progress": 95})
-        archived_path = await asyncio.to_thread(archive_original, pdf_path, _config)
-
-        # If the watch folder holds a byte-identical copy of the retained original,
-        # remove it so it isn't processed again. A different file is never removed.
-        from docflow.ingestion.loader import raw_sha256
-
-        watch_folder = Path(os.path.expanduser(
-            _config.get("scan_watch_folder", "~/DocFlowExample/inbox")
-        ))
-        watch_copy = watch_folder / pdf_path.name
-        if (watch_copy.is_file() and not watch_copy.is_symlink() and watch_copy != pdf_path
-                and watch_copy != archived_path
-                and raw_sha256(watch_copy) == raw_sha256(archived_path)):
-            watch_copy.unlink()
-            logger.info("Removed identical watch folder copy: %s", watch_copy.name)
-
-        # Save review queue
-        if review_queue:
-            save_review_queue(review_queue, archived_path, _config)
-
-        state.update({
-            "status": "completed",
-            "step": "Done",
+            "status": "completed" if result.job_status in {"completed", "review"} else "error",
+            "step": "Done" if result.job_status in {"completed", "review"}
+            else f"Job is {result.job_status}",
             "progress": 100,
             "documents": documents,
+            "auto_filed": sum(a.outcome == "filed" for a in result.assignments),
+            "review_queue": sum(a.outcome == "review" for a in result.assignments),
+            "durable_job_id": result.job_id,
         })
-
     except Exception as exc:
         logger.exception("Pipeline error for job %s", job_id)
         state.update({
@@ -375,82 +347,6 @@ async def _run_pipeline_async(job_id: str, pdf_path: Path) -> None:
             "step": f"Error: {str(exc)[:200]}",
             "progress": state.get("progress", 0),
         })
-
-
-# ---------------------------------------------------------------------------
-# API: Review Queue
-# ---------------------------------------------------------------------------
-
-@app.get("/api/queue")
-async def get_queue():
-    items = load_review_queue(_config)
-    return {"pending": len(items), "items": items}
-
-
-@app.post("/api/queue/approve/{item_id}")
-async def approve_item(item_id: str):
-    item = update_queue_item(_config, item_id, {"status": "approved"})
-    if not item:
-        raise HTTPException(404, f"Item {item_id} not found")
-    _extract_review_item(item, item["suggested_filename"], item["suggested_directory"])
-    return {"status": "approved"}
-
-
-@app.post("/api/queue/correct/{item_id}")
-async def correct_item(item_id: str, request: Request):
-    body = await request.json()
-    filename = body.get("filename", "").strip()
-    directory = body.get("directory", "").strip()
-    if not filename or not directory:
-        raise HTTPException(400, "Both filename and directory required")
-
-    target_dir = str(_archive_root() / directory)
-    item = update_queue_item(_config, item_id, {
-        "status": "corrected",
-        "corrected_filename": filename,
-        "corrected_directory": target_dir,
-    })
-    if not item:
-        raise HTTPException(404, f"Item {item_id} not found")
-    _extract_review_item(item, filename, target_dir)
-
-    from docflow.config.learner import record_correction
-    record_correction(item, filename, target_dir, _config)
-
-    return {"status": "corrected"}
-
-
-@app.post("/api/queue/skip/{item_id}")
-async def skip_item(item_id: str):
-    item = update_queue_item(_config, item_id, {"status": "skipped"})
-    if not item:
-        raise HTTPException(404, f"Item {item_id} not found")
-    holding = str(_archive_root() / "_Skipped")
-    _extract_review_item(item, item["suggested_filename"], holding)
-    return {"status": "skipped"}
-
-
-def _extract_review_item(item: dict, filename: str, target_dir: str) -> None:
-    source = Path(item["source_pdf"])
-    if not source.exists():
-        logger.warning("Source PDF not found: %s", source)
-        return
-    target_path = Path(target_dir)
-    ensure_directory(target_path)
-    output = target_path / filename
-    if output.exists():
-        stem, suffix = output.stem, output.suffix
-        counter = 2
-        while output.exists():
-            output = target_path / f"{stem}_{counter}{suffix}"
-            counter += 1
-
-    reader = PdfReader(str(source))
-    writer = PdfWriter()
-    for page_num in item["pages"]:
-        writer.add_page(reader.pages[page_num - 1])
-    with open(output, "wb") as f:
-        writer.write(f)
 
 
 # ---------------------------------------------------------------------------
@@ -486,38 +382,65 @@ async def get_unmatched():
 
 @app.post("/api/unmatched/reclassify")
 async def reclassify_unmatched(request: Request):
-    """Manually reclassify an unmatched/skipped file."""
-    body = await request.json()
-    source_path = body.get("path", "").strip()
-    filename = body.get("filename", "").strip()
-    directory = body.get("directory", "").strip()
+    """File a PDF from ``_Unmatched``/``_Skipped`` at a validated archive-relative destination."""
+    from docflow.config.learner import CORRECTIONS_FILENAME, record_correction
+    from docflow.filing.operations import (
+        collision_candidates,
+        ensure_parent,
+        fsync_directory,
+        partial_path,
+        place_without_replacing,
+    )
+    from docflow.filing.review_actions import validate_review_destination
+    from docflow.ingestion.loader import raw_sha256
+    from docflow.state.repositories import UnsafeValueError
 
+    if _state_store is None or _active_scope_id is None:
+        raise HTTPException(503, "Local application state is not configured.")
+    body = await request.json()
+    source_path, filename, directory = (str(body.get(key) or "").strip()
+                                        for key in ("path", "filename", "directory"))
     if not source_path or not filename or not directory:
         raise HTTPException(400, "path, filename, and directory are required")
 
-    source = Path(source_path)
-    if not source.exists():
-        raise HTTPException(404, f"File not found: {source_path}")
+    root = Path(_state_store.scopes.get(_active_scope_id).canonical_root)
+    source = _confined_archive_pdf([root / "_Unmatched", root / "_Skipped"], Path(source_path))
+    try:
+        validate_review_destination(root, directory, filename)
+    except UnsafeValueError:
+        raise HTTPException(400, "Destination must be a relative archive folder and a "
+                                 "visible .pdf name.") from None
 
-    target_dir = _archive_root() / directory
-    ensure_directory(target_dir)
-    target = target_dir / filename
-    if target.exists():
-        stem, suffix = target.stem, target.suffix
-        counter = 2
-        while target.exists():
-            target = target_dir / f"{stem}_{counter}{suffix}"
-            counter += 1
+    def move() -> str:
+        expected = raw_sha256(source)
+        for relative in collision_candidates(directory, filename):
+            target = ensure_parent(root, relative)
+            if os.path.lexists(target):
+                continue
+            try:
+                place_without_replacing(source, target,
+                                        partial_path(target.parent, "reclassify", 0))
+            except FileExistsError:
+                continue
+            fsync_directory(target.parent)
+            if raw_sha256(target) != expected:
+                raise HTTPException(500, "The filed copy did not verify; the source was kept.")
+            source.unlink()
+            fsync_directory(source.parent)
+            return relative
+        raise HTTPException(409, "Too many files with this name")
 
-    shutil.move(str(source), str(target))
-
-    from docflow.config.learner import record_correction
+    try:
+        relative = await asyncio.to_thread(move)
+    except UnsafeValueError:
+        raise HTTPException(400, "Destination must be a relative archive folder and a "
+                                 "visible .pdf name.") from None
     record_correction(
-        {"suggested_filename": source.name, "suggested_directory": str(source.parent)},
-        filename, str(target_dir), _config,
+        {"suggested_filename": source.name, "suggested_directory": source.parent.name},
+        filename, directory, {**_config, "archive_root": str(root)},
+        log_path=_state_store.db.paths.logs / CORRECTIONS_FILENAME,
     )
-
-    return {"status": "reclassified", "target": str(target)}
+    return {"status": "reclassified", "target": relative}
 
 
 def _confined_archive_pdf(roots: list[Path], candidate: Path) -> Path:
@@ -632,7 +555,9 @@ async def preview_file(path: str, page: int = 1):
     except ValueError:
         raise HTTPException(403, "Access denied")
 
-    cache_dir = _archive_root() / "_cache" / "previews"
+    if _state_store is None:
+        raise HTTPException(503, "Local application state is not configured.")
+    cache_dir = _state_store.db.paths.cache / "previews"  # application state, never the archive
     cache_dir.mkdir(parents=True, exist_ok=True)
     cache_key = f"{source.stem}_{page}.png"
     cached = cache_dir / cache_key
@@ -643,44 +568,6 @@ async def preview_file(path: str, page: int = 1):
     images = await asyncio.to_thread(
         convert_from_path, str(source),
         first_page=page, last_page=page, dpi=150,
-    )
-    if not images:
-        raise HTTPException(500, "Failed to render page")
-
-    await asyncio.to_thread(images[0].save, str(cached), "PNG")
-    return FileResponse(str(cached), media_type="image/png")
-
-
-# ---------------------------------------------------------------------------
-# API: Page Preview
-# ---------------------------------------------------------------------------
-
-@app.get("/api/preview/{item_id}/{page_num}")
-async def preview_page(item_id: str, page_num: int):
-    """Render a single PDF page as a PNG thumbnail for the review UI."""
-    items = load_review_queue(_config)
-    item = next((i for i in items if i["id"] == item_id), None)
-    if not item:
-        raise HTTPException(404, f"Item {item_id} not found")
-    if page_num not in item["pages"]:
-        raise HTTPException(400, f"Page {page_num} not in this item")
-
-    source = Path(item["source_pdf"])
-    if not source.exists():
-        raise HTTPException(404, "Source PDF not found")
-
-    # Cache rendered pages to avoid repeated conversions
-    cache_dir = _archive_root() / "_cache" / "previews"
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    cache_key = f"{source.stem}_{page_num}.png"
-    cached = cache_dir / cache_key
-    if cached.exists():
-        return FileResponse(str(cached), media_type="image/png")
-
-    from pdf2image import convert_from_path
-    images = await asyncio.to_thread(
-        convert_from_path, str(source),
-        first_page=page_num, last_page=page_num, dpi=150,
     )
     if not images:
         raise HTTPException(500, "Failed to render page")
@@ -1478,44 +1365,8 @@ async def validate_paths():
 
 @app.post("/api/reprocess/{job_id}")
 async def reprocess_job(job_id: str):
-    """Re-process a previously completed job's PDF."""
-    state = _processing_state.get(job_id)
-    if not state:
+    """Re-processing is a durable retry now: ``POST /api/v1/jobs/{id}/retry``."""
+    if job_id not in _processing_state:
         raise HTTPException(404, "Job not found")
-    pdf_path = state.get("pdf")
-    if not pdf_path:
-        raise HTTPException(400, "No PDF path for this job")
-
-    # The original might have been archived — check BeenOrganized folders
-    source = Path(pdf_path)
-    if not source.exists():
-        # Search in BeenOrganized folders
-        watch_folder = Path(os.path.expanduser(
-            _config.get("scan_watch_folder", "~/DocFlowExample/inbox")
-        ))
-        for been_dir in watch_folder.glob("BeenOrganized*"):
-            candidate = been_dir / source.name
-            if candidate.exists():
-                source = candidate
-                break
-        if not source.exists():
-            raise HTTPException(404, f"PDF not found: {source.name}")
-
-    # Copy back to uploads for reprocessing
-    upload_path = _upload_dir() / source.name
-    shutil.copy2(str(source), str(upload_path))
-
-    # Start new job
-    new_job_id = str(uuid.uuid4())[:8]
-    _processing_state[new_job_id] = {
-        "status": "starting",
-        "pdf": str(upload_path),
-        "progress": 0,
-        "step": "Initializing (re-process)",
-        "documents": [],
-        "auto_filed": 0,
-        "review_queue": 0,
-        "started": _local_iso(),
-    }
-    asyncio.create_task(_run_pipeline_async(new_job_id, upload_path))
-    return {"job_id": new_job_id}
+    raise HTTPException(409, "Re-processing is not available; retry a failed durable job with "
+                             "POST /api/v1/jobs/{id}/retry.")

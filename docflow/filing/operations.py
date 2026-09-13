@@ -166,6 +166,10 @@ class DurableFiler:
 
     # -- paths -----------------------------------------------------------------
 
+    def source_path(self, scope_id: str, locator: str) -> Path:
+        """The confined local file for an ``upload:``/``watch:``/``archive:`` locator."""
+        return self._source_path(scope_id, locator)
+
     def _source_path(self, scope_id: str, locator: str) -> Path:
         scheme, _, reference = validate_source_locator(locator).partition(":")
         if scheme == "archive":

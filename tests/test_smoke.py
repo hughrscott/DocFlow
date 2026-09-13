@@ -35,7 +35,3 @@ def test_import_filing_confidence_gate():
 
 def test_import_filing_filer():
     from docflow.filing import filer  # noqa: F401
-
-
-def test_import_summary_generator():
-    from docflow.summary import generator  # noqa: F401

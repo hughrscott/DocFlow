@@ -79,15 +79,18 @@ def test_upload_and_watch_handles_create_ready_jobs_idempotently(env, client, up
 
 def test_legacy_process_accepts_only_upload_or_watch_folder_files(
         env, client, monkeypatch) -> None:
-    started: list[Path] = []
+    started: list[str] = []
 
-    async def record(job_id, pdf_path):
-        started.append(pdf_path)
+    async def record(job_id, locator):
+        started.append(locator)
 
     monkeypatch.setattr(web_app, "_run_pipeline_async", record)
     monkeypatch.setattr(web_app, "_processing_state", {})
     monkeypatch.setattr(web_app, "_config", {"archive_root": str(env.archive),
                                              "scan_watch_folder": str(env.watch)})
+    monkeypatch.setattr(web_app, "_filer", DurableFiler(env.store, source_roots={
+        "upload": env.archive / "_uploads", "watch": env.watch}))
+    monkeypatch.setattr(web_app, "_active_scope_id", env.scope_id)
     outside = write_image_pdf(env.tmp / "outside/private.pdf", [1])
     payload = outside.read_bytes()
     uploaded = client.post("/api/upload", files={"file": ("scan.pdf", payload, "application/pdf")})
@@ -110,4 +113,4 @@ def test_legacy_process_accepts_only_upload_or_watch_folder_files(
 
     for candidate in (upload_path, watch_file):
         assert client.post("/api/process", json={"path": str(candidate)}).status_code == 200
-    assert started == [upload_path, watch_file]
+    assert started == ["upload:scan.pdf", "watch:inbox-scan.pdf"]

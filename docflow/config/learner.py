@@ -18,20 +18,23 @@ def record_correction(
     corrected_directory: str,
     config: dict,
     gateway=None,
+    *,
+    log_path: Path,
 ) -> None:
     """Record a filing correction and update rules.md if appropriate.
 
     Args:
-        original: The original queue item dict.
+        original: The original item dict.
         corrected_filename: The corrected filename.
         corrected_directory: The corrected directory (relative to archive root).
         config: Pipeline config.
         gateway: Optional CloudPromptGateway; one is created per correction otherwise.
+        log_path: The corrections log in local application state, never in the archive.
     """
     archive_root = Path(os.path.expanduser(
         config.get("archive_root", "~/DocFlowExample/archive")
     ))
-    log_path = archive_root / CORRECTIONS_FILENAME
+    log_path.parent.mkdir(parents=True, exist_ok=True)
 
     existing: list[dict] = []
     if log_path.exists():
@@ -89,18 +92,17 @@ def _learn_rule_from_correction(correction: dict, config: dict, gateway=None) ->
         logger.info("Learned new rule from correction: %s", proposal.rule_name)
 
 
-def suggest_rules(config: dict) -> list[dict]:
+def suggest_rules(config: dict, *, log_path: Path) -> list[dict]:
     """Analyze corrections and suggest new filing rules.
 
     A rule is suggested when 2+ corrections route the same institution
-    to the same directory.
+    to the same directory. ``log_path`` is the application-state corrections log.
 
     Returns a list of suggested rule dicts (legacy format for CLI output).
     """
     archive_root = Path(os.path.expanduser(
         config.get("archive_root", "~/DocFlowExample/archive")
     ))
-    log_path = archive_root / CORRECTIONS_FILENAME
 
     if not log_path.exists():
         return []

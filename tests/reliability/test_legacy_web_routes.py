@@ -21,14 +21,23 @@ def archive(tmp_path: Path, monkeypatch) -> Path:
     return root
 
 
-def test_upload_writes_exact_bytes_and_reports_size(archive: Path) -> None:
+def test_upload_writes_exact_bytes_and_reports_size(archive: Path, monkeypatch) -> None:
+    from types import SimpleNamespace
+
     payload = write_image_pdf(archive.parent / "scan.pdf", [1, 2]).read_bytes()
+    offline = TestClient(web_app.app).post(
+        "/api/upload", files={"file": ("scan.pdf", payload, "application/pdf")})
+    assert offline.status_code == 503
+    uploads = archive.parent / "app-state" / "cache" / "uploads"
+    monkeypatch.setattr(web_app, "_filer", SimpleNamespace(source_roots={"upload": uploads}))
     response = TestClient(web_app.app).post(
         "/api/upload", files={"file": ("scan.pdf", payload, "application/pdf")})
     assert response.status_code == 200
     body = response.json()
     assert (body["filename"], body["size"]) == ("scan.pdf", len(payload))
     assert Path(body["path"]).read_bytes() == payload
+    assert Path(body["path"]).parent == uploads
+    assert not list(archive.rglob("*.pdf"))
     rejected = TestClient(web_app.app).post(
         "/api/upload", files={"file": ("scan.txt", b"x", "text/plain")})
     assert rejected.status_code == 400

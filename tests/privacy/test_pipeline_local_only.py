@@ -86,13 +86,22 @@ def test_cli_pipeline_shares_one_gateway_per_job(setup, intercept, network_attem
 
 def test_web_pipeline_shares_one_gateway_per_job(setup, intercept, monkeypatch) -> None:
     from docflow.web import app as web_app
+    from docflow.web.bootstrap import open_local_state
 
     _archive, inbox, write_config = setup
     config = yaml.safe_load(write_config().read_text())
+    _pdf(inbox / "web.pdf")
+    state = open_local_state(config)
     monkeypatch.setattr(web_app, "_config", config)
+    monkeypatch.setattr(web_app, "_state_store", state.store)
+    monkeypatch.setattr(web_app, "_filer", state.filer)
+    monkeypatch.setattr(web_app, "_active_scope_id", state.scope_id)
     monkeypatch.setattr(web_app, "_processing_state", {"job": {}})
     intercept.responses = [CLUSTER, SUGGEST]
-    asyncio.run(web_app._run_pipeline_async("job", _pdf(inbox / "web.pdf")))
+    try:
+        asyncio.run(web_app._run_pipeline_async("job", "watch:web.pdf"))
+    finally:
+        state.close()
     assert web_app._processing_state["job"]["status"] == "completed"
     cluster, classify = intercept.requests
     assert cluster.job_id == classify.job_id
@@ -106,7 +115,13 @@ def test_local_only_pipeline_completes_locally_with_zero_calls(
     scan = _pdf(inbox / "private.pdf")
     _run_pipeline(scan, write_config(privacy_mode="local_only"))
     assert intercept.requests == [] and network_attempts == [] and model_transport_calls == []
-    items = json.loads((archive / "review_queue.json").read_text())["items"]
-    assert sorted(page for item in items for page in item["pages"]) == [1, 2]
-    assert all(item["status"] == "pending" for item in items)
-    assert not scan.exists() and list(inbox.glob("BeenOrganized*/private.pdf"))
+    from docflow.web.bootstrap import open_local_state
+
+    state = open_local_state(yaml.safe_load((archive.parent / "config.yaml").read_text()))
+    try:
+        items = state.store.reviews.list(state.scope_id)
+        assert sorted(page for item in items for page in item.candidate["pages"]) == [1, 2]
+    finally:
+        state.close()
+    assert not (archive / "review_queue.json").exists()
+    assert not scan.exists() and list(archive.glob("BeenOrganized*/private.pdf"))

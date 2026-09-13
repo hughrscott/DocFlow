@@ -261,3 +261,9 @@ def test_shared_markup_helpers_escape_document_derived_values(tmp_path) -> None:
     written = [w["html"] for w in result["html_writes"] if w["id"] == "footer"][-1]
     assert "<img" not in written
     assert "&lt;img src=x onerror=&quot;window.__xss=1&quot;&gt;" in written
+
+
+def test_no_static_page_uses_the_retired_legacy_queue_routes() -> None:
+    offenders = [path.name for path in sorted(STATIC.glob("*"))
+                 if path.suffix in {".html", ".js"} and "/api/queue" in path.read_text()]
+    assert offenders == []

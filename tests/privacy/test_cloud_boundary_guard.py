@@ -176,12 +176,11 @@ def test_every_feature_is_used_prompted_and_covered_end_to_end() -> None:
 
 
 def test_every_web_route_reaching_the_gateway_is_registered() -> None:
-    from docflow.review.server import app as review_app
     from docflow.web.app import app
 
     markers = {"CloudPromptGateway", "_v1_gateway", "_suggest_filing"} | GATEWAY_METHODS
     cloud_routes = set()
-    for application in (app, review_app):
+    for application in (app,):
         for route in application.routes:
             endpoint = getattr(route, "endpoint", None)
             if endpoint is None or not inspect.isfunction(endpoint):

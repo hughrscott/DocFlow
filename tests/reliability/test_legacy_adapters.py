@@ -199,20 +199,31 @@ def test_web_pipeline_removes_watch_copy_only_when_identical(tmp_path, archive, 
 
     monkeypatch.setattr(loader, "load_pdf", lambda path: ["page-image-1", "page-image-2"])
     monkeypatch.setattr(analyzer, "analyze_pages", local_pages)
+    from docflow.web.bootstrap import open_local_state
+    from tests.reliability.harness import quick_observe
+
     inbox = tmp_path / "inbox"
-    upload = write_image_pdf(tmp_path / "uploads" / "scan.pdf", [1, 2])
     watch_copy = write_image_pdf(inbox / "scan.pdf", [1, 2] if same_bytes else [8, 9])
     copy_raw = sha256_file(watch_copy)
     config = {**s.synthetic_config(archive_root=str(archive)), "scan_watch_folder": str(inbox),
               "rules_file": str(tmp_path / "missing.md"), "filing_rules": [],
               "privacy_mode": "local_only"}
+    state = open_local_state(config)
+    state.filer.observe = quick_observe
+    write_image_pdf(state.filer.source_roots["upload"] / "scan.pdf", [1, 2])
     monkeypatch.setattr(web_app, "_config", config)
+    monkeypatch.setattr(web_app, "_state_store", state.store)
+    monkeypatch.setattr(web_app, "_filer", state.filer)
+    monkeypatch.setattr(web_app, "_active_scope_id", state.scope_id)
     monkeypatch.setattr(web_app, "_processing_state", {"job": {}})
 
-    asyncio.run(web_app._run_pipeline_async("job", upload))
+    try:
+        asyncio.run(web_app._run_pipeline_async("job", "upload:scan.pdf"))
+    finally:
+        state.close()
 
     assert web_app._processing_state["job"]["status"] == "completed"
-    retained = list(inbox.glob("BeenOrganized*/scan.pdf"))
+    retained = list(archive.glob("BeenOrganized*/scan.pdf"))
     assert len(retained) == 1
     if same_bytes:
         assert not watch_copy.exists()
