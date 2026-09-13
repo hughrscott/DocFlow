@@ -48,7 +48,7 @@ def generate_summary(
     Returns (xlsx_path, txt_path).
     """
     archive_root = Path(os.path.expanduser(
-        config.get("archive_root", "~/ElectronicFiles")
+        config.get("archive_root", "~/DocFlowExample/archive")
     ))
     archive_root.mkdir(parents=True, exist_ok=True)
 

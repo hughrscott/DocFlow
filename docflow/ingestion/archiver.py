@@ -16,7 +16,7 @@ def archive_original(pdf_path: Path, config: dict) -> Path:
     Returns the new path of the archived file.
     """
     scan_watch = Path(os.path.expanduser(
-        config.get("scan_watch_folder", "~/ElectronicFiles/ToBeOrganized")
+        config.get("scan_watch_folder", "~/DocFlowExample/inbox")
     ))
 
     date_str = datetime.now().strftime("%m%d%y")

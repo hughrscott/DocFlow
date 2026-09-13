@@ -20,12 +20,12 @@ The engine MUST distinguish business accounts from personal accounts.
 Filing a business document under a personal directory (or vice versa) is a hard error.
 
 **Business accounts belong under the business entity, not the bank:**
-- Sulis Solar LLC checking at PNC → `SulisSolar/PNC/`, NOT `PNC/Personal/`
-- Flagstore LLC (SOR Heights) at Frost → `Frost/FlagstoreLLC/Checking/`, NOT personal
+- Redwood Household checking at PNC → `Household/PNC/`, NOT `PNC/Personal/`
+- Bluebird Solar LLC (SOR Heights) at Frost → `Frost/FlagstoreLLC/Checking/`, NOT personal
 - SOR Houston SW at Frost → `Frost/SORHoustonSW/Checking/`
 
 **Business signals to watch for in OCR text:**
-- Company name on the account (e.g., "SULIS SOLAR, LLC")
+- Company name on the account (e.g., "4102 SOLAR, LLC")
 - Business address (742 E 20th St = SOR Heights; 3615 Robinhood = personal/home)
 - "Business Checking" label on statement
 - EIN/Tax ID instead of SSN
@@ -64,14 +64,14 @@ completely different — trust the signals, not the page order.
 BCBS → `Insurance/BlueShield/`, regardless of what preceded it.
 
 **Houston Emergency Center / Burglar Alarm:**
-These look like utility bills but belong to the School of Rock The Heights location.
+These look like utility bills but belong to the Bluebird Solar location.
 Signal: "City of Houston", "Houston Emergency Center", "Burglar Alarm Administration"
-→ File under `SOR/SORHeights/`, not `Utilities/`.
+→ File under `Businesses/BluebirdSolar/`, not `Utilities/`.
 
 **Maryland Registered Agent invoice:**
 The invoice is from "Corporate Filings LLC" in Maryland and does NOT mention
-Together Solar by name. It is nonetheless a Together Solar document.
-Signal: "Maryland", "Registered Agent", "Corporate Filings LLC" → `Investments/Together Solar/`
+Northstar Holdings by name. It is nonetheless a Northstar Holdings document.
+Signal: "Maryland", "Registered Agent", "Corporate Filings LLC" → `Investments/NorthstarHoldings/`
 
 **Transnational / Celero credit card processing:**
 These are statements for the School of Rock's credit card processing, not bank statements.

@@ -63,7 +63,7 @@ async def correct(item_id: str, request: Request):
     if not filename or not directory:
         raise HTTPException(400, "Both 'filename' and 'directory' are required")
 
-    archive_root = os.path.expanduser(_config.get("archive_root", "~/ElectronicFiles"))
+    archive_root = os.path.expanduser(_config.get("archive_root", "~/DocFlowExample/archive"))
     target_dir = os.path.join(archive_root, directory)
 
     item = update_queue_item(_config, item_id, {
@@ -86,7 +86,7 @@ async def correct(item_id: str, request: Request):
 @app.post("/skip/{item_id}")
 async def skip(item_id: str):
     """Skip an item — move to a holding directory."""
-    archive_root = os.path.expanduser(_config.get("archive_root", "~/ElectronicFiles"))
+    archive_root = os.path.expanduser(_config.get("archive_root", "~/DocFlowExample/archive"))
     holding_dir = os.path.join(archive_root, "_Skipped")
 
     item = update_queue_item(_config, item_id, {"status": "skipped"})

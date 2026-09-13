@@ -65,7 +65,7 @@ Return a JSON array of document groups.
     "account": "Sulis Solar",
     "period": "February 2026",
     "confidence": 0.92,
-    "reasoning": "Both pages show PNC Bank header with Sulis Solar LLC account name, page 1 of 2 marker on page 1."
+    "reasoning": "Both pages show PNC Bank header with Redwood Household account name, page 1 of 2 marker on page 1."
   },
   {
     "pages": [3, 4],
@@ -73,7 +73,7 @@ Return a JSON array of document groups.
     "account": null,
     "period": "January 2026",
     "confidence": 0.85,
-    "reasoning": "Both pages reference patient Kirstie Scott and Core Primary Care PLLC with January 2026 service dates."
+    "reasoning": "Both pages reference patient Riley Redwood and Core Primary Care PLLC with January 2026 service dates."
   }
 ]
 ```
@@ -129,11 +129,11 @@ Return a single JSON object.
 **Expected output:**
 ```json
 {
-  "rule_id": "pnc_sulis_solar_checking",
-  "filename": "PNCBankSulisSolarCheckingFebruary2026.pdf",
-  "target_directory": "SulisSolar/PNC",
+  "rule_id": "pnc_bluebird_solar_checking",
+  "filename": "PNCBankBluebirdSolarCheckingFebruary2026.pdf",
+  "target_directory": "Household/PNC",
   "confidence": 0.95,
-  "reasoning": "PNC Bank statement with Sulis Solar LLC as account holder matches rule pnc_sulis_solar_checking.",
+  "reasoning": "PNC Bank statement with Redwood Household as account holder matches rule pnc_bluebird_solar_checking.",
   "notes": null
 }
 ```

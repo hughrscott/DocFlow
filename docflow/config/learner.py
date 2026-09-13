@@ -27,7 +27,7 @@ def record_correction(
         config: Pipeline config.
     """
     archive_root = Path(os.path.expanduser(
-        config.get("archive_root", "~/ElectronicFiles")
+        config.get("archive_root", "~/DocFlowExample/archive")
     ))
     log_path = archive_root / CORRECTIONS_FILENAME
 
@@ -134,7 +134,7 @@ def suggest_rules(config: dict) -> list[dict]:
     Returns a list of suggested rule dicts (legacy format for CLI output).
     """
     archive_root = Path(os.path.expanduser(
-        config.get("archive_root", "~/ElectronicFiles")
+        config.get("archive_root", "~/DocFlowExample/archive")
     ))
     log_path = archive_root / CORRECTIONS_FILENAME
 

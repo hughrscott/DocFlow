@@ -623,7 +623,7 @@ class Component extends DCLogic {
         reasoning:'Masthead and sort-code format clearly identify Lloyds Bank. The account holder name is partially obscured by a fold, and "February 2026" was inferred from the statement period rather than a printed issue date.' },
       { id:'q2', institution:'Guardian Health', doc_type:'Insurance EOB', period:'May 2026', pages:[1,2], confidence:0.71,
         filename:'GuardianHealthEOBMay2026BrodieScott', directory:'Insurance/Guardian Health', why:'Rule guardian_insurance_eob matched 2 of 3 signals',
-        reasoning:'Explanation of Benefits from Guardian Health. Member ID maps to Brodie Scott (known family member). Claim date present, but provider NPI did not match the rule exactly.' },
+        reasoning:'Explanation of Benefits from Guardian Health. Member ID maps to Casey Redwood (known family member). Claim date present, but provider NPI did not match the rule exactly.' },
       { id:'q3', institution:'Cirro Energy', doc_type:'Utility Bill', period:'Jun 2026', pages:[1], confidence:0.58,
         filename:'CirroEnergyJune2026', directory:'SORHeights/Utilities', why:'Ambiguous — two service addresses on file', conflict:true,
         reasoning:'Utility bill from Cirro Energy. The service address could be either the SOR Heights or West University property — both are on file under your entities. Defaulting to SOR Heights.' },
@@ -869,23 +869,23 @@ class Component extends DCLogic {
   }
   _entities() {
     return [
-      { name:'Vivian Scott', relation:'Spouse', kind:'person' },
-      { name:'Brodie Scott', relation:'Son', kind:'person' },
-      { name:'Kirstie Scott', relation:'Daughter', kind:'person' },
-      { name:'Sulis Solar LLC', relation:'Business', kind:'biz' },
-      { name:'School of Rock The Heights', relation:'Business', kind:'biz' },
-      { name:'School of Rock West U', relation:'Business', kind:'biz' },
-      { name:'Together Solar', relation:'Investment', kind:'biz' },
-      { name:'GreatScott Consulting', relation:'Business', kind:'biz' },
+      { name:'Jordan Redwood', relation:'Spouse', kind:'person' },
+      { name:'Casey Redwood', relation:'Son', kind:'person' },
+      { name:'Riley Redwood', relation:'Daughter', kind:'person' },
+      { name:'Redwood Household', relation:'Business', kind:'biz' },
+      { name:'Bluebird Solar', relation:'Business', kind:'biz' },
+      { name:'Cedar Lane Music', relation:'Business', kind:'biz' },
+      { name:'Northstar Holdings', relation:'Investment', kind:'biz' },
+      { name:'Sampleton Foundation', relation:'Business', kind:'biz' },
     ];
   }
   _rules() {
     return [
-      { id:'pnc_sulis_solar_checking', file_to:'SulisSolar/PNC' },
+      { id:'pnc_bluebird_solar_checking', file_to:'Household/PNC' },
       { id:'pnc_personal_loc', file_to:'PNC/Personal/LOC' },
       { id:'frost_sor_houston_sw', file_to:'Frost/SORHoustonSW/Checking' },
       { id:'guardian_insurance_eob', file_to:'Insurance/Guardian Health' },
-      { id:'houston_alarm', file_to:'SOR/SORHeights' },
+      { id:'houston_alarm', file_to:'Businesses/BluebirdSolar' },
       { id:'bettencourt_tax', file_to:'Tax/Bettencourt' },
       { id:'lloyds_uk', file_to:'UK Finance/Lloyds' },
       { id:'cirro_energy_sor', file_to:'SORHeights/Utilities' },

@@ -55,7 +55,7 @@ def save_review_queue(
         return None
 
     archive_root = Path(os.path.expanduser(
-        config.get("archive_root", "~/ElectronicFiles")
+        config.get("archive_root", "~/DocFlowExample/archive")
     ))
     archive_root.mkdir(parents=True, exist_ok=True)
     queue_path = archive_root / QUEUE_FILENAME
@@ -84,7 +84,7 @@ def save_review_queue(
 def load_review_queue(config: dict) -> list[dict]:
     """Load pending review queue items."""
     archive_root = Path(os.path.expanduser(
-        config.get("archive_root", "~/ElectronicFiles")
+        config.get("archive_root", "~/DocFlowExample/archive")
     ))
     queue_path = archive_root / QUEUE_FILENAME
 
@@ -103,7 +103,7 @@ def update_queue_item(config: dict, item_id: str, updates: dict) -> dict | None:
     Returns the updated item, or None if not found.
     """
     archive_root = Path(os.path.expanduser(
-        config.get("archive_root", "~/ElectronicFiles")
+        config.get("archive_root", "~/DocFlowExample/archive")
     ))
     queue_path = archive_root / QUEUE_FILENAME
 

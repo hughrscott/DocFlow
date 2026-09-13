@@ -7,7 +7,7 @@
 3. **Contextual differentiation.** The core problem this solves: the same *type* of document (e.g. bank statement, electric bill) must be filed differently based on *context* — which account, which person, which address, which entity. The differentiating fields vary by document type: bank statements differentiate on account number/entity, medical EOBs on patient name, utility bills on service address. Signal extraction and filing rules must support this dimension.
 4. **Confidence-gated.** Every filing decision has a confidence score. High confidence → auto-file. Low confidence → human review queue. Nothing is silently wrong.
 5. **Traceable.** Every output file logs which rule caused it to be filed where. A human can always audit why a decision was made.
-6. **Designed for productisation.** The personal use case (Hugh Scott) is Phase 1. The product (any user) is Phase 3. Architecture decisions must support both.
+6. **Designed for productisation.** The personal use case (Morgan Redwood) is Phase 1. The product (any user) is Phase 3. Architecture decisions must support both.
 
 ---
 
@@ -125,7 +125,7 @@ Produced by the Classification step. One per DocumentCandidate.
 @dataclass
 class FilingDecision:
     candidate: DocumentCandidate
-    filename: str              # e.g. "PNCBankSulisSolarCheckingFebruary2026.pdf"
+    filename: str              # e.g. "PNCBankBluebirdSolarCheckingFebruary2026.pdf"
     target_directory: str      # Absolute path
     rule_matched: str          # e.g. "pnc_business_checking"
     confidence: float          # 0.0–1.0
@@ -139,69 +139,69 @@ class FilingDecision:
 
 ```yaml
 # Global settings
-archive_root: ~/ElectronicFiles
-scan_watch_folder: ~/ElectronicFiles/ToBeOrganized
+archive_root: ~/DocFlowExample/archive
+scan_watch_folder: ~/DocFlowExample/inbox
 confidence_threshold: 0.75       # Below this → review queue
 ollama_model: llama3.2
 ollama_host: http://localhost:11434
 
 # User identity (helps LLM resolve ambiguous names)
 user:
-  name: Hugh Scott
-  address: 3615 Robinhood St, Houston TX 77005
+  name: Morgan Redwood
+  address: 100 Example Avenue, Sampleton, TX 77005
 
 # Family members — used to assign medical/personal documents
 family:
-  - name: Vivian Scott
+  - name: Jordan Redwood
     relation: spouse
-  - name: Brodie Scott
+  - name: Casey Redwood
     relation: son
-  - name: Kirstie Scott
+  - name: Riley Redwood
     relation: daughter
 
 # Business entities — CRITICAL for business vs personal routing
 entities:
-  - id: sulis_solar
-    name: Sulis Solar LLC
+  - id: redwood_household
+    name: Redwood Household
     type: business
-    directory: SulisSolar
+    directory: Household
     banks: [pnc]
-    account_hints: ["sulis", "1236"]
+    account_hints: ["4102", "7364"]
 
-  - id: sor_heights
-    name: School of Rock The Heights
-    legal_name: Flagstore LLC
+  - id: bluebird_solar
+    name: Bluebird Solar
+    legal_name: Bluebird Solar LLC
     type: business
-    directory: SOR/SORHeights
+    directory: Businesses/BluebirdSolar
     banks: [frost]
-    address: "742 E 20th St, Houston TX 77008"
+    address: "200 Example Road, Sampleton, MD 20001"
 
-  - id: sor_west_u
-    name: School of Rock West U
-    legal_name: SOR Houston SW LLC
+  - id: cedar_lane_music
+    name: Cedar Lane Music
+    legal_name: Cedar Lane Music LLC
     type: business
-    directory: SOR/SORHoustonSW
+    directory: Businesses/CedarLaneMusic
     banks: [frost]
 
-  - id: together_solar
-    name: Together Solar
+  - id: northstar_holdings
+    name: Northstar Holdings
     type: investment
-    directory: Investments/Together Solar
+    directory: Investments/NorthstarHoldings
 
-  - id: great_scott
-    name: GreatScott Consulting
+  - id: sampleton_foundation
+    name: Sampleton Foundation
     type: business
-    directory: GreatScottConsulting
+    directory: Giving/SampletonFoundation
 
 # Filing rules — evaluated top to bottom, first match wins
 filing_rules:
-  - id: pnc_sulis_solar_checking
+  - id: pnc_bluebird_solar_checking
     match:
       institution: pnc
-      account_hints: ["sulis", "solar", "1236"]
+      account_hints: ["4102", "solar", "7364"]
       doc_type: [statement, checking]
-    file_to: SulisSolar/PNC
-    filename_template: "PNCBankSulisSolarChecking{period}.pdf"
+    file_to: Household/PNC
+    filename_template: "PNCBankBluebirdSolarChecking{period}.pdf"
 
   - id: pnc_personal_loc
     match:
@@ -227,7 +227,7 @@ filing_rules:
   - id: houston_alarm
     match:
       institution: ["city of houston", "houston emergency", "burglar alarm"]
-    file_to: SOR/SORHeights
+    file_to: Businesses/BluebirdSolar
     filename_template: "HoustonEmergencyAlarmFeeSchedule{period}.pdf"
 
   - id: bettencourt_tax
@@ -299,7 +299,7 @@ When cloud LLMs are supported alongside local Ollama, document content must be r
 
 1. **Signal extraction always runs locally** — OCR, regex, keyword matching never need a cloud LLM
 2. **Build a redaction hash table** mapping sensitive values to opaque tokens:
-   - Personal names → random hash (e.g. `"Hugh Scott" → "H7x9k"`)
+   - Personal names → random hash (e.g. `"Morgan Redwood" → "H7x9k"`)
    - Addresses → random hash
    - Account numbers → random hash
    - Entity names → random hash

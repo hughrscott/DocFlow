@@ -34,7 +34,7 @@ A guided setup flow served by the existing FastAPI app. Replaces manual YAML edi
 - [ ] Step 3: Entity editor — user can add/edit/remove businesses, family members,
       bank accounts with a simple form (no YAML visible)
 - [ ] Step 4: Rule review — show inferred filing rules in plain English
-      ("When I see a PNC Bank statement for Sulis Solar, I'll file it under SulisSolar/PNC/")
+      ("When I see a PNC Bank statement for Sulis Solar, I'll file it under Household/PNC/")
       User can edit or delete each rule
 - [ ] Step 5: Test run — let user drop a sample scan PDF to test the config before saving
 - [ ] Step 6: Complete — write `user_config.yaml`, show summary of what was configured

@@ -10,9 +10,9 @@ Each rule describes a type of document and where it should be filed. When you co
 ## Pnc Sulis Solar Checking
 - **Institution**: pnc
 - **Document types**: statement, checking
-- **Account hints**: sulis, solar, 1236
-- **File to**: SulisSolar/PNC
-- **Filename**: PNCBankSulisSolarChecking{period}.pdf
+- **Account hints**: 4102, solar, 7364
+- **File to**: Household/PNC
+- **Filename**: PNCBankBluebirdSolarChecking{period}.pdf
 
 ## Pnc Personal Loc
 - **Institution**: pnc
@@ -34,7 +34,7 @@ Each rule describes a type of document and where it should be filed. When you co
 
 ## Houston Alarm
 - **Institution**: city of houston, houston emergency, burglar alarm
-- **File to**: SOR/SORHeights
+- **File to**: Businesses/BluebirdSolar
 - **Filename**: HoustonEmergencyAlarmFeeSchedule{period}.pdf
 
 ## Bettencourt Tax
@@ -54,15 +54,15 @@ Each rule describes a type of document and where it should be filed. When you co
 - **File to**: Medical/Pesikoff
 - **Filename**: PesikoffCoreVisitBill{period}{person}.pdf
 
-## Together Solar Registered Agent
+## Northstar Holdings Registered Agent
 - **Institution**: corporate filings, maryland
 - **Document types**: invoice
-- **File to**: Investments/Together Solar
+- **File to**: Investments/NorthstarHoldings
 - **Filename**: TogetherSolarRegisteredAgent{period}.pdf
 
 ## Transnational Sor
 - **Institution**: transnational, celero
-- **File to**: SOR/SORHeights
+- **File to**: Businesses/BluebirdSolar
 - **Filename**: TransnationalCelero{period}.pdf
 
 ## Bluecross Eob
@@ -84,7 +84,7 @@ Each rule describes a type of document and where it should be filed. When you co
 ## Cirro Energy Sor
 - **Institution**: cirro_energy
 - **Entity hints**: flag store, flagstore
-- **File to**: SOR/SORHeights/Utilities
+- **File to**: Businesses/BluebirdSolar/Utilities
 - **Filename**: CirroEnergy{period}.pdf
 
 ## Cirro Energy Personal
@@ -127,7 +127,7 @@ Each rule describes a type of document and where it should be filed. When you co
 ## Tx Comptroller Gs
 - **Institution**: tx_comptroller
 - **Entity hints**: gs consulting, greatscott, great scott
-- **File to**: GreatScottConsulting/Texas Comptroller
+- **File to**: Giving/SampletonFoundation/Texas Comptroller
 - **Filename**: TexasComptroller{doc_type}{period}.pdf
 
 ## Tx Comptroller General

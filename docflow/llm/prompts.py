@@ -144,8 +144,8 @@ Respond with JSON:
   "doc_type": "document type",
   "period": "time period in MonthYYYY format if found, otherwise null",
   "person": "family member name if applicable, otherwise null",
-  "suggested_filename": "final filename with template variables filled in, e.g. PNCBankSulisSolarCheckingMarch2026.pdf",
-  "suggested_directory": "relative path under archive root from the rule's File to, e.g. SulisSolar/PNC",
+  "suggested_filename": "final filename with template variables filled in, e.g. PNCBankBluebirdSolarCheckingMarch2026.pdf",
+  "suggested_directory": "relative path under archive root from the rule's File to, e.g. Household/PNC",
   "confidence": 0.85,
   "reasoning": "brief explanation of the classification decision"
 }}"""

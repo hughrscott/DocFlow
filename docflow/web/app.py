@@ -88,7 +88,7 @@ def _persist_config() -> None:
 
 
 def _archive_root() -> Path:
-    return Path(os.path.expanduser(_config.get("archive_root", "~/ElectronicFiles")))
+    return Path(os.path.expanduser(_config.get("archive_root", "~/DocFlowExample/archive")))
 
 
 def _upload_dir() -> Path:
@@ -239,7 +239,7 @@ async def _run_pipeline_async(job_id: str, pdf_path: Path) -> None:
             state.update({"step": "Building duplicate index (first run)", "progress": 2, "status": "processing"})
             await asyncio.to_thread(
                 build_initial_index,
-                _config.get("archive_root", "~/ElectronicFiles"),
+                _config.get("archive_root", "~/DocFlowExample/archive"),
             )
 
         # 1. Ingestion
@@ -308,7 +308,7 @@ async def _run_pipeline_async(job_id: str, pdf_path: Path) -> None:
         # If the original also exists in the watch folder (user uploaded a copy),
         # remove it so it doesn't get processed again
         watch_folder = Path(os.path.expanduser(
-            _config.get("scan_watch_folder", "~/ElectronicFiles/ToBeOrganized")
+            _config.get("scan_watch_folder", "~/DocFlowExample/inbox")
         ))
         watch_copy = watch_folder / pdf_path.name
         if watch_copy.exists() and watch_copy != pdf_path:
@@ -1035,7 +1035,7 @@ async def reprocess_job(job_id: str):
     if not source.exists():
         # Search in BeenOrganized folders
         watch_folder = Path(os.path.expanduser(
-            _config.get("scan_watch_folder", "~/ElectronicFiles/ToBeOrganized")
+            _config.get("scan_watch_folder", "~/DocFlowExample/inbox")
         ))
         for been_dir in watch_folder.glob("BeenOrganized*"):
             candidate = been_dir / source.name

@@ -17,14 +17,14 @@ SAMPLE_CONFIG = {
     "confidence_threshold": 0.75,
     "filing_rules": [
         {
-            "id": "pnc_sulis_solar_checking",
+            "id": "pnc_bluebird_solar_checking",
             "match": {
                 "institution": "pnc",
-                "account_hints": ["sulis", "solar", "1236"],
+                "account_hints": ["4102", "solar", "7364"],
                 "doc_type": ["statement", "checking"],
             },
-            "file_to": "SulisSolar/PNC",
-            "filename_template": "PNCBankSulisSolarChecking{period}.pdf",
+            "file_to": "Household/PNC",
+            "filename_template": "PNCBankBluebirdSolarChecking{period}.pdf",
         },
         {
             "id": "guardian_insurance_eob",
@@ -56,7 +56,7 @@ SAMPLE_CONFIG = {
 
 def _make_candidate(
     institution: str = "pnc",
-    account: str | None = "1236",
+    account: str | None = "7364",
     period: str | None = "February2026",
     doc_type: str | None = "statement",
     pages: list[int] | None = None,
@@ -79,8 +79,8 @@ def _make_candidate(
 
 
 class TestMatchRule:
-    def test_pnc_sulis_match(self):
-        candidate = _make_candidate(institution="pnc", account="1236", doc_type="statement")
+    def test_pnc_bluebird_match(self):
+        candidate = _make_candidate(institution="pnc", account="7364", doc_type="statement")
         rule = SAMPLE_CONFIG["filing_rules"][0]
         assert _match_rule(rule, candidate) is True
 
@@ -106,12 +106,12 @@ class TestMatchRule:
 
 
 class TestClassifyCandidates:
-    def test_pnc_sulis_classified(self):
-        candidate = _make_candidate(institution="pnc", account="1236", doc_type="statement")
+    def test_pnc_bluebird_classified(self):
+        candidate = _make_candidate(institution="pnc", account="7364", doc_type="statement")
         decisions = classify_candidates([candidate], SAMPLE_CONFIG)
         assert len(decisions) == 1
-        assert decisions[0].rule_matched == "pnc_sulis_solar_checking"
-        assert "PNCBankSulisSolarChecking" in decisions[0].filename
+        assert decisions[0].rule_matched == "pnc_bluebird_solar_checking"
+        assert "PNCBankBluebirdSolarChecking" in decisions[0].filename
 
     def test_unmatched_goes_to_review(self):
         from unittest.mock import patch
@@ -126,9 +126,9 @@ class TestClassifyCandidates:
 
     def test_first_match_wins(self):
         """PNC Sulis Solar should match the first rule, not a later PNC rule."""
-        candidate = _make_candidate(institution="pnc", account="1236", doc_type="statement")
+        candidate = _make_candidate(institution="pnc", account="7364", doc_type="statement")
         decisions = classify_candidates([candidate], SAMPLE_CONFIG)
-        assert decisions[0].rule_matched == "pnc_sulis_solar_checking"
+        assert decisions[0].rule_matched == "pnc_bluebird_solar_checking"
 
     def test_bettencourt_year_in_path(self):
         candidate = _make_candidate(

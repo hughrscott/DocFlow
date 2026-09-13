@@ -295,7 +295,7 @@ def init() -> None:
     console.print(f"  Config created: {config_dest}")
 
     # Archive root
-    archive = click.prompt("Archive root directory", default="~/ElectronicFiles")
+    archive = click.prompt("Archive root directory", default="~/DocFlowExample/archive")
     archive_path = Path(os.path.expanduser(archive))
     archive_path.mkdir(parents=True, exist_ok=True)
     console.print(f"  Archive root: {archive_path}")
@@ -610,7 +610,7 @@ def watch(ctx, interval: int) -> None:
     config = _load_config(config_path)
 
     watch_dir = Path(os.path.expanduser(
-        config.get("scan_watch_folder", "~/ElectronicFiles/ToBeOrganized")
+        config.get("scan_watch_folder", "~/DocFlowExample/inbox")
     ))
     docflow_state_dir = _docflow_dir()
     processed_file = docflow_state_dir / "processed.txt"
@@ -674,7 +674,7 @@ def _run_pipeline(input_pdf: Path, config_path: Path) -> None:
     from docflow.filing.dedup import is_empty, build_initial_index
     if is_empty():
         console.print("\n[bold]Building duplicate index (first run)...[/bold]")
-        count = build_initial_index(config.get("archive_root", "~/ElectronicFiles"))
+        count = build_initial_index(config.get("archive_root", "~/DocFlowExample/archive"))
         console.print(f"   Indexed {count} existing files")
 
     # 1. Ingestion

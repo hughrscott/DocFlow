@@ -1,70 +1,70 @@
-# Mail Archiver — Default Config (Hugh Scott)
+# Mail Archiver — Default Config (Morgan Redwood)
 # This file is the shipped default. Copy to user_config.yaml and customise.
 
 # Global settings
-archive_root: /Users/hughscott/Documents/Coding/DocFlow/test_output
-scan_watch_folder: /Users/hughscott/Documents/Coding/DocFlow/test_input
+archive_root: ~/DocFlowExample/test-output
+scan_watch_folder: ~/DocFlowExample/test-input
 confidence_threshold: 0.75
 ollama_model: llama3.2
 ollama_host: http://localhost:11434
 
 # User identity
 user:
-  name: Hugh Scott
-  address: 3615 Robinhood St, Houston TX 77005
+  name: Morgan Redwood
+  address: 100 Example Avenue, Sampleton, TX 77005
 
 # Family members
 family:
-  - name: Vivian Scott
+  - name: Jordan Redwood
     relation: spouse
-  - name: Brodie Scott
+  - name: Casey Redwood
     relation: son
-  - name: Kirstie Scott
+  - name: Riley Redwood
     relation: daughter
 
 # Business entities
 entities:
-  - id: sulis_solar
-    name: Sulis Solar LLC
+  - id: redwood_household
+    name: Redwood Household
     type: business
-    directory: SulisSolar
+    directory: Household
     banks: [pnc]
-    account_hints: ["sulis", "1236"]
+    account_hints: ["4102", "7364"]
 
-  - id: sor_heights
-    name: School of Rock The Heights
-    legal_name: Flagstore LLC
+  - id: bluebird_solar
+    name: Bluebird Solar
+    legal_name: Bluebird Solar LLC
     type: business
-    directory: SOR/SORHeights
+    directory: Businesses/BluebirdSolar
     banks: [frost]
-    address: "742 E 20th St, Houston TX 77008"
+    address: "200 Example Road, Sampleton, MD 20001"
 
-  - id: sor_west_u
-    name: School of Rock West U
-    legal_name: SOR Houston SW LLC
+  - id: cedar_lane_music
+    name: Cedar Lane Music
+    legal_name: Cedar Lane Music LLC
     type: business
-    directory: SOR/SORHoustonSW
+    directory: Businesses/CedarLaneMusic
     banks: [frost]
 
-  - id: together_solar
-    name: Together Solar
+  - id: northstar_holdings
+    name: Northstar Holdings
     type: investment
-    directory: Investments/Together Solar
+    directory: Investments/NorthstarHoldings
 
-  - id: great_scott
-    name: GreatScott Consulting
+  - id: sampleton_foundation
+    name: Sampleton Foundation
     type: business
-    directory: GreatScottConsulting
+    directory: Giving/SampletonFoundation
 
 # Filing rules — evaluated top to bottom, first match wins
 filing_rules:
-  - id: pnc_sulis_solar_checking
+  - id: pnc_bluebird_solar_checking
     match:
       institution: pnc
-      account_hints: ["sulis", "solar", "1236"]
+      account_hints: ["4102", "solar", "7364"]
       doc_type: [statement, checking]
-    file_to: SulisSolar/PNC
-    filename_template: "PNCBankSulisSolarChecking{period}.pdf"
+    file_to: Household/PNC
+    filename_template: "PNCBankBluebirdSolarChecking{period}.pdf"
 
   - id: pnc_personal_loc
     match:
@@ -90,7 +90,7 @@ filing_rules:
   - id: houston_alarm
     match:
       institution: ["city of houston", "houston emergency", "burglar alarm"]
-    file_to: SOR/SORHeights
+    file_to: Businesses/BluebirdSolar
     filename_template: "HoustonEmergencyAlarmFeeSchedule{period}.pdf"
 
   - id: bettencourt_tax
@@ -113,19 +113,19 @@ filing_rules:
     file_to: Medical/Pesikoff
     filename_template: "PesikoffCoreVisitBill{period}{person}.pdf"
 
-  # Edge case: Maryland Registered Agent invoices → Together Solar
-  - id: together_solar_registered_agent
+  # Edge case: Maryland Registered Agent invoices → Northstar Holdings
+  - id: cedar_lane_music_registered_agent
     match:
       institution: ["corporate filings", "maryland"]
       doc_type: [invoice]
-    file_to: Investments/Together Solar
+    file_to: Investments/NorthstarHoldings
     filename_template: "TogetherSolarRegisteredAgent{period}.pdf"
 
   # Edge case: Transnational / Celero (payment processor for SOR)
   - id: transnational_sor
     match:
       institution: ["transnational", "celero"]
-    file_to: SOR/SORHeights
+    file_to: Businesses/BluebirdSolar
     filename_template: "TransnationalCelero{period}.pdf"
 
   # Blue Cross / BCBS
@@ -155,7 +155,7 @@ filing_rules:
     match:
       institution: cirro_energy
       entity_hints: ["flag store", "flagstore"]
-    file_to: SOR/SORHeights/Utilities
+    file_to: Businesses/BluebirdSolar/Utilities
     filename_template: "CirroEnergy{period}.pdf"
 
   # Cirro Energy — personal/other
@@ -214,7 +214,7 @@ filing_rules:
     match:
       institution: tx_comptroller
       entity_hints: ["gs consulting", "greatscott", "great scott"]
-    file_to: GreatScottConsulting/Texas Comptroller
+    file_to: Giving/SampletonFoundation/Texas Comptroller
     filename_template: "TexasComptroller{doc_type}{period}.pdf"
 
   # Texas Comptroller — general

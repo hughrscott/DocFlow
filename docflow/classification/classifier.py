@@ -72,7 +72,7 @@ def _sanitise_filename(filename: str) -> str:
 
 def _resolve_target_directory(file_to: str, config: dict, year: str = "") -> str:
     """Build the absolute target directory path."""
-    archive_root = os.path.expanduser(config.get("archive_root", "~/ElectronicFiles"))
+    archive_root = os.path.expanduser(config.get("archive_root", "~/DocFlowExample/archive"))
     resolved = file_to.format(year=year) if "{year}" in file_to else file_to
     return os.path.join(archive_root, resolved)
 

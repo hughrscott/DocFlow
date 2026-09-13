@@ -127,7 +127,7 @@ def _write_filing_log(
     """Write a JSON filing log to the archive root."""
     import os
     archive_root = Path(os.path.expanduser(
-        config.get("archive_root", "~/ElectronicFiles")
+        config.get("archive_root", "~/DocFlowExample/archive")
     ))
     ensure_directory(archive_root)
 

@@ -13,7 +13,7 @@ from docflow.summary.generator import generate_summary
 
 def _make_decision(auto_file: bool = True) -> FilingDecision:
     candidate = DocumentCandidate(
-        pages=[1, 2], institution="pnc", account="1236",
+        pages=[1, 2], institution="pnc", account="7364",
         period="February2026", doc_type="statement",
         clustering_confidence=0.9,
     )

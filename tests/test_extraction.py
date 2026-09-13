@@ -30,7 +30,7 @@ def _make_decision(
     target_dir: str,
 ) -> FilingDecision:
     candidate = DocumentCandidate(
-        pages=pages, institution="pnc", account="1236",
+        pages=pages, institution="pnc", account="7364",
         period="February2026", doc_type="statement",
         clustering_confidence=0.9,
     )

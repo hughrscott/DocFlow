@@ -2,7 +2,7 @@
 
 ## Goal
 A working command-line tool that processes a single scan PDF and correctly files all
-documents it contains. Hardcoded for Hugh Scott's specific setup. No UI, no web server,
+documents it contains. Hardcoded for Morgan Redwood's specific setup. No UI, no web server,
 no database. Just a pipeline that runs and produces correctly organised files.
 
 ## Prerequisites
@@ -134,9 +134,9 @@ Handle them explicitly:
 |---|---|
 | Blue Shield/BCBS pages follow PNC pages directly | Signals for each are distinct — never let PNC signal bleed into adjacent pages |
 | Bettencourt has two separate documents in same scan | Different page counts (1 page vs 2 pages) — flag as possible duplicate, don't merge |
-| Houston Alarm docs are interspersed with PNC pages | Houston Emergency Center signal overrides PNC — file under SOR/SORHeights |
-| Sulis Solar is a PNC account but NOT personal | Any PNC page with "Sulis Solar" or account #1236 → SulisSolar/PNC, never PNC/Personal |
-| Maryland Registered Agent → Together Solar | No "Together Solar" text on the invoice — rule must match on "Corporate Filings LLC" or "Maryland" + invoice type |
+| Houston Alarm docs are interspersed with PNC pages | Houston Emergency Center signal overrides PNC — file under Businesses/BluebirdSolar |
+| Sulis Solar is a PNC account but NOT personal | Any PNC page with "Sulis Solar" or account #7364 → Household/PNC, never PNC/Personal |
+| Maryland Registered Agent → Northstar Holdings | No "Northstar Holdings" text on the invoice — rule must match on "Corporate Filings LLC" or "Maryland" + invoice type |
 | Pages with no OCR text (blank or all-image) | Assign to preceding document; log as low-confidence |
 | Upside-down pages (OCR returns garbage) | Retry at 180°; if still garbage, assign to nearest document and flag for review |
 

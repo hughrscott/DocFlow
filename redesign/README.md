@@ -78,7 +78,7 @@ Screen switching is local state (`screen: 'dashboard' | 'review' | 'archive' | '
 
 **Layout:** two columns (left flex 1, right `316px`), gap 28px, `32px 34px` padding.
 - **Left column:**
-  - **Entities & Family Members** — heading + subtext, then a 2-col grid of entity cards (white, border, radius 14px). Each: icon tile (people = `#E9EDF7`/`#34508C` `person`; businesses = `#F6E9D3`/`#B5751F` `apartment`) + name (700, 13.5px) + relation (uppercase 10px `#A09A88`). Entities include Vivian/Brodie/Kirstie Scott and several LLCs.
+  - **Entities & Family Members** — heading + subtext, then a 2-col grid of entity cards (white, border, radius 14px). Each: icon tile (people = `#E9EDF7`/`#34508C` `person`; businesses = `#F6E9D3`/`#B5751F` `apartment`) + name (700, 13.5px) + relation (uppercase 10px `#A09A88`). Entities include Vivian/Brodie/Riley Redwood and several LLCs.
   - **Storage & Paths** — two labeled mono inputs: Archive Root Directory and Scan Watch Folder (iCloud-style paths).
   - **AI Processing Engine** — a **dark card** (`#15171C`, radius 18px, 28px padding, `#F4F1EA` text) with a gold `auto_awesome` icon + heading. 2-col grid of fields (translucent white tiles): Provider ("OpenRouter", with `expand_more`), Model ("google/gemini-2.0-flash-001"), API Endpoint ("https://openrouter.ai/api/v1"), API Key ("••••••• configured"). Below: **Confidence Threshold** slider (50–100, gold `accent-color: #C0A86E`, value shown in gold Manrope 800) with "More auto-filing ←→ More review" end labels. Buttons: Save Settings (light), Test Connection (`cable`), Verify Paths (`folder_open`).
 - **Right column:**

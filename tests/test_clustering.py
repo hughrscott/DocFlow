@@ -79,7 +79,7 @@ class TestClusterPages:
 
     def test_different_accounts_same_institution_split(self):
         records = [
-            _make_record(1, institution="pnc", account_hint="1236"),
+            _make_record(1, institution="pnc", account_hint="7364"),
             _make_record(2, institution="pnc", account_hint="5678"),
         ]
         candidates = cluster_pages(records, {})
