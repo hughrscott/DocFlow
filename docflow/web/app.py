@@ -9,7 +9,7 @@ import shutil
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 
 import yaml
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
@@ -31,6 +31,7 @@ _config: dict = {}
 _processing_state: dict = {}  # Active processing state for SSE
 _state_store = None  # docflow.state.repositories.StateStore backing /api/v1
 _filer = None  # docflow.filing.operations.DurableFiler backing job retry
+_active_scope_id: str | None = None  # registered scope the local UI works in
 
 # Mount static files
 _static_dir = Path(__file__).parent / "static"
@@ -60,11 +61,12 @@ def configure(config: dict, config_path: Path | None = None) -> None:
 _config_path: Path | None = None
 
 
-def configure_state(store, filer=None) -> None:
-    """Attach the local application-state store (and durable filer) used by /api/v1 routes."""
-    global _state_store, _filer
+def configure_state(store, filer=None, *, scope_id: str | None = None) -> None:
+    """Attach the local state store, durable filer and the UI's active archive scope."""
+    global _state_store, _filer, _active_scope_id
     _state_store = store
     _filer = filer
+    _active_scope_id = scope_id
 
 
 def _persist_config() -> None:
@@ -155,14 +157,31 @@ async def upload_pdf(file: Annotated[UploadFile, File()]):
     return {"filename": file.filename, "path": str(upload_path), "size": len(content)}
 
 
+def _legacy_process_source(raw: object) -> Path:
+    """A PDF inside the upload folder or configured watch folder; never an arbitrary path."""
+    from docflow.filing.operations import confined
+    from docflow.state.repositories import UnsafeValueError
+
+    candidate = Path(raw) if isinstance(raw, str) and raw else None
+    watch_folder = Path(os.path.expanduser(
+        _config.get("scan_watch_folder", "~/DocFlowExample/inbox")))
+    for root in (_upload_dir(), watch_folder) if candidate and candidate.is_absolute() else ():
+        try:
+            relative = candidate.relative_to(root)
+            path = confined(root, relative.as_posix())
+        except (ValueError, UnsafeValueError):
+            continue
+        if path.is_file() and path.suffix.lower() == ".pdf":
+            return path
+    raise HTTPException(400, "PDF must be an uploaded file or in the configured watch folder")
+
+
 @app.post("/api/process")
 async def process_pdf(request: Request):
     """Start processing a PDF. Returns immediately with a job ID.
     Use /api/process/status/{job_id} to poll for progress."""
     body = await request.json()
-    pdf_path = body.get("path")
-    if not pdf_path or not Path(pdf_path).exists():
-        raise HTTPException(400, f"PDF not found: {pdf_path}")
+    pdf_path = str(_legacy_process_source(body.get("path")))
 
     job_id = str(uuid.uuid4())[:8]
     _processing_state[job_id] = {
@@ -1221,6 +1240,49 @@ def _v1_job_error(code: str) -> _V1Error:
     return _V1Error(422, "invalid_request", "Request body does not match the contract.")
 
 
+class _UploadSource(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    kind: Literal["upload"]
+    name: str = Field(min_length=1, max_length=255)
+
+
+class _WatchSource(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    kind: Literal["watch"]
+    relative_path: str = Field(min_length=1, max_length=1024)
+
+
+class _JobCreateRequest(_RetryRequest):
+    source: Annotated[_UploadSource | _WatchSource, Field(discriminator="kind")]
+
+
+@app.post("/api/v1/jobs")
+async def v1_create_job(request: Request):
+    """Admit an uploaded file or configured watch-folder PDF by handle, never by path."""
+    from docflow.filing.operations import RetryRejected
+    from docflow.state.repositories import UnsafeValueError
+
+    _v1_require_state()
+    if _filer is None:
+        raise _V1Error(503, "state_unavailable", "Local application state is not configured.")
+    body = await _v1_body(request, _JobCreateRequest)
+    scope = _v1_scope(body.archive_scope_id)
+    source = body.source
+    locator = (f"upload:{source.name}" if isinstance(source, _UploadSource)
+               else f"watch:{source.relative_path}")
+    try:
+        return await asyncio.to_thread(_filer.create_job, scope.id, locator,
+                                       idempotency_key=body.idempotency_key)
+    except UnsafeValueError:
+        raise _V1Error(400, "invalid_source", "Source must be an uploaded file or a configured "
+                       "watch-folder PDF.") from None
+    except RetryRejected as exc:
+        if exc.code == "idempotency_key_reused":
+            raise _V1Error(409, exc.code, "This idempotency key was used for a different "
+                           "request.") from None
+        raise _v1_job_error(exc.code) from None
+
+
 @app.get("/api/v1/jobs/{job_id}")
 async def v1_get_job(job_id: str, request: Request):
     """Durable job status, page accounting, filing journal and recovery state."""
@@ -1252,6 +1314,143 @@ async def v1_retry_job(job_id: str, request: Request):
                                        idempotency_key=body.idempotency_key)
     except RetryRejected as exc:
         raise _v1_job_error(exc.code) from None
+
+
+# ---------------------------------------------------------------------------
+# API v1: durable review actions and undo
+# ---------------------------------------------------------------------------
+
+_REVIEW_STATUSES = ("pending", "approved", "corrected", "skipped")
+
+
+def _v1_review_actions():
+    from docflow.filing.review_actions import ReviewActions
+
+    return ReviewActions(_state_store)
+
+
+class _ReviewActionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    archive_scope_id: str = Field(min_length=1, max_length=128)
+    idempotency_key: str = Field(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9._:-]+$")
+
+
+_REVIEW_ERRORS = {
+    "review_item_not_found": (404, "Review item not found in this scope."),
+    "review_item_not_pending": (409, "Review item is no longer pending."),
+    "review_item_not_actionable": (409, "Review item has no pages awaiting review."),
+    "source_unavailable": (409, "The retained original for these pages is unavailable."),
+    "destination_required": (409, "The suggestion cannot be filed; send a correction."),
+    "invalid_destination": (
+        400, "Destination must be a relative archive folder and a visible .pdf name."),
+    "operation_not_found": (404, "Operation not found in this scope."),
+    "idempotency_key_reused": (409, "This idempotency key was used for a different request."),
+    "operation_not_undoable": (409, "This operation cannot be undone."),
+}
+
+
+def _v1_review_error(code: str) -> _V1Error:
+    status, message = _REVIEW_ERRORS.get(
+        code, (409, "The review action could not be completed."))
+    if code == "invalid_idempotency_key":
+        return _V1Error(422, "invalid_request", "Request body does not match the contract.")
+    return _V1Error(status, code, message)
+
+
+async def _v1_review_call(func, *args, **kwargs):
+    from docflow.filing.review_actions import ReviewActionRejected
+
+    try:
+        return await asyncio.to_thread(func, *args, **kwargs)
+    except ReviewActionRejected as exc:
+        raise _v1_review_error(exc.code) from None
+
+
+@app.post("/api/v1/review-items/{item_id}/approve")
+async def v1_approve_review_item(item_id: str, request: Request):
+    """File the item's pages at its stored suggestion; returns a durable operation."""
+    _v1_require_state()
+    body = await _v1_body(request, _ReviewActionRequest)
+    scope = _v1_scope(body.archive_scope_id)
+    return await _v1_review_call(_v1_review_actions().approve, scope.id, item_id,
+                                 idempotency_key=body.idempotency_key)
+
+
+class _ReviewCorrectRequest(_ReviewActionRequest):
+    relative_directory: str = Field(min_length=1, max_length=1024)
+    filename: str = Field(min_length=1, max_length=255)
+
+
+@app.post("/api/v1/review-items/{item_id}/correct")
+async def v1_correct_review_item(item_id: str, request: Request):
+    """File the item's pages at a strictly validated archive-relative destination."""
+    _v1_require_state()
+    body = await _v1_body(request, _ReviewCorrectRequest)
+    scope = _v1_scope(body.archive_scope_id)
+    return await _v1_review_call(_v1_review_actions().correct, scope.id, item_id,
+                                 idempotency_key=body.idempotency_key,
+                                 relative_directory=body.relative_directory,
+                                 filename=body.filename)
+
+
+@app.post("/api/v1/review-items/{item_id}/skip")
+async def v1_skip_review_item(item_id: str, request: Request):
+    """Intentionally skip the item's pages; no archive change; returns a durable operation."""
+    _v1_require_state()
+    body = await _v1_body(request, _ReviewActionRequest)
+    scope = _v1_scope(body.archive_scope_id)
+    return await _v1_review_call(_v1_review_actions().skip, scope.id, item_id,
+                                 idempotency_key=body.idempotency_key)
+
+
+class _ReviewBatchRequest(_ReviewActionRequest):
+    action: Literal["approve", "skip"]
+    review_item_ids: list[Annotated[str, Field(min_length=1, max_length=128)]] = Field(
+        min_length=1, max_length=100)
+
+
+@app.post("/api/v1/review-items/batch")
+async def v1_batch_review_items(request: Request):
+    """Approve or skip several items in one durable, undoable operation."""
+    _v1_require_state()
+    body = await _v1_body(request, _ReviewBatchRequest)
+    if len(set(body.review_item_ids)) != len(body.review_item_ids):
+        raise _V1Error(422, "invalid_request", "Request body does not match the contract.")
+    scope = _v1_scope(body.archive_scope_id)
+    return await _v1_review_call(_v1_review_actions().batch, scope.id, action=body.action,
+                                 review_item_ids=body.review_item_ids,
+                                 idempotency_key=body.idempotency_key)
+
+
+@app.post("/api/v1/operations/{operation_id}/undo")
+async def v1_undo_operation(operation_id: str, request: Request):
+    """Durably compensate a review action; reports per-step partial failure."""
+    _v1_require_state()
+    body = await _v1_body(request, _ReviewActionRequest)
+    scope = _v1_scope(body.archive_scope_id)
+    return await _v1_review_call(_v1_review_actions().undo, scope.id, operation_id,
+                                 idempotency_key=body.idempotency_key)
+
+
+@app.get("/api/v1/archive-scopes/active")
+async def v1_active_scope():
+    """The scope ID the local UI sends explicitly with every v1 call; no paths are returned."""
+    _v1_require_state()
+    if _active_scope_id is None:
+        raise _V1Error(404, "scope_not_found", "Archive scope is not registered.")
+    return {"archive_scope": {"id": _v1_scope(_active_scope_id).id}}
+
+
+@app.get("/api/v1/review-items")
+async def v1_list_review_items(request: Request):
+    """Durable review items for an explicit scope; no raw OCR text, archive-relative paths."""
+    _v1_require_state()
+    scope_id = request.query_params.get("archive_scope_id", "")
+    status = request.query_params.get("status", "pending")
+    if not 1 <= len(scope_id) <= 128 or status not in _REVIEW_STATUSES:
+        raise _V1Error(422, "invalid_request", "Request does not match the contract.")
+    scope = _v1_scope(scope_id)
+    return await asyncio.to_thread(_v1_review_actions().list_items, scope.id, status)
 
 
 @app.post("/api/settings/validate-paths")

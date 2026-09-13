@@ -39,6 +39,10 @@ SECRET_VALUE_RE = re.compile(
     r"|xox[baprs]-[A-Za-z0-9-]{10,}|-----BEGIN [A-Z ]*PRIVATE KEY-----|://[^/\s:@]+:[^/\s@]+@"
 )
 ABSOLUTE_PATH_RE = re.compile(r"^(?:/|[A-Za-z]:[\\/]|\\\\)")
+# Page moves made by review actions and reversed only by their journaled undo.
+REVIEW_PAGE_MOVES = frozenset({
+    ("review", "filed"), ("review", "skipped"), ("filed", "review"), ("skipped", "review"),
+})
 CONTENT_KEYS = frozenset({
     "raw_text", "raw_texts", "raw_text_preview", "text_preview", "preview", "ocr_text",
     "full_text", "notes", "placeholder_map", "placeholders", "lookup", "lookup_map",
@@ -372,6 +376,22 @@ class JobRepository(_Repository):
                 if cursor.rowcount != 1:
                     raise InvalidTransitionError("page already has a different outcome")
 
+    def move_page_status(self, scope_id: str, job_id: str, pages: list[int], *,
+                         expected: str, new: str) -> None:
+        """Compare-and-set review-action outcomes (``review`` <-> ``filed``/``skipped``)."""
+        self.require_scope(scope_id)
+        if (expected, new) not in REVIEW_PAGE_MOVES:
+            raise InvalidTransitionError(f"page move {expected!r} -> {new!r} not allowed")
+        with self.write() as conn:
+            for page in pages:
+                cursor = conn.execute(
+                    "UPDATE job_pages SET status = ? WHERE archive_scope_id = ? AND job_id = ? "
+                    "AND page_number = ? AND status = ?",
+                    (new, scope_id, job_id, page, expected),
+                )
+                if cursor.rowcount != 1:
+                    raise InvalidTransitionError("page is not in the expected status")
+
     def transition(
         self, scope_id: str, job_id: str, *, expected: str, new: str,
         error_code: str | None = None,
@@ -385,6 +405,17 @@ class JobRepository(_Repository):
                 "UPDATE jobs SET status = ?, attempt = attempt + ?, updated_at = ?, "
                 "last_error_code = ? WHERE id = ? AND archive_scope_id = ? AND status = ?",
                 (new, 1 if new == "ocr" else 0, utc_now(), error_code, job_id, scope_id, expected),
+            )
+        return cursor.rowcount == 1
+
+    def reopen_review(self, scope_id: str, job_id: str) -> bool:
+        """Undo compensation only: a ``completed`` job returns to ``review``."""
+        self.require_scope(scope_id)
+        with self.write() as conn:
+            cursor = conn.execute(
+                "UPDATE jobs SET status = 'review', updated_at = ? "
+                "WHERE id = ? AND archive_scope_id = ? AND status = 'completed'",
+                (utc_now(), job_id, scope_id),
             )
         return cursor.rowcount == 1
 
@@ -483,6 +514,29 @@ class ReviewRepository(_Repository):
             )
         return cursor.rowcount == 1
 
+    def reopen(self, scope_id: str, item_id: str, *, expected: str) -> bool:
+        """Undo compensation only: a resolved item returns to ``pending``."""
+        self.require_scope(scope_id)
+        if expected not in REVIEW_TRANSITIONS["pending"]:
+            raise InvalidTransitionError(f"review status {expected!r} cannot be reopened")
+        with self.write() as conn:
+            cursor = conn.execute(
+                "UPDATE review_items SET status = 'pending', updated_at = ? "
+                "WHERE id = ? AND archive_scope_id = ? AND status = ?",
+                (utc_now(), item_id, scope_id, expected),
+            )
+        return cursor.rowcount == 1
+
+    def delete_correction(self, scope_id: str, item_id: str, correction_id: str) -> bool:
+        """Undo compensation only: forget the correction recorded by the undone action."""
+        self.require_scope(scope_id)
+        with self.write() as conn:
+            cursor = conn.execute(
+                "DELETE FROM corrections WHERE id = ? AND archive_scope_id = ? "
+                "AND review_item_id = ?", (correction_id, scope_id, item_id),
+            )
+        return cursor.rowcount == 1
+
     def correct(
         self,
         scope_id: str,
@@ -541,6 +595,18 @@ class FileRecordRepository(_Repository):
         record = self.get_by_path(scope_id, relative)
         assert record is not None
         return record
+
+    def remove(self, scope_id: str, relative_path: str, *, job_id: str,
+               content_sha256: str) -> bool:
+        """Undo compensation only: drop the exact record of a verified, removed file."""
+        self.require_scope(scope_id)
+        with self.write() as conn:
+            cursor = conn.execute(
+                "DELETE FROM file_records WHERE archive_scope_id = ? AND relative_path = ? "
+                "AND job_id = ? AND content_sha256 = ? AND role = 'filed'",
+                (scope_id, archive_relative(relative_path), job_id, content_sha256),
+            )
+        return cursor.rowcount == 1
 
     def get_by_path(self, scope_id: str, relative_path: str) -> FileRecord | None:
         self.require_scope(scope_id)
@@ -708,6 +774,26 @@ class OperationRepository(_Repository):
                 "UPDATE operations SET status = ?, result_json = ?, completed_at = ? "
                 "WHERE archive_scope_id = ? AND id = ? AND status = ?",
                 (status, check_safe_json(result), utc_now(), scope_id, operation_id, expected),
+            )
+        return cursor.rowcount == 1
+
+    def mark_undo(self, scope_id: str, operation_id: str, *, expected: str, status: str,
+                  undone_by: str | None = None) -> bool:
+        """Record undo progress on a completed operation (``partially_undone``/``undone``)."""
+        self.require_scope(scope_id)
+        if status not in {"completed", "partially_undone", "undone"}:
+            raise InvalidTransitionError(f"unknown undo status {status!r}")
+        with self.write() as conn:
+            operation = self.get(scope_id, operation_id)
+            result = dict(operation.result or {})
+            if undone_by is not None:
+                result["undone_by"] = undone_by
+            cursor = conn.execute(
+                "UPDATE operations SET status = ?, result_json = ?, undone_at = CASE WHEN ? = "
+                "'undone' THEN ? ELSE undone_at END WHERE archive_scope_id = ? AND id = ? "
+                "AND status = ?",
+                (status, check_safe_json(result), status, utc_now(), scope_id, operation_id,
+                 expected),
             )
         return cursor.rowcount == 1
 

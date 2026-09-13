@@ -39,6 +39,7 @@ from docflow.state.repositories import (
 
 FILE_JOB = "file_job"
 JOB_RETRY = "job_retry"
+JOB_CREATE = "job_create"
 IDEMPOTENCY_KEY_RE = re.compile(r"[A-Za-z0-9._:-]{1,128}")
 # Durable boundaries in execution order; a crash may occur after any of them.
 JOURNAL_BOUNDARIES = (
@@ -291,6 +292,41 @@ class DurableFiler:
                 if finished is not None and finished.status != "running":
                     shutil.rmtree(leftover, ignore_errors=True)
         return [self._execute(scope_id, operation.id) for operation in running]
+
+    def create_job(self, scope_id: str, source_locator: str, *, idempotency_key: str) -> dict:
+        """``POST /api/v1/jobs``: admit an ``upload:`` or ``watch:`` handle once per key.
+
+        Only configured upload/watch roots are resolved; arbitrary paths, traversal,
+        symlinks and non-PDF names raise ``UnsafeValueError`` before anything is recorded.
+        """
+        if not isinstance(idempotency_key, str) or not IDEMPOTENCY_KEY_RE.fullmatch(
+            idempotency_key
+        ):
+            raise RetryRejected("invalid_idempotency_key")
+        locator = validate_source_locator(source_locator)
+        scheme, _, reference = locator.partition(":")
+        if scheme not in {"upload", "watch"} or not reference.lower().endswith(".pdf"):
+            raise UnsafeValueError("job sources are uploaded or watch-folder PDFs")
+        operations = self.store.operations
+        operation_id = stable_id(JOB_CREATE, scope_id, idempotency_key)
+        existing = operations.get(scope_id, operation_id)
+        if existing is not None:
+            if existing.request["source_locator"] != locator:
+                raise RetryRejected("idempotency_key_reused")
+            return existing.result
+        self._source_path(scope_id, locator)  # confinement before any observation
+        admission = self.admit(scope_id, locator)
+        if admission.job_id is None:
+            raise RetryRejected("source_unavailable")
+        response = {"admission": {"state": admission.state, "retryable": admission.retryable},
+                    **job_payload(self.store, scope_id, admission.job_id)}
+        with self.store.db.transaction():
+            operations.create(scope_id, job_id=admission.job_id, kind=JOB_CREATE, steps=[],
+                              request={"source_locator": locator}, status="completed",
+                              operation_id=operation_id)
+            operations.finish_with_result(scope_id, operation_id, expected="completed",
+                                          status="completed", result=response)
+        return response
 
     def retry(self, scope_id: str, job_id: str, *, idempotency_key: str) -> dict:
         """``POST /api/v1/jobs/{id}/retry``: resume or requeue once per idempotency key."""

@@ -427,9 +427,21 @@ def uninstall_service() -> None:
 # ui (foreground server)
 # ---------------------------------------------------------------------------
 
+def _loopback_host(ctx, param, value: str) -> str:
+    """The UI is local-only: refuse any bind that is not a loopback address."""
+    from docflow.web.binding import NonLoopbackBindError, require_loopback_host
+
+    try:
+        return require_loopback_host(value)
+    except NonLoopbackBindError:
+        raise click.BadParameter(
+            "must be a loopback address (127.0.0.1, ::1 or localhost)") from None
+
+
 @cli.command()
 @click.pass_context
-@click.option("--host", default="127.0.0.1", help="Server host.")
+@click.option("--host", default="127.0.0.1", callback=_loopback_host,
+              help="Loopback server host (non-loopback binds are rejected).")
 @click.option("--port", default=_DEFAULT_PORT, type=int, help="Server port.")
 def ui(ctx, host: str, port: int) -> None:
     """Launch the full DocFlow web UI (foreground)."""
@@ -445,7 +457,8 @@ def ui(ctx, host: str, port: int) -> None:
 
 @cli.command()
 @click.pass_context
-@click.option("--host", default="127.0.0.1", help="Server host.")
+@click.option("--host", default="127.0.0.1", callback=_loopback_host,
+              help="Loopback server host (non-loopback binds are rejected).")
 @click.option("--port", default=_DEFAULT_PORT, type=int, help="Server port.")
 def review(ctx, host: str, port: int) -> None:
     """Launch the review queue web UI (legacy)."""
