@@ -19,6 +19,7 @@ def runs(monkeypatch: pytest.MonkeyPatch) -> list[dict]:
 
 @pytest.fixture()
 def config(tmp_path: Path) -> Path:
+    (tmp_path / "archive").mkdir()
     path = tmp_path / "config.yaml"
     path.write_text(f"archive_root: {tmp_path / 'archive'}\nprivacy_mode: local_only\n")
     return path

@@ -446,13 +446,23 @@ def _loopback_host(ctx, param, value: str) -> str:
 def ui(ctx, host: str, port: int) -> None:
     """Launch the full DocFlow web UI (foreground)."""
     import uvicorn
-    from docflow.web.app import app, configure
+    from docflow.web.app import app, configure, configure_state
+    from docflow.web.bootstrap import StateBootstrapError, open_local_state
 
     config_path = ctx.obj["config_path"]
     config = _load_config(config_path)
+    try:
+        state = open_local_state(config)
+    except StateBootstrapError as exc:
+        raise click.ClickException(str(exc)) from None
     configure(config, config_path=config_path)
+    configure_state(state.store, state.filer, scope_id=state.scope_id)
     click.echo(f"\n  DocFlow UI: http://{host}:{port}\n")
-    uvicorn.run(app, host=host, port=port, log_level="info")
+    try:
+        uvicorn.run(app, host=host, port=port, log_level="info")
+    finally:
+        configure_state(None)
+        state.close()
 
 
 @cli.command()

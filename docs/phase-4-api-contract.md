@@ -25,7 +25,7 @@ creation by handle, and the loopback bind rule. Phase 3 contracts
 
 | HTTP | `code` | Message |
 |---|---|---|
-| 503 | `state_unavailable` | `Local application state is not configured.` |
+| 503 | `state_unavailable` | `Local application state is not configured.` (not expected under `docflow ui`, which refuses to start without state; section 13) |
 | 422 | `invalid_request` | `Request body does not match the contract.` (query-string errors use `Request does not match the contract.`) |
 | 404 | `scope_not_found` | `Archive scope is not registered.` |
 
@@ -60,8 +60,9 @@ Returns the scope the local UI works in. No body, no query.
 200 {"archive_scope": {"id": "3f2b0c9e-0000-5000-8000-000000000000"}}
 ```
 
-Errors: `503 state_unavailable`; `404 scope_not_found` when no active scope is configured.
-The root path is never returned. Backend wiring: `configure_state(store, filer, scope_id=...)`.
+Errors: `503 state_unavailable` / `404 scope_not_found` only when the app runs without the
+`docflow ui` bootstrap (section 13), for example embedded in tests. The root path is never
+returned.
 
 ## 4. `GET /api/v1/review-items?archive_scope_id=<id>&status=pending`
 
@@ -348,12 +349,52 @@ and host names are rejected before the server starts (no DNS lookup). There is n
 5. No Undo control is ever shown without an operation ID (`showUndoSnackbar` ignores a
    missing callback). The legacy Unmatched tab has no durable operation, so it shows a toast.
 
-## 12. Not part of Phase 4
+## 12. Limitations (honest status)
 
-- Production wiring of the state store and active scope in `docflow ui` (routes return
-  `503 state_unavailable` until `configure_state` is called), and moving the legacy
-  pipelines to `DurableFiler`; legacy pipelines still write `review_queue.json`, so their
-  items are not listed by `/api/v1/review-items` until migrated.
-- Page previews for durable review items; undo of `file_job` operations; actions for items
-  with no page references (privacy-blocked).
-- Action tracking, deadlines, email, payments. Mac acceptance is pending human execution.
+- Linux-tested only; Mac acceptance (launch on loopback, durable undo after a browser
+  reload, iCloud behavior) is pending human execution.
+- Durable review items are created by `DurableFiler` filing (`POST /api/v1/jobs` admission
+  plus the backend filing service). The legacy `/api/process` pipeline and the CLI pipeline
+  still write the legacy `review_queue.json`; those legacy items are not listed by
+  `/api/v1/review-items` and are not migrated automatically at startup (the Phase 1
+  migration remains an explicit backend step).
+- No page previews for durable review items (the preview pane shows its placeholder); no
+  undo of `file_job` operations; no actions for items without page references
+  (privacy-blocked).
+- Interrupted filing jobs are not auto-resumed at UI startup; use
+  `POST /api/v1/jobs/{id}/retry`. Interrupted review actions and undos resume automatically
+  on the next review action or undo.
+- Action tracking, deadlines, email and payments are not part of this release.
+
+## 13. Local bootstrap and configuration (`docflow ui`)
+
+`docflow ui` (also launched by `docflow start` and the macOS LaunchAgent) wires durable state
+before serving; routes are not reachable until this succeeds:
+
+1. Load the config file (`--config`, `DOCFLOW_CONFIG`, `~/.docflow/config.yaml`, …).
+2. **`archive_root` is required** and must name an existing directory (`~` is expanded).
+   There is no default archive path. It must not be `/`, a system directory, the home
+   directory, or overlap the application-state directory.
+3. Resolve application state outside every archive root: macOS
+   `~/Library/Application Support/DocFlow/`, Linux `${XDG_DATA_HOME:-~/.local/share}/docflow/`
+   (never iCloud). The archive root is validated **before** any state file is created.
+4. Take the single-writer lock, open/migrate `state.sqlite3`, and register the archive root
+   as an archive scope (idempotent: the same root keeps the same scope ID across restarts).
+   That scope becomes the active scope returned by section 3.
+5. Configure the durable filer with the upload folder (`<archive_root>/_uploads`, the folder
+   used by `POST /api/upload`) and, if set, `scan_watch_folder` as the only job-source roots.
+6. Bind to loopback (section 10) and serve. On exit the state is released and the lock
+   dropped.
+
+Startup fails closed, prints an actionable message and starts no server when:
+
+| Condition | Message starts with |
+|---|---|
+| `archive_root` missing or blank | `archive_root is not set in the config file.` |
+| archive root missing, a file, a system/home directory, or overlapping state | `archive_root in the config file cannot be used:` / `Local application state is unsafe:` |
+| another DocFlow process holds the state lock | `Another DocFlow process is using the local state.` |
+
+HTTP callers can never choose the archive root, the state location or the scope; the scope
+ID is only read from section 3 and echoed back. Covered by
+`tests/review_actions/test_localhost_bootstrap.py` (bootstrap, fail-closed cases, and
+list → approve → restart → undo through the configured app).
