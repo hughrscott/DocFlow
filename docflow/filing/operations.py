@@ -84,6 +84,39 @@ def validate_page_accounting(page_count: int, assignments: list[DocumentAssignme
     check_page_numbers(page_count, [a.pages for a in assignments], require_all=True)
 
 
+PRIOR_ATTEMPT_FILED = "prior_attempt_filed"
+
+
+def reconcile_prior_filed(assignments: list[DocumentAssignment], pages: list,
+                          prior: list) -> list[DocumentAssignment]:
+    """Pages an earlier failed attempt already filed keep that outcome.
+
+    A retried job never files a page twice: new assignments overlapping a prior filed
+    document send only their remaining pages to review as ``prior_outcome_conflict``.
+    Any other leftover page outcome is a conflict and fails closed.
+    """
+    filed = {n for record in prior for n in record.page_numbers}
+    if len(filed) != sum(len(record.page_numbers) for record in prior) or any(
+            row["status"] != ("filed" if row["page_number"] in filed else "pending")
+            for row in pages):
+        raise PageAccountingError("page outcome conflicts with an earlier attempt")
+    if not prior:
+        return assignments
+    reconciled = []
+    for record in prior:
+        directory, _, filename = record.relative_path.rpartition("/")
+        reconciled.append(DocumentAssignment(tuple(record.page_numbers), "filed", directory,
+                                             filename, PRIOR_ATTEMPT_FILED, 1.0))
+    for assignment in assignments:
+        remaining = tuple(n for n in assignment.pages if n not in filed)
+        if remaining == assignment.pages:
+            reconciled.append(assignment)
+        elif remaining:
+            reconciled.append(DocumentAssignment(remaining, "review", reason="prior_outcome_conflict",
+                                                 confidence=assignment.confidence))
+    return sorted(reconciled, key=lambda a: min(a.pages))
+
+
 class FilingError(RuntimeError):
     """A filing step could not complete; ``code`` is a stable machine-readable reason."""
 
@@ -238,6 +271,13 @@ class DurableFiler:
             jobs.transition(scope_id, job_id, expected="classified", new="failed",
                             error_code="page_accounting_invalid")
             raise
+        prior = [r for r in self.store.files.list_for_job(scope_id, job_id) if r.role == "filed"]
+        try:
+            assignments = reconcile_prior_filed(assignments, pages, prior)
+        except PageAccountingError:
+            jobs.transition(scope_id, job_id, expected="classified", new="failed",
+                            error_code="page_outcome_conflict")
+            raise
         job = jobs.get(scope_id, job_id)
         root = Path(self.store.scopes.get(scope_id).canonical_root)
         try:
@@ -259,7 +299,7 @@ class DurableFiler:
             entry = asdict(assignment)
             entry["pages"] = list(assignment.pages)
             entry["relative_directory"], entry["filename"] = destination
-            if assignment.outcome == "filed":
+            if assignment.outcome == "filed" and assignment.reason != PRIOR_ATTEMPT_FILED:
                 near = self._near_duplicate(
                     scope_id, document_sha256([hashes[n] for n in entry["pages"]]),
                     [dhashes[n] for n in entry["pages"]])

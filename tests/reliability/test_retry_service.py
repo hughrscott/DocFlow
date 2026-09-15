@@ -105,3 +105,52 @@ def test_job_payload_reports_durable_page_accounting_and_journal(env) -> None:
     assert done["page_accounting"]["complete"] is True
     assert (done["page_accounting"]["filed"], done["page_accounting"]["review"]) == (2, 1)
     assert done["recovery"] == {"state": "none", "retryable": False}
+
+
+@pytest.mark.parametrize(("reclassified", "final"), [
+    ([A((1, 2), "filed", "Household/PNC", "Regrouped.pdf"), A((3,), "review", reason="low")],
+     "review"),
+    ([A((1,), "review", reason="low"), A((2, 3), "filed", "Household/PNC", "Regrouped.pdf")],
+     "completed"),
+], ids=["regrouped", "demoted"])
+def test_retry_after_partial_failed_filing_reconciles_prior_page_outcomes(
+    env, tmp_path: Path, reclassified, final
+) -> None:
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    job_id = classified_job(env, [1, 2, 3])
+    first = [A((1,), "filed", "Household/PNC", "Page1.pdf"),
+             A((2, 3), "filed", "Other", "Rest.pdf")]
+
+    def swap_in_symlink(boundary: str) -> None:
+        if boundary == "step_committed" and not (env.archive / "Other").is_symlink():
+            (env.archive / "Other").symlink_to(outside, target_is_directory=True)
+
+    failed = env.filer(fault=swap_in_symlink).file_job(env.scope_id, job_id, first,
+                                                       original_relative_directory=ORIGINALS)
+    assert (failed.job_status, failed.last_error_code) == ("failed", "unsafe_destination")
+    (env.archive / "Other").unlink()
+    assert env.filer().retry(env.scope_id, job_id, idempotency_key="k-partial")["action"] == \
+        "requeued"
+    jobs = env.store.jobs
+    assert jobs.transition(env.scope_id, job_id, expected="ready", new="ocr")
+    assert jobs.transition(env.scope_id, job_id, expected="ocr", new="classified")
+
+    result = env.filer().file_job(env.scope_id, job_id, reclassified,
+                                  original_relative_directory=ORIGINALS)
+
+    assert (result.job_status, result.operation_status) == (final, "completed")
+    filed = [r for r in env.store.files.list_for_job(env.scope_id, job_id) if r.role == "filed"]
+    filed_pages = [n for record in filed for n in record.page_numbers]
+    review_pages = [n for item in env.store.reviews.list(env.scope_id)
+                    for n in item.candidate["pages"]]
+    assert sorted(filed_pages + review_pages) == [1, 2, 3]  # every page exactly once
+    statuses = {row["page_number"]: row["status"] for row in jobs.pages(env.scope_id, job_id)}
+    assert {n for n, s in statuses.items() if s == "filed"} == set(filed_pages)
+    assert {n for n, s in statuses.items() if s == "review"} == set(review_pages)
+    placed = sorted(p.name for p in (env.archive / "Household" / "PNC").glob("*.pdf"))
+    assert placed == sorted(r.relative_path.rpartition("/")[2] for r in filed)
+    payload = job_payload(env.store, env.scope_id, job_id)
+    assert {"pages": [1], "outcome": "filed", "reason": "prior_attempt_filed",
+            "relative_directory": "Household/PNC", "filename": "Page1.pdf",
+            "near_duplicate_of": None} in payload["operation"]["assignments"]
