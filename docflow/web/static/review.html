@@ -290,12 +290,16 @@
         let archiveScopeId = null;
 
         function fromReviewItem(it) {
+            const pages = Array.isArray(it.page_numbers) ? it.page_numbers : [];
             return {
                 id: it.id,
                 institution: it.source_name || 'Unknown source',
                 doc_type: it.doc_type || it.suggested_filename || 'Document',
                 period: it.period || '—',
-                pages: Array.isArray(it.page_numbers) ? it.page_numbers : [],
+                pages,
+                // Physical 1-based pages of the source PDF, and how their text turned out.
+                source_page_range: it.source_page_range || pages.join(', '),
+                text_extraction: it.text_extraction || 'missing',
                 confidence: typeof it.confidence === 'number' ? it.confidence : null,
                 suggested_filename: it.suggested_filename || '',
                 suggested_directory: it.suggested_relative_directory || '',
@@ -305,11 +309,24 @@
             };
         }
 
+        // A job-scoped queue: /review?job_id=<durable job> shows just that batch.
+        function jobFilter() {
+            try {
+                const value = new URLSearchParams(window.location.search || '').get('job_id');
+                return value && value.length <= 128 ? value : null;
+            } catch (e) {
+                return null;
+            }
+        }
+
         // ---- Load pending queue ----
         async function loadQueue() {
             archiveScopeId = archiveScopeId || await activeArchiveScopeId();
+            const job = jobFilter();
+            const query = `archive_scope_id=${encodeURIComponent(archiveScopeId)}&status=pending`
+                + (job ? `&job_id=${encodeURIComponent(job)}` : '');
             const { ok, data } = archiveScopeId
-                ? await docflowApi('GET', `/api/v1/review-items?archive_scope_id=${encodeURIComponent(archiveScopeId)}&status=pending`)
+                ? await docflowApi('GET', `/api/v1/review-items?${query}`)
                 : { ok: false, data: null };
             if (!ok) showToast(apiErrorMessage(data, 'Local review state is not available.'), 'error');
             queueItems = ok && data && Array.isArray(data.items) ? data.items.map(fromReviewItem) : [];
@@ -451,8 +468,9 @@
 
             document.getElementById('fact-type').textContent = it.doc_type || '—';
             document.getElementById('fact-period').textContent = it.period || '—';
-            const pageCount = (it.pages || []).length;
-            document.getElementById('fact-pages').textContent = pageCount + (pageCount !== 1 ? ' pages' : ' page');
+            const range = it.source_page_range || (it.pages || []).join(', ');
+            document.getElementById('fact-pages').textContent =
+                range ? `Source pages ${range}` : 'No pages';
 
             document.getElementById('reasoning-text').textContent = it.reasoning || it.notes || 'No reasoning available.';
 
@@ -724,45 +742,95 @@
             }
         }
 
+        // Fixed messages for a page whose text is not available. Each extraction
+        // state says something different, so "blank page" is never confused with
+        // "not read yet" or "OCR failed".
+        const TEXT_STATE_MESSAGES = {
+            no_text: 'This page has no text to show. OCR read it and found none — it is blank or purely an image.',
+            failed: 'This page could not be read. OCR failed on it, so no text was stored.',
+            missing: 'This page has not been read yet. No OCR result is stored for it.',
+        };
+
+        function pageScopeQuery() {
+            return `archive_scope_id=${encodeURIComponent(archiveScopeId)}`;
+        }
+
+        function pageRouteBase(item, pageNum) {
+            return `/api/v1/review-items/${encodeURIComponent(item.id)}`
+                + `/pages/${encodeURIComponent(pageNum)}`;
+        }
+
+        // Each selected physical page fetches its own scoped text; document text is
+        // always written with textContent, never as markup.
+        async function loadPageText(item, pageNum) {
+            const target = document.getElementById('preview-text');
+            const token = `${item.id}:${pageNum}`;
+            _textToken = token;
+            target.textContent = 'Loading page text…';
+            const { ok, data } = await docflowApi('GET',
+                `${pageRouteBase(item, pageNum)}/text?${pageScopeQuery()}`);
+            if (_textToken !== token) return;   // a different page was selected meanwhile
+            if (!ok) {
+                target.textContent = apiErrorMessage(data, 'This page’s text is not available.');
+                return;
+            }
+            if (data.status === 'extracted' && typeof data.text === 'string') {
+                target.textContent = data.text;
+                return;
+            }
+            const message = TEXT_STATE_MESSAGES[data.status]
+                || 'This page’s text is not available.';
+            target.textContent = data.error_code
+                ? `${message} (${data.error_code})`
+                : message;
+        }
+
+        let _textToken = null;
+
         function loadPagePreview() {
             const items = activeItems();
             const item = items[currentIndex];
             if (!item || !item.pages || item.pages.length === 0) return;
 
             const pages = item.pages;
+            const pageNum = pages[currentPageIdx];
             const pageNav = document.getElementById('page-nav');
-            const indicator = document.getElementById('page-indicator');
 
             if (pages.length > 1) {
                 pageNav.classList.remove('hidden');
-                indicator.textContent = `Page ${currentPageIdx + 1} of ${pages.length}`;
             } else {
                 pageNav.classList.add('hidden');
             }
+            updatePageIndicator(item);
 
-            // Image preview
             const img = document.getElementById('preview-image');
             const skeleton = document.getElementById('preview-skeleton');
-            const pageNum = pages[currentPageIdx];
 
             if (item._unmatched) {
                 img.src = `/api/preview/file?path=${encodeURIComponent(item.source_pdf)}&page=${currentPageIdx + 1}`;
+                document.getElementById('preview-text').textContent =
+                    'Page text is available for documents in the review queue.';
             } else {
-                img.src = `/api/preview/${item.id}/${pageNum}`;
+                img.src = `${pageRouteBase(item, pageNum)}/preview?${pageScopeQuery()}`;
+                loadPageText(item, pageNum);
             }
             img.style.display = 'none';
             skeleton.style.display = '';
             img.onload = () => { img.style.display = ''; skeleton.style.display = 'none'; };
             img.onerror = () => { skeleton.style.display = ''; };
+        }
 
-            // OCR text
-            document.getElementById('preview-text').textContent = item.raw_text_preview || '(No text available)';
+        // Labels name the physical source page, never an offset inside the item.
+        function updatePageIndicator(item) {
+            const range = item.source_page_range || (item.pages || []).join(', ');
+            const pageNum = (item.pages || [])[currentPageIdx];
+            document.getElementById('page-indicator').textContent =
+                pageNum === undefined ? '' : `Source page ${pageNum} of ${range}`;
         }
 
         function prevPage() {
             currentPageIdx = Math.max(0, currentPageIdx - 1);
             loadPagePreview();
-            document.getElementById('page-indicator').textContent = `Page ${currentPageIdx + 1} of ${activeItems()[currentIndex].pages.length}`;
         }
 
         function nextPage() {
@@ -770,7 +838,6 @@
             if (!item) return;
             currentPageIdx = Math.min(item.pages.length - 1, currentPageIdx + 1);
             loadPagePreview();
-            document.getElementById('page-indicator').textContent = `Page ${currentPageIdx + 1} of ${item.pages.length}`;
         }
 
         // ---- Zoom modal ----

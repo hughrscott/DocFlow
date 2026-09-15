@@ -9,6 +9,9 @@ JOB_STATUSES = (
     "classified", "filing", "review", "completed", "failed", "undoing", "undone",
 )
 PAGE_STATUSES = ("pending", "filed", "review", "skipped", "blocked")
+# Per-page local OCR outcome. ``missing`` means OCR has not produced a result for
+# this page; it is the default for every row that predates the v2 migration.
+OCR_STATUSES = ("missing", "extracted", "no_text", "failed")
 REVIEW_STATUSES = ("pending", "approved", "corrected", "skipped")
 FILE_ROLES = ("original", "filed")
 OPERATION_STATUSES = (
@@ -180,7 +183,17 @@ CREATE TABLE corrections (
 );
 """
 
-MIGRATIONS: tuple[Migration, ...] = (Migration(1, _V1),)
+# Per-page OCR results for the review page's text pane. Raw OCR text is local
+# application state: it lives only in this column and in the explicit page-text
+# response. Existing rows migrate to 'missing'; nothing is backfilled.
+_V2 = f"""
+ALTER TABLE job_pages ADD COLUMN ocr_status TEXT NOT NULL DEFAULT 'missing'
+    {_enum("ocr_status", OCR_STATUSES)};
+ALTER TABLE job_pages ADD COLUMN ocr_text TEXT;
+ALTER TABLE job_pages ADD COLUMN ocr_error_code TEXT;
+"""
+
+MIGRATIONS: tuple[Migration, ...] = (Migration(1, _V1), Migration(2, _V2))
 SCHEMA_VERSION = MIGRATIONS[-1].version
 
 SCHEMA_MIGRATIONS_SQL = """

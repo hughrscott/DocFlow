@@ -5,6 +5,7 @@ import asyncio
 import json
 import logging
 import os
+import threading
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
@@ -28,6 +29,10 @@ _processing_state: dict = {}  # Active processing state for SSE
 _state_store = None  # docflow.state.repositories.StateStore backing /api/v1
 _filer = None  # docflow.filing.operations.DurableFiler backing job retry
 _active_scope_id: str | None = None  # registered scope the local UI works in
+# One submission -> one progress job. Repeated UI events, retries and rapid or
+# concurrent duplicate calls resolve to the job already started for that key.
+_submissions: dict[str, str] = {}
+_submission_lock = threading.Lock()
 
 # Mount static files
 _static_dir = Path(__file__).parent / "static"
@@ -201,9 +206,61 @@ def _legacy_process_locator(raw: object) -> str:
     raise HTTPException(400, "PDF must be an uploaded file or in the configured watch folder")
 
 
+def _capabilities() -> dict:
+    """What this local install really does, in words that promise nothing more."""
+    from docflow.llm.gateway import CloudPromptGateway
+
+    classification = not CloudPromptGateway(_config).local_only
+    return {
+        "text_extraction": True,
+        "ai_classification": classification,
+        "summary": "Text extraction is enabled. AI classification is "
+                   + ("enabled." if classification else "disabled."),
+    }
+
+
+def _stage_view(stage: str) -> list[dict]:
+    """The stages this pipeline really runs, marked against the one now reached."""
+    from docflow.filing.processing import DONE_STAGE, PROCESS_STAGES
+
+    order = [*PROCESS_STAGES, DONE_STAGE]
+    if stage == DONE_STAGE[0]:  # the run finished: every stage really did complete
+        return [{"id": key, "label": label, "status": "done"} for key, label, _p in order]
+    reached = next((i for i, s in enumerate(order) if s[0] == stage), -1)
+    return [{"id": key, "label": label,
+             "status": "done" if index < reached else "active" if index == reached
+             else "waiting"}
+            for index, (key, label, _percent) in enumerate(order)]
+
+
+def _initial_progress_state(filename: str) -> dict:
+    return {
+        "status": "starting",
+        "filename": filename,   # acknowledged as soon as the submission is accepted
+        "pdf": filename,        # legacy alias kept for older clients
+        "progress": 0,
+        "step": "Checking the scan",
+        "stage": "checking",
+        "stages": _stage_view("checking"),
+        "documents": [],
+        "documents_total": 0,
+        "auto_filed": 0,
+        "review_queue": 0,
+        "durable_job_id": None,
+        "review_url": None,
+        "capabilities": _capabilities(),
+        "started": _local_iso(),
+    }
+
+
 @app.post("/api/process")
 async def process_pdf(request: Request):
     """Start durable processing of an uploaded or watch-folder PDF; returns a progress ID.
+
+    One submission starts one job. ``submission_key`` (optional) identifies the user's
+    submission; without it the resolved source handle is the key. Repeated, retried or
+    concurrent calls for the same key return the job already running or finished for it
+    and start no second job. A deliberate new submission uses a new key.
 
     Poll ``/api/process/status/{job_id}``; the result is a durable job whose review
     items appear in ``GET /api/v1/review-items``.
@@ -212,24 +269,28 @@ async def process_pdf(request: Request):
         raise HTTPException(503, "Local application state is not configured.")
     body = await request.json()
     locator = _legacy_process_locator(body.get("path"))
+    key = body.get("submission_key")
+    if key is not None and (not isinstance(key, str) or not 1 <= len(key) <= 128):
+        raise HTTPException(400, "submission_key must be a short string")
+    filename = locator.partition(":")[2].rsplit("/", 1)[-1]
 
-    job_id = str(uuid.uuid4())[:8]
-    _processing_state[job_id] = {
-        "status": "starting",
-        "pdf": locator.partition(":")[2].rsplit("/", 1)[-1],
-        "progress": 0,
-        "step": "Initializing",
-        "documents": [],
-        "auto_filed": 0,
-        "review_queue": 0,
-        "durable_job_id": None,
-        "started": _local_iso(),
-    }
-
-    # Run pipeline in background
-    asyncio.create_task(_run_pipeline_async(job_id, locator))
-
-    return {"job_id": job_id}
+    # Claim the submission and start the pipeline under one lock, so even simultaneous
+    # duplicate calls cannot both pass the check.
+    lookup = key or f"source:{locator}"
+    with _submission_lock:
+        existing = _submissions.get(lookup)
+        state = _processing_state.get(existing) if existing else None
+        # A named submission always maps to its one job, so a retry is never a second
+        # run. Without a key the caller gave no identity, so only a run still in flight
+        # is reused: submitting the same source again later is a deliberate new job.
+        if state is not None and (key is not None
+                                  or state.get("status") in ("starting", "processing")):
+            return {"job_id": existing, "reused": True}
+        job_id = str(uuid.uuid4())[:8]
+        _submissions[lookup] = job_id
+        _processing_state[job_id] = _initial_progress_state(filename)
+        asyncio.create_task(_run_pipeline_async(job_id, locator))
+    return {"job_id": job_id, "reused": False}
 
 
 @app.get("/api/process/active")
@@ -289,12 +350,17 @@ async def _run_pipeline_async(job_id: str, locator: str) -> None:
     from docflow.filing.processing import process_scan
     from docflow.ingestion.loader import raw_sha256
 
+    from docflow.filing.processing import PROCESS_STAGES
+
     state = _processing_state[job_id]
     loop = asyncio.get_running_loop()
+    stage_by_label = {label: key for key, label, _percent in PROCESS_STAGES}
 
     def progress(step: str, percent: int) -> None:
-        loop.call_soon_threadsafe(state.update,
-                                  {"step": step, "progress": percent, "status": "processing"})
+        stage = stage_by_label.get(step, state.get("stage", "checking"))
+        loop.call_soon_threadsafe(state.update, {
+            "step": step, "progress": percent, "status": "processing",
+            "stage": stage, "stages": _stage_view(stage)})
 
     try:
         result = await asyncio.to_thread(process_scan, _state_store, _filer, _active_scope_id,
@@ -330,15 +396,20 @@ async def _run_pipeline_async(job_id: str, locator: str) -> None:
                 watch_copy.unlink()
                 logger.info("Removed identical watch folder copy")
 
+        finished = result.job_status in {"completed", "review"}
         state.update({
-            "status": "completed" if result.job_status in {"completed", "review"} else "error",
-            "step": "Done" if result.job_status in {"completed", "review"}
-            else f"Job is {result.job_status}",
+            "status": "completed" if finished else "error",
+            "step": "Done" if finished else f"Job is {result.job_status}",
             "progress": 100,
+            "stage": "done" if finished else state.get("stage", "filing"),
+            "stages": _stage_view("done" if finished else state.get("stage", "filing")),
             "documents": documents,
+            "documents_total": len(documents),
             "auto_filed": sum(a.outcome == "filed" for a in result.assignments),
             "review_queue": sum(a.outcome == "review" for a in result.assignments),
             "durable_job_id": result.job_id,
+            "review_url": f"/review?job_id={result.job_id}" if result.job_id else None,
+            "capabilities": _capabilities(),
         })
     except Exception as exc:
         logger.exception("Pipeline error for job %s", job_id)
@@ -1224,6 +1295,8 @@ class _ReviewActionRequest(BaseModel):
 
 _REVIEW_ERRORS = {
     "review_item_not_found": (404, "Review item not found in this scope."),
+    "page_not_found": (404, "Page not found in this review item."),
+    "preview_unavailable": (409, "The page preview could not be rendered."),
     "review_item_not_pending": (409, "Review item is no longer pending."),
     "review_item_not_actionable": (409, "Review item has no pages awaiting review."),
     "source_unavailable": (409, "The retained original for these pages is unavailable."),
@@ -1334,10 +1407,139 @@ async def v1_list_review_items(request: Request):
     _v1_require_state()
     scope_id = request.query_params.get("archive_scope_id", "")
     status = request.query_params.get("status", "pending")
-    if not 1 <= len(scope_id) <= 128 or status not in _REVIEW_STATUSES:
+    job_id = request.query_params.get("job_id")
+    if not 1 <= len(scope_id) <= 128 or status not in _REVIEW_STATUSES \
+            or (job_id is not None and not 1 <= len(job_id) <= 128):
         raise _V1Error(422, "invalid_request", "Request does not match the contract.")
     scope = _v1_scope(scope_id)
-    return await asyncio.to_thread(_v1_review_actions().list_items, scope.id, status)
+    return await asyncio.to_thread(_v1_review_actions().list_items, scope.id, status, job_id)
+
+
+def _v1_page_request(request: Request, page_number: str) -> tuple[object, int]:
+    """Validate the scope and the 1-based physical page number of a page route."""
+    _v1_require_state()
+    scope_id = request.query_params.get("archive_scope_id", "")
+    if not 1 <= len(scope_id) <= 128:
+        raise _V1Error(422, "invalid_request", "Request does not match the contract.")
+    if not page_number.isdigit() or not 1 <= len(page_number) <= 9:
+        raise _V1Error(422, "invalid_request", "Request does not match the contract.")
+    return _v1_scope(scope_id), int(page_number)
+
+
+@app.get("/api/v1/review-items/{item_id}/pages/{page_number}/text")
+async def v1_review_item_page_text(item_id: str, page_number: str, request: Request):
+    """Locally extracted text for one physical source page of a review item.
+
+    ``page_number`` is the 1-based page of the source PDF and must belong to the
+    item. The response distinguishes ``extracted``, ``no_text``, ``failed`` and
+    ``missing``; text is document data and must be rendered as text, never markup.
+    """
+    scope, page = _v1_page_request(request, page_number)
+    return await _v1_review_call(_v1_review_actions().page_text, scope.id, item_id, page)
+
+
+@app.get("/api/v1/review-items/{item_id}/pages/{page_number}/preview")
+async def v1_review_item_page_preview(item_id: str, page_number: str, request: Request):
+    """Render one physical source page of a review item's retained original as PNG.
+
+    The active scope is authorized before the item is looked up. The original is
+    resolved only through scope/job/file records, must be a regular non-symlinked
+    file confined to the scope root, and its page must still match the fingerprint
+    recorded at admission. Renders are cached in application state, never the archive.
+    """
+    scope, page = _v1_page_request(request, page_number)
+    if _active_scope_id is None or scope.id != _active_scope_id:
+        raise _V1Error(404, "scope_not_found", "Archive scope is not registered.")
+    cached = await _v1_review_call(_page_preview, scope, item_id, page)
+    return FileResponse(str(cached), media_type="image/png")
+
+
+def _render_preview_page(source: Path, page: int):
+    """Render one page at the canonical 150 DPI grayscale used for fingerprints."""
+    from pdf2image import convert_from_path
+
+    images = convert_from_path(str(source), first_page=page, last_page=page,
+                               dpi=150, grayscale=True)
+    if not images:
+        raise RuntimeError("the page did not render")
+    image = images[0]
+    return image if image.mode == "L" else image.convert("L")
+
+
+def _preview_source(scope, item_id: str, page: int) -> tuple[Path, str]:
+    """The confined retained original for a review item's page, plus the page digest.
+
+    Raises ``ReviewActionRejected`` with a fixed code; cross-scope existence is never
+    disclosed because the item lookup is already scoped.
+    """
+    from docflow.filing.operations import confined
+    from docflow.filing.review_actions import ReviewActionRejected
+    from docflow.ingestion.loader import raw_sha256
+    from docflow.state.repositories import UnsafeValueError
+
+    store = _state_store
+    item = store.reviews.get(scope.id, item_id)
+    if item is None:
+        raise ReviewActionRejected("review_item_not_found")
+    pages = item.candidate.get("pages")
+    if not isinstance(pages, list) or page not in pages:
+        raise ReviewActionRejected("page_not_found")
+    rows = {row["page_number"]: row["content_sha256"]
+            for row in store.jobs.pages(scope.id, item.job_id)}
+    if page not in rows:
+        raise ReviewActionRejected("page_not_found")
+    digest = rows[page]
+    job = store.jobs.get(scope.id, item.job_id)
+    originals = [r for r in store.files.list_for_job(scope.id, item.job_id)
+                 if r.role == "original"]
+    if job is None or len(originals) != 1 or not digest:
+        raise ReviewActionRejected("source_unavailable")
+    try:
+        source = confined(Path(scope.canonical_root), originals[0].relative_path)
+    except UnsafeValueError:
+        raise ReviewActionRejected("source_unavailable") from None
+    if source.is_symlink() or not source.is_file():
+        raise ReviewActionRejected("source_unavailable")
+    # The retained original must still hold the admitted bytes before it is opened.
+    try:
+        unchanged = raw_sha256(source) == job.source_fingerprint.removeprefix("sha256:")
+    except OSError:
+        raise ReviewActionRejected("source_unavailable") from None
+    if not unchanged:
+        raise ReviewActionRejected("source_unavailable")
+    return source, digest
+
+
+def _page_preview(scope, item_id: str, page: int) -> Path:
+    """Return the cached PNG for one page, rendering and verifying it if needed."""
+    from docflow.filing.review_actions import ReviewActionRejected
+    from docflow.ingestion.loader import page_content_sha256
+
+    source, digest = _preview_source(scope, item_id, page)
+    # Keyed by scope, job, page and the digest recorded at admission, so a changed
+    # original can never be served from an earlier render.
+    item = _state_store.reviews.get(scope.id, item_id)
+    directory = _state_store.db.paths.cache / "review-previews" / scope.id / item.job_id
+    final = directory / f"{page}-{digest}.png"
+    if final.is_file():
+        return final
+    try:
+        image = _render_preview_page(source, page)
+    except Exception as exc:  # noqa: BLE001 - any render failure is reported, never guessed
+        logger.warning("Page preview could not be rendered: %s", type(exc).__name__)
+        raise ReviewActionRejected("preview_unavailable") from None
+    if page_content_sha256(image) != digest:
+        raise ReviewActionRejected("source_unavailable")
+    directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+    partial = directory / f"{final.name}.{uuid.uuid4().hex}.partial"
+    try:
+        image.save(str(partial), "PNG")
+        os.replace(partial, final)  # atomic publication within one directory
+    except OSError as exc:
+        raise ReviewActionRejected("preview_unavailable") from exc
+    finally:
+        partial.unlink(missing_ok=True)
+    return final
 
 
 @app.post("/api/settings/validate-paths")

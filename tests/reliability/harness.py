@@ -57,11 +57,15 @@ def make_env(tmp_path: Path, home: Path) -> Env:
                StatePaths(tmp_path / "app-state"))
 
 
-def classified_job(env: Env, marks: list[int], name: str = "scan.pdf") -> str:
-    """Write a synthetic scan to the watch folder and advance its job to ``classified``."""
+def classified_job(env: Env, marks: list[int], name: str = "scan.pdf", *, write=None) -> str:
+    """Write a synthetic scan to the watch folder and advance its job to ``classified``.
+
+    ``write`` overrides the page writer with any ``(path, marks) -> Path`` callable,
+    for example one producing a legible text PDF.
+    """
     from tests.reliability.synthetic import write_image_pdf
 
-    write_image_pdf(env.watch / name, marks)
+    (write or write_image_pdf)(env.watch / name, marks)
     admission = env.filer().admit(env.scope_id, f"watch:{name}")
     assert admission.job_id is not None
     jobs = env.store.jobs

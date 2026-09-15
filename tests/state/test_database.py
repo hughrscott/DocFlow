@@ -156,7 +156,8 @@ def test_tampered_checksum_is_rejected_on_open(state_root: Path) -> None:
         StateDatabase(paths).open()
     # The failed open released its lock so a later writer is not wedged.
     raw = sqlite3.connect(paths.database)
-    raw.execute("UPDATE schema_migrations SET checksum = ?", (migration_checksum(MIGRATIONS[0]),))
+    raw.executemany("UPDATE schema_migrations SET checksum = ? WHERE version = ?",
+                    [(migration_checksum(m), m.version) for m in MIGRATIONS])
     raw.commit()
     raw.close()
     with StateDatabase(paths):

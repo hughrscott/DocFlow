@@ -67,7 +67,8 @@ returned.
 ## 4. `GET /api/v1/review-items?archive_scope_id=<id>&status=pending`
 
 `status` is optional, default `pending`; one of `pending`, `approved`, `corrected`,
-`skipped`. Read-only; no idempotency key.
+`skipped`. An optional `job_id` narrows the list to one durable job
+(`docs/ocr-preview-intake-api-contract.md` section 2). Read-only; no idempotency key.
 
 ```json
 200 {
@@ -98,7 +99,9 @@ returned.
 | `confidence` | number in `[0, 1]` |
 | `actions` | what is currently allowed: `approve` needs a valid suggestion and an available retained original; `correct` needs the original; `skip` needs only pages awaiting review. `[]` means the item cannot be acted on (for example a privacy-blocked item with no pages, a legacy item without page fingerprints, or a job no longer in `review`). Disable buttons not listed. |
 
-No raw OCR text is ever returned. Page previews are not part of this contract.
+No raw OCR text is returned by this route. `source_page_range`, `text_extraction`, the
+`job_id` filter, per-page text and page previews are specified in
+`docs/ocr-preview-intake-api-contract.md`.
 
 ## 5. Single-item actions
 
@@ -325,7 +328,9 @@ unfinished job.
 
 Dashboard adapter: `POST /api/process {"path": ...}` maps the path returned by
 `POST /api/upload` (or a PDF in the configured watch folder) to an `upload:`/`watch:`
-handle and runs the durable processing service of section 14; any other path is `400`.
+handle and runs the durable processing service of section 14; any other path is `400`. It
+also accepts an optional `submission_key` so one submission starts exactly one job
+(`docs/ocr-preview-intake-api-contract.md` section 5).
 
 ## 10. Local bind (X03)
 
@@ -357,9 +362,10 @@ and host names are rejected before the server starts (no DNS lookup). There is n
 - Pre-existing legacy `review_queue.json` items (from releases before this one) are not
   imported at startup and are not listed; the Phase 1 migration remains an explicit,
   non-destructive backend step. Everything processed now is durable (section 14).
-- No page previews for durable review items (the preview pane shows its placeholder); no
-  undo of `file_job` operations; no actions for items without page references
-  (privacy-blocked). `POST /api/reprocess/{id}` returns `409`; retry failed jobs with
+- Page previews and per-page OCR text for durable review items are now provided by
+  `docs/ocr-preview-intake-api-contract.md`. There is still no undo of `file_job`
+  operations and no actions for items without page references (privacy-blocked).
+  `POST /api/reprocess/{id}` returns `409`; retry failed jobs with
   `POST /api/v1/jobs/{id}/retry`.
 - The run summary files (`MailArchivingSummary.xlsx/.txt`) are no longer produced; the
   durable job record (`GET /api/v1/jobs/{id}`, CLI console output) replaces them.

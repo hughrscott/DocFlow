@@ -322,50 +322,17 @@ async function updateReviewBadge() {
 }
 
 // ---------------------------------------------------------------------------
-// Global upload (works from any page)
+// Scan Mail: there is exactly one Add-scanned-mail flow, on the dashboard.
+// This button never uploads or starts processing itself; from another page it
+// routes to the dashboard, where the same file input handles the submission.
 // ---------------------------------------------------------------------------
 function globalUpload() {
     const dashInput = document.getElementById('upload-input');
-    if (dashInput) { dashInput.click(); return; }
-
-    let input = document.getElementById('global-upload-input');
-    if (!input) {
-        input = document.createElement('input');
-        input.type = 'file';
-        input.id = 'global-upload-input';
-        input.accept = '.pdf';
-        input.multiple = true;
-        input.className = 'hidden';
-        input.addEventListener('change', async (e) => {
-            const files = Array.from(e.target.files).filter(f => f.name.toLowerCase().endsWith('.pdf'));
-            if (files.length === 0) return;
-            for (const file of files) {
-                try {
-                    const formData = new FormData();
-                    formData.append('file', file);
-                    const uploadResp = await fetch('/api/upload', { method: 'POST', body: formData });
-                    if (!uploadResp.ok) { showToast('Upload failed', 'error'); continue; }
-                    const upload = await uploadResp.json();
-                    const procResp = await fetch('/api/process', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ path: upload.path }),
-                    });
-                    if (!procResp.ok) { showToast('Failed to start processing', 'error'); continue; }
-                    const proc = await procResp.json();
-                    sessionStorage.setItem('docflow_active_job', proc.job_id);
-                    showToast('Processing started — redirecting to dashboard', 'info', 2000);
-                    setTimeout(() => { window.location = '/'; }, 500);
-                    return;
-                } catch (e) {
-                    showToast('Network error', 'error');
-                }
-            }
-            input.value = '';
-        });
-        document.body.appendChild(input);
+    if (dashInput) {
+        if (!dashInput.disabled) dashInput.click();
+        return;
     }
-    input.click();
+    window.location = '/';
 }
 
 // ---------------------------------------------------------------------------

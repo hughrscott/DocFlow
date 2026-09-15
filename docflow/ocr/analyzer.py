@@ -8,6 +8,8 @@ from dataclasses import dataclass
 import pytesseract
 from PIL import Image
 
+from docflow.state.repositories import PageOcr
+
 logger = logging.getLogger(__name__)
 
 
@@ -337,3 +339,20 @@ def analyze_pages(page_images: list[Image.Image]) -> list[PageRecord]:
         )
 
     return records
+
+
+def ocr_outcomes(records: list[PageRecord]) -> list[PageOcr]:
+    """Map a complete page batch to the durable per-page OCR outcomes.
+
+    A page whose OCR produced only whitespace is ``no_text``; it is never
+    recorded as extracted and no text is invented for it.
+    """
+    outcomes = []
+    for record in records:
+        text = record.raw_text if isinstance(record.raw_text, str) else ""
+        text = text.replace("\0", "")
+        if text.strip():
+            outcomes.append(PageOcr(record.page_number, "extracted", text, None))
+        else:
+            outcomes.append(PageOcr(record.page_number, "no_text", None, None))
+    return outcomes

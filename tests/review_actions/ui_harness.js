@@ -1,12 +1,15 @@
-// Runs review.html's inline script and shared.js against a minimal recording DOM.
+// Runs a static page's inline script and shared.js against a minimal recording DOM.
 //
 // Usage: node ui_harness.js <scenario.json>
-// Scenario: {"storage": {...}, "responses": [{method, url (regex), status, body, once}],
+// Scenario: {"page": "review.html", "storage": {...}, "location": {pathname, search},
+//            "responses": [{method, url (regex), status, body, once}],
 //            "steps": ["<js evaluated in the page context>", ...]}
 // Output (stdout JSON): fetches, html_writes (every innerHTML/insertAdjacentHTML value),
 // texts (every text node), snapshots (storage after each step), errors.
 // Markup strings are never parsed, so the html_writes log is exactly what a browser
 // would have interpreted as HTML.
+// Timers never fire on their own: __tick() runs registered intervals once and
+// __runTimeouts() drains pending timeouts, so tests drive polling explicitly.
 'use strict';
 
 const fs = require('fs');
@@ -15,7 +18,7 @@ const vm = require('vm');
 
 const scenario = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
 const staticDir = path.join(__dirname, '..', '..', 'docflow', 'web', 'static');
-const page = fs.readFileSync(path.join(staticDir, 'review.html'), 'utf8');
+const page = fs.readFileSync(path.join(staticDir, scenario.page || 'review.html'), 'utf8');
 const shared = fs.readFileSync(path.join(staticDir, 'shared.js'), 'utf8');
 const inline = [...page.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]).join('\n');
 
@@ -193,22 +196,42 @@ function reply(status, payload) {
     };
 }
 
+const CLICKABLE = new Set(['BUTTON', 'A']);
+
 function findByText(text) {
     let found = null;
     for (const root of roots()) {
         walk(root, (el) => {
-            if (!found && el.tagName === 'BUTTON' && el.textContent.includes(text)) found = el;
+            if (!found && CLICKABLE.has(el.tagName) && el.textContent.includes(text)) found = el;
         });
     }
-    if (!found) throw new Error(`no button with text ${text}`);
+    if (!found) throw new Error(`no clickable element with text ${text}`);
     return found;
 }
 
+function findAll(predicate) {
+    const matches = [];
+    for (const root of roots()) walk(root, (el) => { if (predicate(el)) matches.push(el); });
+    return matches;
+}
+
+let timerId = 1;
+const intervals = new Map();
+const timeouts = new Map();
+
+const where = scenario.location || {};
 const sandbox = {
     document, localStorage, sessionStorage, fetch, console,
-    location: { pathname: '/review', href: '/review' },
+    location: {
+        pathname: where.pathname || '/review',
+        search: where.search || '',
+        href: (where.pathname || '/review') + (where.search || ''),
+    },
     matchMedia: () => ({ matches: false }),
-    setTimeout: () => 0, clearTimeout: () => {}, setInterval: () => 0, clearInterval: () => {},
+    setTimeout: (fn) => { const id = timerId += 1; timeouts.set(id, fn); return id; },
+    clearTimeout: (id) => timeouts.delete(id),
+    setInterval: (fn) => { const id = timerId += 1; intervals.set(id, fn); return id; },
+    clearInterval: (id) => intervals.delete(id),
     requestAnimationFrame: (cb) => cb(),
     crypto: globalThis.crypto, URLSearchParams, URL,
     FormData: class FormData { append() {} },
@@ -217,6 +240,16 @@ const sandbox = {
     __key: (key) => (docListeners.keydown || []).forEach((h) => h({
         key, target: { tagName: 'BODY', closest: () => null }, preventDefault() {},
     })),
+    __tick: async () => { for (const fn of [...intervals.values()]) await fn(); },
+    __runTimeouts: async () => {
+        const pending = [...timeouts.values()];
+        timeouts.clear();
+        for (const fn of pending) await fn();
+    },
+    __hrefs: () => findAll((el) => el.tagName === 'A' && el.href).map(
+        (el) => ({ href: el.href, text: el.textContent })),
+    __disabled: (id) => Boolean((getElementById(id) || {}).disabled),
+    __imgSrc: (id) => String((getElementById(id) || {}).src || ''),
 };
 sandbox.window = sandbox;
 vm.createContext(sandbox);
@@ -240,10 +273,15 @@ async function settle() {
         vm.runInContext(inline, sandbox, { filename: 'review.html' });
         await settle();
         for (const step of scenario.steps || []) {
-            await vm.runInContext(step, sandbox);
+            // Not awaited: a step may return a promise that only settles once a later
+            // step ticks a timer. settle() drains whatever work it did schedule.
+            let value = vm.runInContext(step, sandbox);
             await settle();
+            if (value === undefined || typeof value === 'function'
+                || (value && typeof value.then === 'function')) value = null;
             snapshots.push({ step, storage: { ...localStorage._data }, fetches: fetches.length,
-                             texts: collectTexts() });
+                             texts: collectTexts(),
+                             value: JSON.parse(JSON.stringify(value === undefined ? null : value)) });
         }
     } catch (e) {
         errors.push(String(e && e.stack || e));

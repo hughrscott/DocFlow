@@ -263,11 +263,15 @@ def test_restart_reloads_pending_and_resets_volatile_model_states(
         # Second recovery is a no-op.
         assert store.recover_after_restart(scope).reset_job_ids == []
         columns = {
-            row[1].lower()
+            (table, row[1].lower())
             for table in ("jobs", "job_pages", "review_items", "operations", "corrections")
             for row in db.connection.execute(f"PRAGMA table_info({table})")
         }
-        assert not any(word in col for col in columns
-                       for word in ("lookup", "placeholder", "raw", "ocr_text", "preview"))
+        # No lookup map, placeholder map or model artifact is ever a column. Raw OCR
+        # text is local application state with exactly one home: job_pages.ocr_text.
+        assert not any(word in col for _, col in columns
+                       for word in ("lookup", "placeholder", "preview"))
+        assert {t for t, col in columns if "ocr_text" in col} == {"job_pages"}
+        assert {t for t, col in columns if "raw" in col} == set()
         dump = json.dumps([list(r) for r in db.connection.execute("SELECT * FROM jobs")])
         assert "lookup" not in dump

@@ -4,9 +4,11 @@ from __future__ import annotations
 import hashlib
 from pathlib import Path
 
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFont
 
 PAGE_SIZE = (120, 160)  # pixels at 150 DPI
+TEXT_PAGE_SIZE = (1275, 1650)  # US Letter at 150 DPI, big enough for real OCR
+TEXT_DPI = 150
 
 
 def page_image(mark: int, *, nudge: int = 0) -> Image.Image:
@@ -27,6 +29,31 @@ def write_image_pdf(path: Path, marks: list[int], *, title: str | None = None,
     pages = [page_image(m, nudge=nudge).convert("RGB") for m in marks]
     extra = {"title": title} if title else {}
     pages[0].save(path, "PDF", resolution=150, save_all=True, append_images=pages[1:], **extra)
+    return path
+
+
+def text_page_image(lines: list[str]) -> Image.Image:
+    """A synthetic page rendering ``lines`` as pixels; no text layer exists."""
+    image = Image.new("L", TEXT_PAGE_SIZE, 255)
+    if not lines:
+        return image
+    draw = ImageDraw.Draw(image)
+    font = ImageFont.load_default(size=44)  # scalable, no system font needed
+    for index, line in enumerate(lines):
+        draw.text((90, 130 + index * 84), line, fill=0, font=font)
+    return image
+
+
+def write_text_pdf(path: Path, pages: list[list[str]]) -> Path:
+    """Write an image-only PDF whose rendered pages real Tesseract can read.
+
+    Each entry of ``pages`` is the list of lines drawn on that page; an empty
+    list produces a blank page with no recoverable text.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    images = [text_page_image(lines).convert("RGB") for lines in pages]
+    images[0].save(path, "PDF", resolution=TEXT_DPI, save_all=True,
+                   append_images=images[1:])
     return path
 
 

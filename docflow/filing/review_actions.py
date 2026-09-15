@@ -655,19 +655,45 @@ class ReviewActions:
 
     # -- reads -------------------------------------------------------------------
 
-    def list_items(self, scope_id: str, status: str = "pending") -> dict:
-        """``GET /api/v1/review-items``: text fields are document data, never markup."""
+    def page_text(self, scope_id: str, item_id: str, page_number: int) -> dict:
+        """One physical source page's stored OCR text for a review item.
+
+        ``page_number`` is the 1-based page of the source PDF and must belong to the
+        item. Raw text leaves the machine's local state only through this response.
+        """
+        item = self.store.reviews.get(scope_id, item_id)
+        if item is None:
+            raise ReviewActionRejected("review_item_not_found")
+        if page_number not in _item_pages(item):
+            raise ReviewActionRejected("page_not_found")
+        outcome = self.store.jobs.page_ocr(scope_id, item.job_id, page_number)
+        if outcome is None:
+            raise ReviewActionRejected("page_not_found")
+        return {"review_item_id": item.id, "job_id": item.job_id,
+                "page_number": page_number, "status": outcome.status,
+                "text": outcome.text, "error_code": outcome.error_code}
+
+    def list_items(self, scope_id: str, status: str = "pending",
+                   job_id: str | None = None) -> dict:
+        """``GET /api/v1/review-items``: text fields are document data, never markup.
+
+        ``source_page_range`` is a compact label for the item's physical source pages
+        and ``text_extraction`` aggregates their OCR states. No raw text is returned.
+        """
         items = []
-        for item in self.store.reviews.list(scope_id, status):
+        for item in self.store.reviews.list(scope_id, status, job_id):
             job = self.store.jobs.get(scope_id, item.job_id)
             candidate = item.candidate
             pages = candidate.get("pages")
+            numbers = _item_pages(item)
             items.append({
                 "id": item.id,
                 "job_id": item.job_id,
                 "status": item.status,
                 "source_name": job.source_name if job else None,
                 "page_numbers": pages if isinstance(pages, list) else [],
+                "source_page_range": page_range(numbers),
+                "text_extraction": self._text_extraction(scope_id, item.job_id, numbers),
                 "reason": _text(candidate.get("reason") or candidate.get("blocked_reason")),
                 "near_duplicate_of": _text(candidate.get("near_duplicate_of")),
                 "doc_type": _text(candidate.get("doc_type")),
@@ -679,7 +705,19 @@ class ReviewActions:
                 "created_at": item.created_at,
                 "updated_at": item.updated_at,
             })
-        return {"archive_scope_id": scope_id, "status": status, "items": items}
+        return {"archive_scope_id": scope_id, "status": status, "job_id": job_id,
+                "items": items}
+
+    def _text_extraction(self, scope_id: str, job_id: str, pages: list[int]) -> str:
+        """``missing`` if any page is, else the shared status, else ``mixed``."""
+        if not pages:
+            return "missing"
+        stored = {row["page_number"]: row["ocr_status"]
+                  for row in self.store.jobs.pages(scope_id, job_id)}
+        states = {stored.get(page, "missing") for page in pages}
+        if "missing" in states:
+            return "missing"
+        return states.pop() if len(states) == 1 else "mixed"
 
 
 def _verify_detached(trash: Path, path: Path, expected: str) -> None:
@@ -724,6 +762,27 @@ def _operation_view(operation) -> dict:
 
 def _text(value: object) -> str | None:
     return value if isinstance(value, str) else None
+
+
+def _item_pages(item: ReviewItem) -> list[int]:
+    """The item's physical source page numbers, ascending; [] when it has none."""
+    pages = item.candidate.get("pages")
+    if not isinstance(pages, list):
+        return []
+    return sorted({p for p in pages if type(p) is int and p >= 1})
+
+
+def page_range(pages: list[int]) -> str | None:
+    """A compact label for physical source pages: ``"2"``, ``"3-4"``, ``"1, 3-5"``."""
+    if not pages:
+        return None
+    runs: list[list[int]] = []
+    for page in sorted(set(pages)):
+        if runs and page == runs[-1][-1] + 1:
+            runs[-1].append(page)
+        else:
+            runs.append([page])
+    return ", ".join(str(r[0]) if len(r) == 1 else f"{r[0]}-{r[-1]}" for r in runs)
 
 
 def validate_review_destination(root: Path, directory: object, filename: object) -> str:

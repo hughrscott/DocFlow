@@ -31,7 +31,7 @@ def test_fresh_database_records_schema_version_in_user_version(state_root: Path)
     paths = StatePaths(state_root)
     with StateDatabase(paths) as db:
         assert db.connection.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
-    assert _user_version(paths.database) == SCHEMA_VERSION == 1
+    assert _user_version(paths.database) == SCHEMA_VERSION == 2
 
 
 def _set_user_version(path: Path, version: int) -> None:
@@ -107,19 +107,21 @@ def test_upgrade_keeps_verified_pre_upgrade_backup_for_rollback(
     probe = "CREATE TABLE p5_probe (id INTEGER PRIMARY KEY);"
     if outcome == "failed":
         probe += "\nCREATE TABLE archive_scopes (x);"
-    monkeypatch.setattr(database, "MIGRATIONS", (*MIGRATIONS, Migration(2, probe)))
+    probe_version = SCHEMA_VERSION + 1
+    monkeypatch.setattr(database, "MIGRATIONS",
+                        (*MIGRATIONS, Migration(probe_version, probe)))
     if outcome == "upgraded":
         StateDatabase(paths).open().close()
         StateDatabase(paths).open().close()  # idempotent: no second upgrade or backup
-        assert _user_version(paths.database) == 2
+        assert _user_version(paths.database) == probe_version
     else:
         with pytest.raises(sqlite3.Error):
             StateDatabase(paths).open()
-        assert _user_version(paths.database) == 1
+        assert _user_version(paths.database) == SCHEMA_VERSION
 
     backups = list(paths.backups.glob("*.sqlite3"))
-    assert [b.name.startswith("pre-upgrade-") for b in backups] == [True]
-    assert _user_version(backups[0]) == 1
+    assert [b.name.startswith(f"pre-upgrade-v{SCHEMA_VERSION}-") for b in backups] == [True]
+    assert _user_version(backups[0]) == SCHEMA_VERSION
 
     # Roll back to the previous code: it refuses the upgraded file, and the backup restores it.
     monkeypatch.setattr(database, "MIGRATIONS", MIGRATIONS)
@@ -130,6 +132,8 @@ def test_upgrade_keeps_verified_pre_upgrade_backup_for_rollback(
         shutil.copyfile(backups[0], paths.database)
     with StateDatabase(paths) as db:
         assert StateStore(db).scopes.get(scope.id).id == scope.id
-        assert [r[0] for r in db.connection.execute("SELECT version FROM schema_migrations")] == [1]
-    assert _user_version(paths.database) == 1
+        assert [r[0] for r in db.connection.execute(
+            "SELECT version FROM schema_migrations ORDER BY version")] == [
+            m.version for m in MIGRATIONS]
+    assert _user_version(paths.database) == SCHEMA_VERSION
     assert tree_digest(archive_root) == archive_before

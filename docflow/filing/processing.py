@@ -33,6 +33,24 @@ logger = logging.getLogger(__name__)
 # Unfinished job states that (re)run local OCR and classification; the lookup map is memory-only.
 _RECLASSIFY_FROM = {"ready": "ocr", "classified": "ocr", "awaiting_model": "ocr"}
 
+# The stages this pipeline really runs, in order, with the progress percentage each
+# one reports. The web status route derives its truthful stage list from this table,
+# so the UI can never advertise a step that does not happen.
+PROCESS_STAGES: tuple[tuple[str, str, int], ...] = (
+    ("checking", "Checking the scan", 5),
+    ("ocr", "Reading pages with OCR", 20),
+    ("grouping", "Grouping pages into documents", 45),
+    ("classifying", "Matching filing rules", 65),
+    ("filing", "Filing documents", 80),
+)
+DONE_STAGE = ("done", "Done", 100)
+_STAGES = {stage[0]: stage for stage in PROCESS_STAGES}
+
+
+def _report(progress: Callable[[str, int], None], stage: str) -> None:
+    _, label, percent = _STAGES[stage]
+    progress(label, percent)
+
 
 class ProcessingError(RuntimeError):
     """A scan cannot be processed now; ``code`` is stable (``source_unavailable``, ...)."""
@@ -104,7 +122,7 @@ def process_scan(
     from docflow.ocr import analyzer
 
     jobs = store.jobs
-    progress("Checking the scan", 5)
+    _report(progress, "checking")
     admission = filer.admit(scope_id, source_locator)
     if admission.job_id is None:
         raise ProcessingError("source_unavailable")
@@ -122,12 +140,16 @@ def process_scan(
     scoped = {**config, "archive_root": str(root)}
     try:
         source = filer.source_path(scope_id, job.source_locator)
-        progress("Running OCR", 20)
+        _report(progress, "ocr")
         records = analyzer.analyze_pages(loader.load_pdf(source))
+        # The analyzer returned a complete batch: persist every page's OCR outcome in
+        # one transaction before clustering. An analysis that aborted earlier raised,
+        # so no partial batch is ever committed and no text is invented.
+        jobs.record_ocr(scope_id, job.id, analyzer.ocr_outcomes(records))
         gateway = CloudPromptGateway(scoped)  # one gateway (placeholder map) per job
-        progress("Clustering documents", 45)
+        _report(progress, "grouping")
         candidates = cluster_pages(records, scoped, gateway)
-        progress("Classifying documents", 65)
+        _report(progress, "classifying")
         decisions = classify_candidates(candidates, scoped, gateway)
         gate_decisions(decisions, scoped)
     except Exception:
@@ -136,7 +158,7 @@ def process_scan(
         raise
     assignments = [assignment_for(decision, root) for decision in decisions]
     jobs.transition(scope_id, job.id, expected="ocr", new="classified")
-    progress("Filing documents", 80)
+    _report(progress, "filing")
     result: FilingResult = filer.file_job(scope_id, job.id, assignments,
                                           original_relative_directory=originals_directory())
     return ProcessingResult(job.id, result.job_status, decisions, assignments,

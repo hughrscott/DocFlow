@@ -36,6 +36,8 @@ def env(tmp_path: Path, isolated_home: Path):
 
 @pytest.fixture()
 def client(env, monkeypatch: pytest.MonkeyPatch) -> TestClient:
+    """The local app wired exactly as ``docflow ui`` wires it, including the scope."""
     monkeypatch.setattr(web_app, "_state_store", env.store)
     monkeypatch.setattr(web_app, "_filer", env.filer())
+    monkeypatch.setattr(web_app, "_active_scope_id", env.scope_id)
     return TestClient(web_app.app)

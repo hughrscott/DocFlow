@@ -23,6 +23,7 @@ from docflow.state.paths import validate_archive_root
 from docflow.state.schema import (
     JOB_STATUSES,
     JOB_TRANSITIONS,
+    OCR_STATUSES,
     OPERATION_STATUSES,
     PAGE_STATUSES,
     REVIEW_TRANSITIONS,
@@ -47,6 +48,10 @@ CONTENT_KEYS = frozenset({
     "raw_text", "raw_texts", "raw_text_preview", "text_preview", "preview", "ocr_text",
     "full_text", "notes", "placeholder_map", "placeholders", "lookup", "lookup_map",
 })
+# Raw OCR text is stored only in ``job_pages.ocr_text`` and returned only by the
+# explicit per-page text response. Error codes are short, stable and path-free.
+MAX_OCR_TEXT = 1 << 20
+OCR_ERROR_CODE_RE = re.compile(r"[a-z][a-z0-9_]{0,63}")
 
 
 class ScopeRequiredError(ValueError):
@@ -144,6 +149,45 @@ class Job:
     created_at: str
     updated_at: str
     last_error_code: str | None
+
+
+@dataclass(frozen=True)
+class PageOcr:
+    """One page's local OCR outcome.
+
+    Exactly one shape is valid per status: ``extracted`` carries non-blank text and
+    no error, ``no_text`` and ``missing`` carry neither, and ``failed`` carries only
+    a short stable error code.
+    """
+
+    page_number: int
+    status: str
+    text: str | None = None
+    error_code: str | None = None
+
+
+def validate_page_ocr(outcome: PageOcr) -> PageOcr:
+    """Reject any outcome whose status and payload disagree."""
+    if not isinstance(outcome, PageOcr) or type(outcome.page_number) is not int \
+            or outcome.page_number < 1:
+        raise UnsafeValueError("OCR outcome must name a 1-based page")
+    if outcome.status not in OCR_STATUSES:
+        raise UnsafeValueError(f"unknown OCR status {outcome.status!r}")
+    text, code = outcome.text, outcome.error_code
+    if outcome.status == "extracted":
+        if not isinstance(text, str) or not text.strip() or "\0" in text \
+                or len(text) > MAX_OCR_TEXT or code is not None:
+            raise UnsafeValueError("extracted pages carry non-blank text and no error")
+        return outcome
+    if text is not None:
+        raise UnsafeValueError(f"{outcome.status} pages carry no OCR text")
+    if outcome.status == "failed":
+        if not isinstance(code, str) or not OCR_ERROR_CODE_RE.fullmatch(code):
+            raise UnsafeValueError("failed pages carry a short stable error code")
+        return outcome
+    if code is not None:
+        raise UnsafeValueError(f"{outcome.status} pages carry no error code")
+    return outcome
 
 
 @dataclass(frozen=True)
@@ -357,9 +401,46 @@ class JobRepository(_Repository):
     def pages(self, scope_id: str, job_id: str) -> list[sqlite3.Row]:
         self.require_scope(scope_id)
         return self.conn.execute(
-            "SELECT page_number, content_sha256, perceptual_fingerprint, status FROM job_pages "
-            "WHERE archive_scope_id = ? AND job_id = ? ORDER BY page_number", (scope_id, job_id),
+            "SELECT page_number, content_sha256, perceptual_fingerprint, status, ocr_status "
+            "FROM job_pages WHERE archive_scope_id = ? AND job_id = ? ORDER BY page_number",
+            (scope_id, job_id),
         ).fetchall()
+
+    def record_ocr(self, scope_id: str, job_id: str, outcomes: list[PageOcr]) -> None:
+        """Persist one OCR outcome for every page of a job in a single transaction.
+
+        The batch must be complete: it names each existing page exactly once and no
+        other page. A partial or inconsistent batch commits nothing, so a run that
+        aborts before analysis finishes never leaves half a document readable.
+        """
+        self.require_scope(scope_id)
+        validated = [validate_page_ocr(outcome) for outcome in outcomes]
+        numbers = [outcome.page_number for outcome in validated]
+        if len(set(numbers)) != len(numbers):
+            raise UnsafeValueError("each page takes exactly one OCR outcome")
+        with self.write() as conn:
+            known = {row[0] for row in conn.execute(
+                "SELECT page_number FROM job_pages WHERE archive_scope_id = ? AND job_id = ?",
+                (scope_id, job_id))}
+            if not known or set(numbers) != known:
+                raise UnsafeValueError("an OCR batch must cover every page of the job exactly")
+            for outcome in validated:
+                conn.execute(
+                    "UPDATE job_pages SET ocr_status = ?, ocr_text = ?, ocr_error_code = ? "
+                    "WHERE archive_scope_id = ? AND job_id = ? AND page_number = ?",
+                    (outcome.status, outcome.text, outcome.error_code, scope_id, job_id,
+                     outcome.page_number),
+                )
+
+    def page_ocr(self, scope_id: str, job_id: str, page_number: int) -> PageOcr | None:
+        """One page's stored OCR outcome, or None outside this scope's jobs."""
+        self.require_scope(scope_id)
+        row = self.conn.execute(
+            "SELECT page_number, ocr_status, ocr_text, ocr_error_code FROM job_pages "
+            "WHERE archive_scope_id = ? AND job_id = ? AND page_number = ?",
+            (scope_id, job_id, page_number),
+        ).fetchone()
+        return PageOcr(row[0], row[1], row[2], row[3]) if row else None
 
     def set_page_status(self, scope_id: str, job_id: str, pages: list[int], status: str) -> None:
         """Move pending pages to a terminal status; repeating the same status is a no-op."""
@@ -492,12 +573,20 @@ class ReviewRepository(_Repository):
         ).fetchone()
         return self._from_row(row) if row else None
 
-    def list(self, scope_id: str, status: str = "pending") -> list[ReviewItem]:
-        """``GET /api/v1/review-items?archive_scope_id=...&status=...``."""
+    def list(self, scope_id: str, status: str = "pending",
+             job_id: str | None = None) -> list[ReviewItem]:
+        """``GET /api/v1/review-items?archive_scope_id=...&status=...&job_id=...``.
+
+        ``job_id`` narrows the result to one durable job. An unknown job, or one
+        belonging to another scope, simply matches nothing.
+        """
         self.require_scope(scope_id)
+        clause, params = "", [scope_id, status]
+        if job_id is not None:
+            clause, params = " AND job_id = ?", [*params, job_id]
         rows = self.conn.execute(
-            "SELECT * FROM review_items WHERE archive_scope_id = ? AND status = ? "
-            "ORDER BY created_at, id", (scope_id, status),
+            "SELECT * FROM review_items WHERE archive_scope_id = ? AND status = ?"
+            f"{clause} ORDER BY created_at, id", params,
         )
         return [self._from_row(r) for r in rows]
 
