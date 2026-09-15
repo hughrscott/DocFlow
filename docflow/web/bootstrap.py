@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from docflow.filing.operations import DurableFiler
+from docflow.filing.review_actions import ReviewActions
 from docflow.state.database import StateDatabase, WriterLockError
 from docflow.state.paths import (
     StatePaths,
@@ -75,6 +76,8 @@ def open_local_state(config: dict, *, home: Path | None = None) -> LocalState:
     try:
         store = StateStore(db)
         scope = store.scopes.register(archive, home=home)
+        # Interrupted review actions and undos converge before the UI shows any state.
+        ReviewActions(store).reconcile(scope.id)
     except UnsafePathError as exc:
         db.close()
         raise StateBootstrapError(

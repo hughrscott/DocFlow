@@ -548,23 +548,27 @@ class ReviewActions:
             "steps", {}).get(str(step.ordinal), {})
         path = confined(root, step.destination_relative_path)
         trash = path.parent / f".docflow-undo-{undo_id}-{step.ordinal}.trash"
-        if not evidence.get("detached"):
-            if os.path.lexists(trash):  # detached before a crash; prove it again
-                _verify_detached(trash, path, expected)
-            else:
-                if not os.path.lexists(path):
-                    raise FilingError("target_missing")
-                if path.is_symlink() or not path.is_file():
-                    raise FilingError("target_unsafe")
-                if raw_sha256(path) != expected:
-                    raise FilingError("target_modified")
-                os.rename(path, trash)
-                self.fault("undo_detached")
-                _verify_detached(trash, path, expected)
-            self.store.operations.record_step_evidence(scope_id, undo_id, step.ordinal, {
-                "detached": True, "relative_path": step.destination_relative_path})
-            self.fault("undo_detach_recorded")
-        trash.unlink(missing_ok=True)
+        try:
+            if not evidence.get("detached"):
+                if os.path.lexists(trash):  # detached before a crash; prove it again
+                    _verify_detached(trash, path, expected)
+                else:
+                    if not os.path.lexists(path):
+                        raise FilingError("target_missing")
+                    if path.is_symlink() or not path.is_file():
+                        raise FilingError("target_unsafe")
+                    if raw_sha256(path) != expected:
+                        raise FilingError("target_modified")
+                    os.rename(path, trash)
+                    self.fault("undo_detached")
+                    _verify_detached(trash, path, expected)
+                self.store.operations.record_step_evidence(scope_id, undo_id, step.ordinal, {
+                    "detached": True, "relative_path": step.destination_relative_path})
+                self.fault("undo_detach_recorded")
+            trash.unlink(missing_ok=True)
+        except OSError:
+            _reattach(trash, path)  # a failed step never leaves the file hidden
+            raise
         fsync_directory(path.parent)
         self.fault("undo_removed")
         self._restore(scope_id, step, target, target_step, entry)
@@ -688,6 +692,17 @@ def _verify_detached(trash: Path, path: Path, expected: str) -> None:
     except FileExistsError:
         raise FilingError("target_conflict") from None
     raise FilingError("target_modified")
+
+
+def _reattach(trash: Path, path: Path) -> None:
+    """Best effort: return a still-detached file to its name without replacing anything."""
+    if not os.path.lexists(trash):
+        return
+    try:
+        os.link(trash, path)
+        trash.unlink()
+    except OSError:
+        pass  # the step's own failure is reported; nothing is deleted
 
 
 def _fingerprint(action: str, item_ids: list[str], destination: tuple[str, str] | None) -> str:
