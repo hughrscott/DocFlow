@@ -38,6 +38,20 @@ def test_missing_api_key_is_transport_unavailable() -> None:
     assert excinfo.value.code == "transport_unavailable"
 
 
+@pytest.mark.parametrize("provider", ["olama", "", None])
+def test_unknown_provider_never_falls_back_to_a_cloud_preset(monkeypatch, network_attempts,
+                                                            provider) -> None:
+    monkeypatch.setattr(gateway_module, "transport_factory",
+                        gateway_module._default_transport_factory)
+    config = {**CONFIG, "llm_provider": provider, "llm_base_url": None}
+    with pytest.raises(TransportFailure) as excinfo:
+        build_transport(config)
+    assert excinfo.value.code == "transport_unavailable"
+    with pytest.raises(TransportFailure):
+        CloudPromptGateway(config).test_connection()
+    assert network_attempts == []
+
+
 @pytest.mark.parametrize("base_url", ["http://192.0.2.10/v1", None])
 def test_real_adapter_cannot_reach_network(monkeypatch, network_attempts, base_url) -> None:
     monkeypatch.setattr(gateway_module, "transport_factory",

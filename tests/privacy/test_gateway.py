@@ -228,6 +228,15 @@ def test_non_retryable_failures_and_malformed_replies_are_not_retried(reply) -> 
     assert len(transport.requests) == 1
 
 
+@pytest.mark.parametrize("timeout", ["abc", "nan", "inf", "-1", "0", 1e9])
+def test_invalid_timeout_setting_fails_closed_before_any_transport_call(timeout) -> None:
+    transport = fakes.FakeTransport(CLUSTER_OK)
+    with pytest.raises(TransportFailure) as excinfo:
+        _gateway(transport, llm_timeout_seconds=timeout).cluster(fakes.pages())
+    assert excinfo.value.code == "transport_unavailable"
+    assert transport.requests == []
+
+
 def test_unexpected_transport_exception_is_typed_and_leaks_nothing() -> None:
     transport = fakes.FakeTransport(RuntimeError(f"provider echoed {s.USER_NAME}"))
     with pytest.raises(TransportFailure) as excinfo:

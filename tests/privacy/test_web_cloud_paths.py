@@ -118,6 +118,7 @@ def test_legacy_test_connection_is_intercepted(intercept, web) -> None:
     ("local_only", "local_only", 0),
     ("down", "transport_unavailable", 1),
     ("invalid", "invalid_model_output", 1),
+    ("bad_timeout", "transport_unavailable", 0),
 ])
 def test_legacy_test_connection_failures_are_coded(intercept, web, monkeypatch,
                                                    setup, code, calls) -> None:
@@ -126,6 +127,9 @@ def test_legacy_test_connection_failures_are_coded(intercept, web, monkeypatch,
         monkeypatch.setitem(config, "privacy_mode", "local_only")
     elif setup == "down":
         intercept.responses = [TransportFailure(f"echo {s.USER_NAME}", code="transport_unavailable")]
+    elif setup == "bad_timeout":
+        monkeypatch.setitem(config, "llm_timeout_seconds", "not-a-number")
+        intercept.responses = ['{"status": "ok"}']
     else:
         intercept.responses = ['{"status": "ok", "extra": 1}']
     body = client.post("/api/settings/test-connection").json()

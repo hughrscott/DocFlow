@@ -64,6 +64,8 @@ MAX_REQUEST_BYTES = 256_000
 # Provider SDK retries are disabled; this is the only retry, and it resends the
 # same sealed request object (byte-identical body, same idempotency key).
 MAX_ATTEMPTS = 2
+DEFAULT_TIMEOUT_SECONDS = 60.0
+MAX_TIMEOUT_SECONDS = 600.0
 _MODEL_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,127}")
 IMAGE_MARKERS = ("\x89png", "ivborw0kggo", "data:image", "ihdr", "%pdf-", "/9j/", "image_url",
                  "input_image", "base64,")
@@ -565,7 +567,7 @@ class CloudPromptGateway:
         self._validate_egress(feature, body)
         digest = hashlib.sha256(body).hexdigest()[:24]
         key = f"{self.job_id}:{feature.value}:{digest}"
-        timeout = float(self.config.get("llm_timeout_seconds") or 60.0)
+        timeout = _timeout_seconds(self.config.get("llm_timeout_seconds"))
         return SanitizedRequest(feature, self.job_id, key, body, timeout,
                                 _seal_digest(feature, self.job_id, key, body))
 
@@ -608,6 +610,19 @@ class CloudPromptGateway:
                                             expected=job.status, error_code=exc.code)
         if item is not None:
             exc.review_item_id = item.id
+
+
+def _timeout_seconds(value: object) -> float:
+    """A bounded per-attempt timeout; an unusable setting refuses the call before egress."""
+    if value is None or value == "":
+        return DEFAULT_TIMEOUT_SECONDS
+    try:
+        timeout = float(value)
+    except (TypeError, ValueError):
+        timeout = math.nan
+    if isinstance(value, bool) or not 0 < timeout <= MAX_TIMEOUT_SECONDS:
+        raise TransportFailure("model timeout setting is invalid", code="transport_unavailable")
+    return timeout
 
 
 def _check_json_values(node: object) -> None:

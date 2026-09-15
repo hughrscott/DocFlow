@@ -79,7 +79,9 @@ def build_transport(config: Mapping) -> OpenAICompatibleTransport:
     load_dotenv()
 
     provider = config.get("llm_provider", "openrouter")
-    preset = PROVIDERS.get(provider, PROVIDERS["openrouter"])
+    preset = PROVIDERS.get(provider)
+    if preset is None:  # never redirect an unrecognised provider to a cloud preset
+        raise TransportFailure("unknown model provider", code="transport_unavailable")
     base_url = config.get("llm_base_url") or preset["base_url"]
 
     # API key: config > provider-specific env var > generic fallback
