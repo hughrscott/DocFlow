@@ -188,12 +188,17 @@ class ReviewActions:
                     raise ReviewActionRejected("idempotency_key_reused")
                 return self._replay(scope_id, existing)
             entries, steps, order = [], [], []
+            claimed: set[tuple[str, int]] = set()  # each page gets one outcome per batch
             for item_id in review_item_ids:
                 item = self.store.reviews.get(scope_id, item_id)
                 try:
                     if item is None:
                         raise ReviewActionRejected("review_item_not_found")
                     entry, step = self._plan(scope_id, item, action)
+                    pages = {(entry["job_id"], page) for page in entry["pages"]}
+                    if pages & claimed:
+                        raise ReviewActionRejected("duplicate_page_assignment")
+                    claimed |= pages
                 except ReviewActionRejected as exc:
                     order.append({"review_item_id": item_id, "action": action,
                                   "error_code": exc.code})
@@ -257,8 +262,11 @@ class ReviewActions:
     def _replay(self, scope_id: str, operation) -> dict:
         """The stored response for an idempotency key; an interrupted run resumes.
 
-        A single-item action that was rejected or failed raises its stored code again.
+        A single-item action that was rejected or failed raises its stored code again. An
+        action that has since been undone refuses: its stored outcome no longer holds.
         """
+        if operation.status in {"undone", "partially_undone"}:
+            raise ReviewActionRejected("operation_undone")
         if operation.status == "running":
             response = self._execute(scope_id, operation.id)
         elif "error" in operation.result:
