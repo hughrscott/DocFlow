@@ -323,10 +323,10 @@ def init() -> None:
     with open(config_dest, "w") as f:
         yaml.dump(config, f, default_flow_style=False, sort_keys=False)
 
-    console.print(f"\n[green]Setup complete![/green]")
+    console.print("\n[green]Setup complete![/green]")
     console.print(f"  Config: {config_dest}")
-    console.print(f"  Start:  docflow start")
-    console.print(f"  Check:  docflow check")
+    console.print("  Start:  docflow start")
+    console.print("  Check:  docflow check")
 
 
 # ---------------------------------------------------------------------------
@@ -509,7 +509,7 @@ def learn(ctx) -> None:
         console.print(f"    file_to: {s['file_to']}")
         console.print(f"    template: {s['filename_template']}")
 
-    console.print(f"\n[dim]To add these rules, copy them into your config YAML.[/dim]")
+    console.print("\n[dim]To add these rules, copy them into your config YAML.[/dim]")
 
 
 @cli.command("scan-archive")
