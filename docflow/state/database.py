@@ -23,6 +23,15 @@ class SchemaChecksumError(RuntimeError):
     """A recorded migration does not match the migration shipped with this code."""
 
 
+class SchemaVersionError(SchemaChecksumError):
+    """The database schema version is not one this code can open safely."""
+
+    def __init__(self, message: str, *, found: int, supported: int) -> None:
+        super().__init__(message)
+        self.found = found
+        self.supported = supported
+
+
 def utc_now() -> str:
     return datetime.now(UTC).isoformat(timespec="seconds")
 
@@ -42,11 +51,20 @@ def connect(path: Path, *, readonly: bool = False) -> sqlite3.Connection:
     return conn
 
 
-def apply_migrations(conn: sqlite3.Connection) -> None:
-    """Apply pending migrations atomically and verify recorded checksums."""
+def apply_migrations(conn: sqlite3.Connection, *, backup_dir: Path | None = None) -> None:
+    """Apply pending migrations atomically and verify recorded checksums.
+
+    Before upgrading an existing database, a verified copy is kept in ``backup_dir`` so the
+    previous DocFlow version can be restored.
+    """
     conn.execute(SCHEMA_MIGRATIONS_SQL)
     verify_schema(conn, allow_pending=True)
     recorded = {row[0] for row in conn.execute("SELECT version FROM schema_migrations")}
+    if backup_dir is not None and recorded and {m.version for m in MIGRATIONS} - recorded:
+        _backup_before_upgrade(conn, backup_dir, max(recorded))
+    if recorded and conn.execute("PRAGMA user_version").fetchone()[0] == 0:
+        # Written by the Phase 1-4 runner, which recorded migrations but not user_version.
+        conn.executescript(f"BEGIN IMMEDIATE;\nPRAGMA user_version = {max(recorded)};\nCOMMIT;")
     for migration in MIGRATIONS:
         if migration.version in recorded:
             continue
@@ -54,6 +72,7 @@ def apply_migrations(conn: sqlite3.Connection) -> None:
             f"BEGIN IMMEDIATE;\n{migration.sql}\n"
             f"INSERT INTO schema_migrations(version, applied_at, checksum) VALUES "
             f"({migration.version}, '{utc_now()}', '{migration_checksum(migration)}');\n"
+            f"PRAGMA user_version = {int(migration.version)};\n"
             "COMMIT;"
         )
         try:
@@ -64,15 +83,64 @@ def apply_migrations(conn: sqlite3.Connection) -> None:
             raise
 
 
+def _backup_before_upgrade(conn: sqlite3.Connection, directory: Path, version: int) -> Path:
+    directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
+    final = directory / f"pre-upgrade-v{version}-{stamp}.sqlite3"
+    counter = 1
+    while final.exists():
+        final = directory / f"pre-upgrade-v{version}-{stamp}-{counter}.sqlite3"
+        counter += 1
+    partial = final.with_name(final.name + ".partial")
+    target = sqlite3.connect(partial)
+    try:
+        conn.backup(target)
+    finally:
+        target.close()
+    os.chmod(partial, 0o600)
+    try:
+        check = connect(partial, readonly=True)
+        try:
+            problems = integrity_problems(check)
+            verify_schema(check, allow_pending=True)
+        finally:
+            check.close()
+        if problems:
+            raise SchemaChecksumError("pre-upgrade backup failed integrity checks")
+    except BaseException:
+        partial.unlink(missing_ok=True)
+        raise
+    os.replace(partial, final)
+    return final
+
+
 def verify_schema(conn: sqlite3.Connection, *, allow_pending: bool = False) -> None:
     """Raise SchemaChecksumError unless recorded migrations match shipped ones."""
     expected = {m.version: migration_checksum(m) for m in MIGRATIONS}
     recorded = dict(conn.execute("SELECT version, checksum FROM schema_migrations").fetchall())
+    _check_version(conn, set(recorded), set(expected))
     for version, checksum in recorded.items():
         if expected.get(version) != checksum:
             raise SchemaChecksumError(f"schema migration {version} checksum mismatch")
     if not allow_pending and set(recorded) != set(expected):
         raise SchemaChecksumError("schema migrations incomplete")
+
+
+def _check_version(conn: sqlite3.Connection, recorded: set[int], known: set[int]) -> None:
+    """Refuse databases written by newer code or whose user_version disagrees with the journal.
+
+    ``user_version`` 0 with recorded migrations is a Phase 1-4 database: still compatible.
+    """
+    found = conn.execute("PRAGMA user_version").fetchone()[0]
+    supported = max(known)
+    newest = max(recorded | {found})
+    if newest > supported or not recorded <= known:
+        raise SchemaVersionError(
+            f"state database schema version {newest} is newer than supported {supported}",
+            found=newest, supported=supported)
+    if found not in (0, max(recorded, default=0)):
+        raise SchemaVersionError("state database user_version disagrees with its migrations",
+                                 found=found, supported=supported)
 
 
 def integrity_problems(conn: sqlite3.Connection) -> list[str]:
@@ -114,7 +182,7 @@ class StateDatabase:
         try:
             self._conn = connect(self.paths.database)
             self._conn.execute("PRAGMA journal_mode = WAL")
-            apply_migrations(self._conn)
+            apply_migrations(self._conn, backup_dir=self.paths.backups)
             verify_schema(self._conn)
         except BaseException:
             self.close()
