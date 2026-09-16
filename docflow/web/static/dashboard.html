@@ -152,7 +152,9 @@
                     if (resp.ok) {
                         const state = await resp.json();
                         if (state.status === 'processing' || state.status === 'starting') {
-                            // Re-attach to active job
+                            // Re-attach to active job. The guard goes on before polling,
+                            // so a reload mid-run cannot start a second submission.
+                            holdRecoveredRun();
                             document.getElementById('processing-section').classList.remove('hidden');
                             document.getElementById('recent-section').classList.add('hidden');
                             document.getElementById('batch-name').textContent = state.pdf?.split('/').pop() || 'Processing...';
@@ -182,6 +184,8 @@
                     const data = await resp.json();
                     if (data.job_id && data.status !== 'completed') {
                         sessionStorage.setItem('docflow_active_job', data.job_id);
+                        // Same guard for the job the server reports as still running.
+                        holdRecoveredRun();
                         document.getElementById('processing-section').classList.remove('hidden');
                         document.getElementById('recent-section').classList.add('hidden');
                         document.getElementById('batch-name').textContent = data.pdf?.split('/').pop() || 'Processing...';
@@ -245,18 +249,39 @@
             dropZone.setAttribute('aria-busy', busy ? 'true' : 'false');
         }
 
+        // A run recovered on load (saved job or server-reported) is not driven by
+        // handleFiles, so it holds the guard itself until it reaches a terminal state.
+        let _recovered = false;
+
+        function holdRecoveredRun() {
+            _recovered = true;
+            setSubmitting(true);
+        }
+
+        function releaseRecoveredRun() {
+            if (!_recovered) return;
+            _recovered = false;
+            setSubmitting(false);
+        }
+
         // Acknowledge the chosen file the moment it is selected, before any upload.
         function acknowledgeSelection(name) {
             document.getElementById('processing-section').classList.remove('hidden');
             document.getElementById('recent-section').classList.add('hidden');
             document.getElementById('documents-section').classList.add('hidden');
             document.getElementById('documents-list').replaceChildren();
+            // No action from the previous batch may sit beside the new file name —
+            // this runs before any await, so a failed upload cannot leave one behind.
+            const completion = document.getElementById('completion-summary');
+            completion.replaceChildren();
+            completion.classList.add('hidden');
             document.getElementById('batch-name').textContent = name;
             document.getElementById('progress-pct').textContent = '0%';
             document.getElementById('progress-step').textContent = `Added ${name}`;
             document.getElementById('progress-bar').style.width = '0%';
             document.getElementById('progress-bar').classList.remove('bg-red-500');
             renderStages([]);
+            renderCapabilities(null);
         }
 
         async function handleFiles(files) {
@@ -348,6 +373,14 @@
                     const resp = await fetch('/api/process/status/' + jobId);
                     if (!resp.ok) {
                         document.getElementById('progress-step').textContent = 'Poll error: HTTP ' + resp.status;
+                        if (resp.status === 404) {
+                            // The server no longer knows this job: stop polling so a
+                            // recovered run can never hold intake shut for good.
+                            clearInterval(_pollInterval);
+                            _pollInterval = null;
+                            sessionStorage.removeItem('docflow_active_job');
+                            releaseRecoveredRun();
+                        }
                         return;
                     }
                     const state = await resp.json();
@@ -362,6 +395,7 @@
                         clearInterval(_pollInterval);
                         _pollInterval = null;
                         sessionStorage.removeItem('docflow_active_job');
+                        releaseRecoveredRun();
 
                         if (state.status === 'completed' || (state.documents && state.documents.length > 0)) {
                             showDocuments(state.documents, state.review_url);
@@ -482,15 +516,15 @@
                     'm-0 font-mono font-medium text-[12.5px] text-ink truncate', doc.filename),
                     folder);
                 const right = textElement('div', 'flex items-center gap-3');
-                if (typeof doc.confidence === 'number') {
-                    const info = confidenceInfo(doc.confidence);
-                    const badge = textElement('span',
-                        'text-[11px] font-bold px-[9px] py-1 rounded-pill whitespace-nowrap',
-                        `${Math.round(doc.confidence * 100)}% Match`);
-                    badge.style.background = info.bg;
-                    badge.style.color = info.color;
-                    right.appendChild(badge);
-                }
+                // A run that never classified this document has no score to show: the
+                // badge says so neutrally instead of claiming a 0% match.
+                const info = confidenceInfo(doc.confidence);
+                const badge = textElement('span',
+                    'text-[11px] font-bold px-[9px] py-1 rounded-pill whitespace-nowrap',
+                    confidenceLabel(doc.confidence));
+                badge.style.background = info.bg;
+                badge.style.color = info.color;
+                right.appendChild(badge);
                 if (isReview) {
                     const action = textElement('a',
                         'flex items-center gap-[6px] bg-ink text-[#F4F1EA] px-[14px] py-[9px] rounded-[11px] text-[12.5px] font-bold no-underline hover:-translate-y-px transition-transform',

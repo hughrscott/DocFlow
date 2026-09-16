@@ -96,7 +96,7 @@ returned.
 | `page_numbers` | source pages of the job this item covers (1-based, ascending); `[]` if the item has none |
 | `reason` | short code from classification/review (`low_confidence`, `unmatched`, `near_duplicate_candidate`, a privacy block reason…) or `null` |
 | `suggested_*` | may be `null`; directory is archive-relative, filename a single name |
-| `confidence` | number in `[0, 1]` |
+| `confidence` | number in `[0, 1]`, or `null` when nothing classified the item (`reason` is `unmatched`, or the job was blocked before the model was consulted). `null` means *not classified*; render it neutrally and never as `0%`. |
 | `actions` | what is currently allowed: `approve` needs a valid suggestion and an available retained original; `correct` needs the original; `skip` needs only pages awaiting review. `[]` means the item cannot be acted on (for example a privacy-blocked item with no pages, a legacy item without page fingerprints, or a job no longer in `review`). Disable buttons not listed. |
 
 No raw OCR text is returned by this route. `source_page_range`, `text_extraction`, the

@@ -386,3 +386,79 @@ def test_legacy_unmatched_suggest_accepts_originals_in_configured_watch_folder(
     assert response.status_code == 200
     s.assert_no_sentinels(intercept.requests[0].body)
     assert str(inbox) not in intercept.requests[0].body.decode()
+
+
+# ---------------------------------------------------------------------------
+# Mode-aware health: local-only is a configured state, never a missing-key error
+# ---------------------------------------------------------------------------
+
+LOCAL_ONLY_DETAIL = "Text extraction is enabled. AI classification is disabled."
+
+
+def test_health_reports_local_only_as_a_neutral_configured_state(web, monkeypatch) -> None:
+    client, config = web
+    monkeypatch.setitem(config, "privacy_mode", "local_only")
+
+    body = client.get("/api/health").json()
+
+    assert body["privacy_mode"] == "local_only"
+    assert body["text_extraction"] is True
+    assert body["ai_classification"] is False
+    assert body["llm_status"] == "local_only"
+    assert body["llm_status_level"] == "neutral"
+    assert body["llm_status_label"] == "Local Only"
+    assert body["llm_status_detail"] == LOCAL_ONLY_DETAIL
+    assert "api key" not in json.dumps(body).lower()
+
+
+def test_health_never_claims_model_readiness_in_local_only(web, monkeypatch) -> None:
+    """A key may be configured; local-only still makes no model call, so nothing is ready."""
+    client, config = web
+    monkeypatch.setitem(config, "privacy_mode", "local_only")
+    monkeypatch.setitem(config, "llm_api_key", "synthetic-test-key")
+
+    body = client.get("/api/health").json()
+
+    assert (body["llm_status"], body["llm_ready"]) == ("local_only", False)
+    assert body["llm_status_level"] == "neutral"
+
+
+def test_health_keeps_the_missing_key_warning_for_cloud_classification(web) -> None:
+    client, config = web
+    assert config["privacy_mode"] == "cloud"
+
+    body = client.get("/api/health").json()
+
+    assert body["ai_classification"] is True
+    assert (body["llm_status"], body["llm_ready"]) == ("missing_key", False)
+    assert body["llm_status_level"] == "warning"
+    assert body["llm_status_label"] == "No API Key"
+
+
+def test_health_is_ready_when_cloud_classification_has_a_configured_key(web, monkeypatch) -> None:
+    client, config = web
+    monkeypatch.setitem(config, "llm_api_key", "synthetic-test-key")
+
+    body = client.get("/api/health").json()
+
+    assert (body["llm_status"], body["llm_ready"]) == ("ready", True)
+    assert body["llm_status_level"] == "ok"
+
+
+def test_health_is_ready_when_the_key_comes_from_the_environment(web, monkeypatch) -> None:
+    client, _ = web
+    monkeypatch.setenv("OPENROUTER_API_KEY", "synthetic-test-key")
+
+    body = client.get("/api/health").json()
+
+    assert (body["llm_status"], body["llm_ready"]) == ("ready", True)
+
+
+def test_health_does_not_warn_about_keys_for_a_local_model_provider(web, monkeypatch) -> None:
+    client, config = web
+    monkeypatch.setitem(config, "llm_provider", "ollama")
+
+    body = client.get("/api/health").json()
+
+    assert body["llm_status"] == "ready"
+    assert body["llm_status_level"] == "ok"

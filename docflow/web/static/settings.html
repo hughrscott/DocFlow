@@ -248,12 +248,21 @@
 
             // Health
             document.getElementById('health-llm').textContent = (health.model || '').split('/').pop() || '—';
+            // Styled from the level the server reports; an unknown level stays neutral,
+            // so local-only mode is never presented as a key failure.
+            const HEALTH_LEVEL = {
+                ok: ['bg-success', 'text-success'],
+                neutral: ['bg-text-dim', 'text-text-olive'],
+                warning: ['bg-danger', 'text-danger'],
+            };
+            const [dotClass, textClass] = HEALTH_LEVEL[health.llm_status_level]
+                || HEALTH_LEVEL.neutral;
             const apiEl = document.getElementById('health-api');
-            if (health.llm_ready) {
-                apiEl.innerHTML = '<span class="w-[7px] h-[7px] rounded-pill bg-success"></span><span class="text-[12.5px] font-bold text-success">Connected</span>';
-            } else {
-                apiEl.innerHTML = '<span class="w-[7px] h-[7px] rounded-pill bg-danger"></span><span class="text-[12.5px] font-bold text-danger">No API Key</span>';
-            }
+            const dot = document.createElement('span');
+            dot.className = `w-[7px] h-[7px] rounded-pill ${dotClass}`;
+            apiEl.replaceChildren(dot, textElement('span',
+                `text-[12.5px] font-bold ${textClass}`, health.llm_status_label || 'Unavailable'));
+            apiEl.setAttribute('title', health.llm_status_detail || '');
         }
 
         const PROVIDER_DEFAULTS = {
@@ -315,6 +324,9 @@
                 const data = await resp.json();
                 if (data.status === 'connected') {
                     showToast(`Connected — model: ${data.model}`, 'success', 5000);
+                } else if (data.status === 'local_only') {
+                    // Not a failure: no connection was attempted, by configuration.
+                    showToast(data.error, 'info', 5000);
                 } else {
                     showToast(`Connection failed: ${data.error}`, 'error', 0);
                 }

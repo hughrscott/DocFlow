@@ -74,7 +74,7 @@ echoed at the top level:
     "doc_type": null, "period": null,
     "suggested_filename": null,
     "suggested_relative_directory": null,
-    "confidence": 0.1,
+    "confidence": null,
     "actions": ["correct", "skip"],
     "created_at": "2026-09-13T21:01:20+00:00",
     "updated_at": "2026-09-13T21:01:20+00:00"
@@ -87,6 +87,11 @@ echoed at the top level:
 | `job_id` (top level) | the filter that was applied, or `null` when none was sent |
 | `source_page_range` | compact label for `page_numbers`: `"2"`, `"3-4"`, `"1, 3-5"`. `null` when the item has no pages. Consecutive runs are collapsed; the separator is an ASCII hyphen |
 | `text_extraction` | aggregate OCR state of the item's pages (below) |
+
+`confidence` is `null` for this item because `reason` is `unmatched`: no filing rule
+matched and no model result was accepted, so nothing ever scored it. See
+`docs/phase-4-api-contract.md` for the field; a document that really was classified —
+including a low-confidence cloud classification — keeps its number.
 
 **Aggregation rule for `text_extraction`** — deterministic, in this order:
 
@@ -286,6 +291,7 @@ Clients should generate one key per user action, exactly like `idempotency_key`:
 | `filename` | the accepted file name, present from the first status read; `pdf` is a legacy alias |
 | `stage` / `stages` | see below |
 | `documents_total`, `auto_filed`, `review_queue` | completion counts |
+| `documents[].confidence` | the decision's confidence, or `null` when nothing classified the document (`rule` is `none`) |
 | `durable_job_id` | the durable job, once it exists; `null` before that |
 | `review_url` | a job-scoped review URL (`/review?job_id=…`), or `null` |
 | `capabilities` | what this install actually does |
@@ -314,10 +320,21 @@ otherwise navigates to the dashboard. It never uploads or starts processing itse
 (`shared.js` contains no `/api/upload` or `/api/process` call).
 
 **Intake.** Selecting or dropping a file acknowledges its name immediately, before any
-network call, and this survives a failed upload. The input is disabled while a submission
-is in flight and re-enabled when the run finishes, so repeated change/drop events cannot
-start a second job; one `submission_key` is generated per file and the server enforces the
-same rule. Progress renders `stages` and `capabilities` from the server. On completion the
+network call, and this survives a failed upload. Acknowledging a file also clears the
+previous batch — completion summary, review link, capability line and document list —
+synchronously, before the upload starts, so no previous-job action can remain beside the
+newly selected file name even when that upload then fails. The input is disabled while a
+submission is in flight and re-enabled when the run finishes, so repeated change/drop
+events cannot start a second job; one `submission_key` is generated per file and the
+server enforces the same rule.
+
+**Recovery.** A page loaded while a job is running re-attaches to it — from the job the
+tab saved, or from `GET /api/process/active` — and takes the same submission guard
+*before* it starts polling, so a reload or a navigation back to the dashboard during
+processing cannot start a second intake. The guard is released when that run reaches a
+terminal state: completed, error, or a status the server no longer knows (`404`). Progress renders `stages` and `capabilities` from the server. A document the run never
+classified carries `confidence: null` and is labelled *Not classified* in neutral styling,
+never as a `0%` match; a document that was classified shows its real percentage. On completion the
 page shows the counts and a **Review this batch** action linking to `review_url`; each
 document still awaiting review links to the same scoped URL. Only same-origin paths
 beginning with a single `/` are ever linked.

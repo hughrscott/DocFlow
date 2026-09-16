@@ -206,6 +206,10 @@ def _legacy_process_locator(raw: object) -> str:
     raise HTTPException(400, "PDF must be an uploaded file or in the configured watch folder")
 
 
+# The rule label the classifier records when nothing classified the document.
+UNCLASSIFIED_RULE = "none"
+
+
 def _capabilities() -> dict:
     """What this local install really does, in words that promise nothing more."""
     from docflow.llm.gateway import CloudPromptGateway
@@ -373,7 +377,10 @@ async def _run_pipeline_async(job_id: str, locator: str) -> None:
             "period": d.candidate.period,
             "pages": list(a.pages),
             "rule": d.rule_matched,
-            "confidence": d.confidence,
+            # No rule matched and no model result was accepted, so nothing classified
+            # this document: report no confidence rather than a 0.0 the UI would
+            # render as a confident zero. A real classification keeps its number.
+            "confidence": None if d.rule_matched == UNCLASSIFIED_RULE else d.confidence,
             "auto_filed": a.outcome == "filed",
             "notes": a.reason,
             "reasoning": d.candidate.raw_signals.get("llm_reasoning", ""),
@@ -993,22 +1000,70 @@ async def delete_rule(rule_id: str):
     return {"status": "deleted"}
 
 
-@app.get("/api/health")
-async def health():
-    """System health check."""
-    api_key = bool(os.environ.get("OPENROUTER_API_KEY"))
-    if not api_key:
+# Label and severity for each model status. Local-only is a configured state, so it is
+# never styled or worded as a fault; only a mode that really needs a key can warn.
+_LLM_STATUS = {
+    "ready": ("Ready", "ok"),
+    "local_only": ("Local Only", "neutral"),
+    "missing_key": ("No API Key", "warning"),
+}
+_MISSING_KEY_DETAIL = "Add an API key to enable AI classification."
+
+
+def _model_key_available() -> bool:
+    """True when the configured provider has an API key, or needs none (local provider)."""
+    from docflow.llm.client import PROVIDERS
+
+    preset = PROVIDERS.get(_config.get("llm_provider", "openrouter"))
+    if preset is None:  # an unrecognised provider is never silently treated as usable
+        return False
+    if preset["env_key"] is None:
+        return True
+    if _config.get("llm_api_key") not in ("", "••••••••", None):
+        return True
+
+    def from_env() -> bool:
+        return bool(os.environ.get(preset["env_key"]) or os.environ.get("OPENROUTER_API_KEY"))
+
+    if not from_env():
         try:
             from dotenv import load_dotenv
             load_dotenv()
-            api_key = bool(os.environ.get("OPENROUTER_API_KEY"))
         except ImportError:
-            pass
+            return False
+    return from_env()
 
+
+def _llm_status() -> dict:
+    """Mode-aware model status for every health/status surface."""
+    capabilities = _capabilities()
+    if not capabilities["ai_classification"]:
+        status = "local_only"
+    elif _model_key_available():
+        status = "ready"
+    else:
+        status = "missing_key"
+    label, level = _LLM_STATUS[status]
+    return {
+        "privacy_mode": "cloud" if capabilities["ai_classification"] else "local_only",
+        "text_extraction": capabilities["text_extraction"],
+        "ai_classification": capabilities["ai_classification"],
+        "llm_ready": status == "ready",
+        "llm_status": status,
+        "llm_status_label": label,
+        "llm_status_level": level,
+        "llm_status_detail": (_MISSING_KEY_DETAIL if status == "missing_key"
+                              else capabilities["summary"]),
+    }
+
+
+@app.get("/api/health")
+async def health():
+    """System health check, worded for the privacy mode this install actually runs in."""
     return {
         "watch_folder": _config.get("scan_watch_folder", ""),
         "archive_root": _config.get("archive_root", ""),
-        "llm_ready": api_key,
+        **_llm_status(),
         "model": _config.get("openrouter_model", "google/gemini-2.0-flash-001"),
         "threshold": _config.get("confidence_threshold", 0.75),
     }

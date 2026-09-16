@@ -287,6 +287,14 @@ async function runSearch(query) {
 // ---------------------------------------------------------------------------
 // Health status
 // ---------------------------------------------------------------------------
+// Severity classes for a server-reported status level. An unknown or absent level is
+// neutral, never danger: the UI must not invent a failure it was not told about.
+const STATUS_LEVEL_CLASS = {
+    ok: 'text-success font-bold',
+    neutral: 'text-text-olive font-bold',
+    warning: 'text-danger font-bold',
+};
+
 async function updateHealthStatus() {
     try {
         const resp = await fetch('/api/health');
@@ -295,8 +303,10 @@ async function updateHealthStatus() {
         const llmEl = document.getElementById('llm-status');
         if (watchEl) watchEl.textContent = data.watch_folder ? 'Active' : 'Not Set';
         if (llmEl) {
-            llmEl.textContent = data.llm_ready ? 'Ready' : 'No API Key';
-            llmEl.className = data.llm_ready ? 'text-success font-bold' : 'text-danger font-bold';
+            llmEl.textContent = data.llm_status_label || 'Unavailable';
+            llmEl.className = STATUS_LEVEL_CLASS[data.llm_status_level]
+                || STATUS_LEVEL_CLASS.neutral;
+            llmEl.setAttribute('title', data.llm_status_detail || '');
         }
     } catch (e) { /* ignore */ }
 }
@@ -338,21 +348,23 @@ function globalUpload() {
 // ---------------------------------------------------------------------------
 // Badges
 // ---------------------------------------------------------------------------
+// A run that never classified the document reports no confidence. That is neutral
+// information, not a zero score: it is never shown as a low-confidence percentage.
 function confidenceBadge(confidence) {
-    const pct = Math.round(confidence * 100);
-    let bg, color;
-    if (confidence >= 0.75) {
-        bg = '#E2F1E9'; color = '#0E8A5E';
-    } else if (confidence >= 0.60) {
-        bg = '#F6E9D3'; color = '#B5751F';
-    } else {
-        bg = '#F7E3DD'; color = '#BE4029';
-    }
-    return `<span style="background:${bg};color:${color};" class="text-[11px] font-bold px-[9px] py-1 rounded-pill whitespace-nowrap">${pct}% Match</span>`;
+    const info = confidenceInfo(confidence);
+    return `<span style="background:${info.bg};color:${info.color};" class="text-[11px] font-bold px-[9px] py-1 rounded-pill whitespace-nowrap">${confidenceLabel(confidence)}</span>`;
+}
+
+// The badge text for one confidence value: a percentage, or the neutral wording.
+function confidenceLabel(confidence) {
+    return typeof confidence === 'number'
+        ? `${Math.round(confidence * 100)}% Match` : confidenceInfo(null).label;
 }
 
 function confidenceInfo(confidence) {
-    if (confidence == null) return { color: '#8A8B72', bg: '#ECE7DC', label: 'Unclassified' };
+    if (typeof confidence !== 'number') {
+        return { color: '#8A8B72', bg: '#ECE7DC', label: 'Not classified' };
+    }
     if (confidence >= 0.75) return { color: '#0E8A5E', bg: '#E2F1E9', label: 'Confident' };
     if (confidence >= 0.60) return { color: '#B5751F', bg: '#F6E9D3', label: 'Needs a look' };
     return { color: '#BE4029', bg: '#F7E3DD', label: 'Low confidence' };

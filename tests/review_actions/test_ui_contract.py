@@ -80,10 +80,11 @@ def _page(items: list[dict], extra: list[dict] = ()) -> list[dict]:
 
 def run_ui(tmp_path: Path, responses: list[dict], steps: list[str],
            storage: dict | None = None, *, page: str = "review.html",
-           location: dict | None = None) -> dict:
+           location: dict | None = None, session: dict | None = None) -> dict:
     scenario = tmp_path / "scenario.json"
     scenario.write_text(json.dumps({"responses": responses, "steps": steps,
                                     "storage": storage or {}, "page": page,
+                                    "session": session or {},
                                     "location": location or {"pathname": "/review"}}))
     completed = subprocess.run([shutil.which("node") or "node", str(HARNESS), str(scenario)],
                                capture_output=True, text=True, timeout=60, check=True)

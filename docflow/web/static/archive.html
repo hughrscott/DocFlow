@@ -154,7 +154,6 @@
 
             table.innerHTML = entries.slice(0, 50).map(e => {
                 const ci = confidenceInfo(e.confidence);
-                const pct = Math.round(e.confidence * 100);
                 let ruleColor = '#0E8A5E';
                 let ruleLabel = 'Rule: ' + e.rule_matched;
                 if (e.rule_matched === 'llm_suggested') { ruleColor = '#34508C'; ruleLabel = 'AI Suggested'; }
@@ -173,7 +172,7 @@
                         <span class="text-[11.5px] text-text-muted truncate">${ruleLabel}</span>
                     </div>
                     <div class="text-right">
-                        <span class="text-[11px] font-bold py-[3px] px-[9px] rounded-pill whitespace-nowrap" style="color:${ci.color};background:${ci.bg};">${pct}% Match</span>
+                        <span class="text-[11px] font-bold py-[3px] px-[9px] rounded-pill whitespace-nowrap" style="color:${ci.color};background:${ci.bg};">${confidenceLabel(e.confidence)}</span>
                     </div>
                 </div>`;
             }).join('');

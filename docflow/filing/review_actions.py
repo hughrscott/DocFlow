@@ -700,7 +700,7 @@ class ReviewActions:
                 "period": _text(candidate.get("period")),
                 "suggested_filename": item.suggested_filename,
                 "suggested_relative_directory": item.suggested_relative_directory,
-                "confidence": item.confidence,
+                "confidence": _reported_confidence(item),
                 "actions": self._actions(scope_id, item),
                 "created_at": item.created_at,
                 "updated_at": item.updated_at,
@@ -762,6 +762,25 @@ def _operation_view(operation) -> dict:
 
 def _text(value: object) -> str | None:
     return value if isinstance(value, str) else None
+
+
+# Reasons recorded when nothing ever classified the document: no filing rule matched and
+# no model result was accepted, or the job was blocked before the model was consulted.
+UNCLASSIFIED_REASONS = frozenset({"unmatched"})
+
+
+def _reported_confidence(item: ReviewItem) -> float | None:
+    """The stored confidence, or ``None`` when no classification produced one.
+
+    An unclassified item stores ``0.0`` because the column is not nullable; reporting
+    that number would let a frontend render a confident zero for a document nothing
+    ever scored. A real classification — including a low cloud one — keeps its value.
+    """
+    if item.candidate.get("blocked_reason") is not None:
+        return None
+    if item.candidate.get("reason") in UNCLASSIFIED_REASONS:
+        return None
+    return item.confidence
 
 
 def _item_pages(item: ReviewItem) -> list[int]:

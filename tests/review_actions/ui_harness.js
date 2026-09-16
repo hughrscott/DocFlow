@@ -1,7 +1,8 @@
 // Runs a static page's inline script and shared.js against a minimal recording DOM.
 //
 // Usage: node ui_harness.js <scenario.json>
-// Scenario: {"page": "review.html", "storage": {...}, "location": {pathname, search},
+// Scenario: {"page": "review.html", "storage": {...}, "session": {...},
+//            "location": {pathname, search},
 //            "responses": [{method, url (regex), status, body, once}],
 //            "steps": ["<js evaluated in the page context>", ...]}
 // Output (stdout JSON): fetches, html_writes (every innerHTML/insertAdjacentHTML value),
@@ -170,7 +171,8 @@ function storage(initial) {
     };
 }
 const localStorage = storage(scenario.storage);
-const sessionStorage = storage();
+// Seeded like a reload in the same tab: a job saved before the page was left.
+const sessionStorage = storage(scenario.session);
 
 const rules = (scenario.responses || []).slice();
 async function fetch(url, options = {}) {
@@ -249,6 +251,11 @@ const sandbox = {
     __hrefs: () => findAll((el) => el.tagName === 'A' && el.href).map(
         (el) => ({ href: el.href, text: el.textContent })),
     __disabled: (id) => Boolean((getElementById(id) || {}).disabled),
+    // Change what the next matching call answers, mid-scenario.
+    __respond: (rule) => { rules.unshift(rule); },
+    __text: (id) => String((getElementById(id) || {}).textContent || ''),
+    __hidden: (id) => Boolean((getElementById(id) || { classList: new ClassList() })
+        .classList.contains('hidden')),
     __imgSrc: (id) => String((getElementById(id) || {}).src || ''),
 };
 sandbox.window = sandbox;
@@ -279,7 +286,8 @@ async function settle() {
             await settle();
             if (value === undefined || typeof value === 'function'
                 || (value && typeof value.then === 'function')) value = null;
-            snapshots.push({ step, storage: { ...localStorage._data }, fetches: fetches.length,
+            snapshots.push({ step, storage: { ...localStorage._data },
+                             session: { ...sessionStorage._data }, fetches: fetches.length,
                              texts: collectTexts(),
                              value: JSON.parse(JSON.stringify(value === undefined ? null : value)) });
         }
@@ -288,6 +296,6 @@ async function settle() {
     }
     process.stdout.write(JSON.stringify({
         fetches, html_writes: htmlWrites, texts: collectTexts(), snapshots, errors,
-        storage: localStorage._data,
+        storage: localStorage._data, session: sessionStorage._data,
     }));
 })();
