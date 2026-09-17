@@ -39,6 +39,13 @@ _CONNECT = socket.socket.connect
 
 BROWSERS = ("chromium", "chromium-browser", "google-chrome", "google-chrome-stable")
 DASHBOARD_READY = "typeof handleFiles === 'function'"
+# The public hosts the shipped pages themselves reference. Only a test that needs the
+# real stylesheet applied opens these; every other run keeps the total deny below.
+ASSET_HOSTS = ("cdn.tailwindcss.com", "fonts.googleapis.com", "fonts.gstatic.com")
+# ``bg-canvas`` on <body> resolves through the shipped config.js token table, so this
+# colour appears only once the real Tailwind CDN has compiled with the real config.
+STYLES_READY = ("return getComputedStyle(document.body).backgroundColor"
+                " === 'rgb(244, 241, 234)';")
 # The navigation events the harness synchronises on; every other event is dropped.
 NAV_EVENTS = ("Page.frameNavigated", "Page.lifecycleEvent")
 LAUNCH_TIMEOUT = 30.0
@@ -263,16 +270,21 @@ def _http_get_json(port: int, path: str, timeout: float):
 class Browser:
     """One bounded headless browser process with one attached page."""
 
-    def __init__(self, binary: str, profile: Path, url: str) -> None:
+    def __init__(self, binary: str, profile: Path, url: str,
+                 allow_hosts: tuple[str, ...] = ()) -> None:
         self.port = _free_port()
+        # Nothing but the loopback stub is resolvable unless a test names further hosts.
+        # The only callers that do are the layout tests, which need the page's own
+        # public stylesheet to actually apply before geometry means anything.
+        resolver = ", ".join(["MAP * ~NOTFOUND", f"EXCLUDE {LOOPBACK}",
+                              *(f"EXCLUDE {host}" for host in allow_hosts)])
         self.process = subprocess.Popen(
             [binary, "--headless=new", f"--remote-debugging-port={self.port}",
              f"--user-data-dir={profile}", "--no-sandbox", "--disable-gpu",
              "--disable-dev-shm-usage", "--no-first-run", "--no-default-browser-check",
              "--disable-background-networking", "--disable-component-update",
              "--disable-default-apps", "--disable-sync", "--no-pings",
-             # Nothing but the loopback stub is resolvable: no egress is possible.
-             f"--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE {LOOPBACK}", url],
+             f"--host-resolver-rules={resolver}", url],
             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
             env={**os.environ, "HOME": str(profile)},
             # Its own session: the launcher may be a wrapper that execs the real
@@ -397,6 +409,16 @@ class Browser:
             lambda p: p.get("loaderId") == loader_id and p.get("name") == "load",
             "the new document's load event")
         self.wait_ready(marker)
+
+    def emulate(self, width: int, height: int, mobile: bool, scale: float = 1) -> None:
+        """Adopt a device viewport for everything navigated from here on.
+
+        ``mobile`` is what makes this a phone rather than a narrow desktop window: it
+        turns on the visual/layout viewport split, so a page whose content cannot fit
+        is zoomed out into a wider layout viewport instead of simply being cut off.
+        """
+        self.call("Emulation.setDeviceMetricsOverride", width=width, height=height,
+                  deviceScaleFactor=scale, mobile=mobile)
 
     def wait_ready(self, marker: str = DASHBOARD_READY) -> None:
         deadline = time.monotonic() + 20.0

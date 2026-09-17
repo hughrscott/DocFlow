@@ -23,9 +23,9 @@
         <div id="header"></div>
         <div class="df-body df-scroll">
 
-    <main class="p-[30px_34px] max-w-[1180px] min-w-[1020px] mx-auto flex gap-7 items-start">
+    <main class="p-[20px_16px] lg:p-[30px_34px] max-w-[1180px] lg:min-w-[1020px] mx-auto flex flex-col lg:flex-row gap-7 items-stretch lg:items-start">
         <!-- Left: Folder tree -->
-        <aside class="w-[236px] flex-shrink-0 sticky top-0">
+        <aside class="w-full lg:w-[236px] flex-shrink-0 lg:sticky lg:top-0">
             <p class="m-0 mb-3 text-[10.5px] font-bold tracking-[.12em] uppercase text-text-faint">File System</p>
             <div id="folder-tree" role="tree" aria-label="Archive folders" class="flex flex-col gap-px">
                 <p class="text-text-muted text-[13px]">Loading...</p>
@@ -42,8 +42,7 @@
 
             <!-- Filing log table -->
             <div class="bg-white border border-border-primary rounded-card overflow-hidden shadow-card">
-                <div class="grid gap-[14px] py-[13px] px-[22px] bg-inset border-b border-border-card"
-                     style="grid-template-columns: minmax(0,2.1fr) minmax(0,1.5fr) 168px 104px;">
+                <div class="grid gap-[14px] py-[13px] px-4 lg:px-[22px] bg-inset border-b border-border-card grid-cols-[minmax(0,1fr)_auto] lg:grid-cols-[minmax(0,2.1fr)_minmax(0,1.5fr)_168px_104px]">
                     <span class="text-[10px] font-bold tracking-[.1em] uppercase text-text-label">Document</span>
                     <span class="text-[10px] font-bold tracking-[.1em] uppercase text-text-label">Filing Path</span>
                     <span class="text-[10px] font-bold tracking-[.1em] uppercase text-text-label">Rule</span>
@@ -116,8 +115,7 @@
                 table.innerHTML = '<div class="py-8 text-center text-text-muted text-[13px]">No files in this folder</div>';
             } else {
                 table.innerHTML = data.files.map(f => `
-                    <div class="grid gap-[14px] py-[14px] px-[22px] items-center border-b border-border-subtle hover:bg-soft-hover transition-colors duration-150"
-                         style="grid-template-columns: minmax(0,2.1fr) minmax(0,1.5fr) 168px 104px;">
+                    <div class="grid gap-[14px] py-[14px] px-4 lg:px-[22px] items-center border-b border-border-subtle hover:bg-soft-hover transition-colors duration-150 grid-cols-[minmax(0,1fr)_auto] lg:grid-cols-[minmax(0,2.1fr)_minmax(0,1.5fr)_168px_104px]">
                         <div class="flex items-center gap-[11px] min-w-0">
                             <span class="ms flex-shrink-0" style="font-size:19px;color:#C9C3B3;">description</span>
                             <span class="font-mono text-[12px] font-medium text-ink truncate">${f.name}</span>
@@ -160,8 +158,7 @@
                 else if (e.rule_matched === 'none') { ruleColor = '#BE4029'; ruleLabel = 'Unmatched'; }
 
                 return `
-                <div class="grid gap-[14px] py-[14px] px-[22px] items-center border-b border-border-subtle hover:bg-soft-hover transition-colors duration-150"
-                     style="grid-template-columns: minmax(0,2.1fr) minmax(0,1.5fr) 168px 104px;">
+                <div class="grid gap-[14px] py-[14px] px-4 lg:px-[22px] items-center border-b border-border-subtle hover:bg-soft-hover transition-colors duration-150 grid-cols-[minmax(0,1fr)_auto] lg:grid-cols-[minmax(0,2.1fr)_minmax(0,1.5fr)_168px_104px]">
                     <div class="flex items-center gap-[11px] min-w-0">
                         <span class="ms flex-shrink-0" style="font-size:19px;color:#C9C3B3;">description</span>
                         <span class="font-mono text-[12px] font-medium text-ink truncate">${e.filename}</span>

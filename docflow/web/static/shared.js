@@ -101,7 +101,7 @@ function renderHeader(title) {
 // ---------------------------------------------------------------------------
 function renderFooter() {
     return `
-    <footer id="status-bar" role="contentinfo" class="flex items-center justify-between py-2 px-[34px] border-t border-border-primary bg-panel flex-shrink-0">
+    <footer id="status-bar" role="contentinfo" class="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 py-2 px-4 lg:px-[34px] border-t border-border-primary bg-panel flex-shrink-0">
         <p class="m-0 text-[10.5px] font-semibold tracking-[.06em] uppercase text-text-olive">
             Watch Folder: <span class="text-success font-bold" id="watch-status">Checking...</span>
             &nbsp;&bull;&nbsp; LLM Status: <span class="text-success font-bold" id="llm-status">Checking...</span>
@@ -186,8 +186,7 @@ function injectResponsiveStyles() {
         @media (max-width: 767px) {
             #sidebar { display: none; }
             #mobile-tabs { display: flex !important; }
-            .df-main { margin-left: 0 !important; }
-            #status-bar { bottom: 3.5rem; }
+            .df-main { margin-left: 0 !important; padding-bottom: 3.5rem; }
             #search-container input { width: 8rem; }
             #search-results { width: calc(100vw - 2rem); right: -1rem; }
         }
@@ -561,7 +560,7 @@ function showUndoSnackbar(label, onUndo, options = {}) {
 
     const snack = document.createElement('div');
     snack.id = 'undo-snackbar';
-    snack.className = 'fixed bottom-[26px] left-1/2 -translate-x-1/2 z-[120] flex items-center gap-[14px] bg-ink text-[#F4F1EA] rounded-[14px] py-3 pl-[18px] pr-[14px] shadow-snackbar';
+    snack.className = 'fixed bottom-[calc(3.5rem+16px)] md:bottom-[26px] left-4 right-4 md:left-1/2 md:right-auto md:-translate-x-1/2 z-[120] max-w-[420px] mx-auto md:mx-0 md:w-auto flex flex-wrap items-center gap-[14px] bg-ink text-[#F4F1EA] rounded-[14px] py-3 pl-[18px] pr-[14px] shadow-snackbar';
     snack.style.animation = 'dfup .2s ease-out';
     snack.setAttribute('role', 'status');
     const undo = textElement('button', 'flex items-center gap-[6px] bg-white/10 text-[#F4F1EA] border-none rounded-[9px] py-2 px-[13px] font-bold text-[12.5px] cursor-pointer hover:bg-white/20 transition-colors');
@@ -671,7 +670,7 @@ async function openDirectoryPicker(callback) {
     modal.className = 'fixed inset-0 z-[200] flex items-center justify-center';
     modal.innerHTML = `
         <div class="absolute inset-0 bg-[rgba(20,23,28,0.42)] backdrop-blur-[3px]" onclick="closeDirPicker()"></div>
-        <div class="relative w-[440px] max-h-[74vh] flex flex-col bg-soft-hover rounded-modal shadow-modal overflow-hidden">
+        <div class="relative w-full max-w-[440px] max-h-[74vh] flex flex-col bg-soft-hover rounded-modal shadow-modal overflow-hidden">
             <div class="py-[18px] px-5 pb-[14px] border-b border-border-card">
                 <div class="flex items-center justify-between mb-[13px]">
                     <h3 class="m-0 font-headline font-extrabold text-[16px] text-ink">Choose Filing Location</h3>

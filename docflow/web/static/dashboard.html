@@ -23,10 +23,10 @@
         <div id="header"></div>
         <div class="df-body df-scroll">
 
-    <main class="p-[34px] max-w-[1180px] mx-auto">
+    <main class="p-4 lg:p-[34px] max-w-[1180px] mx-auto">
         <!-- The one intake: the same flow the sidebar's Add scanned mail button opens -->
         <div id="drop-zone" role="button" aria-label="Add scanned mail"
-             class="flex items-center gap-[15px] border-[1.5px] border-dashed border-border-dashed bg-soft-hover rounded-[14px] py-[13px] px-4 cursor-pointer transition-all duration-150 hover:border-ink hover:bg-white">
+             class="flex flex-wrap items-center gap-[15px] border-[1.5px] border-dashed border-border-dashed bg-soft-hover rounded-[14px] py-[13px] px-4 cursor-pointer transition-all duration-150 hover:border-ink hover:bg-white">
             <input type="file" id="upload-input" accept=".pdf" multiple class="hidden" />
             <div class="w-10 h-10 rounded-[11px] bg-tile flex items-center justify-center flex-shrink-0">
                 <span class="ms" style="font-size:22px;color:#15171C;">upload_file</span>
@@ -41,7 +41,7 @@
         </div>
 
         <!-- Review callout (shown when pending > 0) -->
-        <a href="/review" id="review-callout" class="hidden mt-[18px] flex items-center gap-[18px] bg-warm-bg border border-warm-border rounded-[18px] py-5 px-6 cursor-pointer transition-transform duration-150 hover:-translate-y-px no-underline">
+        <a href="/review" id="review-callout" class="hidden mt-[18px] flex flex-col sm:flex-row items-start sm:items-center gap-[18px] bg-warm-bg border border-warm-border rounded-[18px] py-5 px-5 sm:px-6 cursor-pointer transition-transform duration-150 hover:-translate-y-px no-underline">
             <div class="w-[46px] h-[46px] rounded-[13px] bg-warm-icon flex items-center justify-center flex-shrink-0">
                 <span class="ms fill" style="font-size:24px;color:#B5751F;">rate_review</span>
             </div>
@@ -55,7 +55,7 @@
         </a>
 
         <!-- Global metrics. Every tile is explicitly scoped to the whole archive. -->
-        <div class="grid grid-cols-4 gap-[14px] mt-[18px]" id="stats-grid">
+        <div class="grid grid-cols-2 lg:grid-cols-4 gap-[14px] mt-[18px]" id="stats-grid">
             <div class="bg-white border border-border-card rounded-card p-[18px_20px] shadow-card">
                 <div class="flex items-center gap-2 mb-[10px]">
                     <span class="ms" style="font-size:18px;color:#B5751F;">rate_review</span>
@@ -109,7 +109,7 @@
                 <!-- Stages are rendered from what the server reports it actually ran. -->
                 <div id="stage-list" class="grid grid-cols-3 lg:grid-cols-6 gap-3"></div>
                 <p id="capability-note" class="m-0 mt-5 text-[11.5px] text-text-faint"></p>
-                <div id="completion-summary" class="mt-4 hidden flex items-center gap-[14px] bg-soft-hover border border-border-card rounded-card-sm py-[13px] px-4"></div>
+                <div id="completion-summary" class="mt-4 hidden flex flex-wrap items-center gap-[14px] bg-soft-hover border border-border-card rounded-card-sm py-[13px] px-4"></div>
             </div>
         </section>
 
@@ -489,7 +489,7 @@
             list.replaceChildren(...documents.map(doc => {
                 const isReview = !doc.auto_filed;
                 const row = textElement('div',
-                    `flex items-center gap-[14px] bg-white border ${isReview ? 'border-gold' : 'border-border-card'} rounded-card-sm py-[13px] px-4 shadow-card`);
+                    `flex flex-wrap items-center gap-[14px] bg-white border ${isReview ? 'border-gold' : 'border-border-card'} rounded-card-sm py-[13px] px-4 shadow-card`);
                 const bubble = textElement('div',
                     `w-9 h-9 rounded-[10px] ${isReview ? 'bg-amber-bg' : 'bg-canvas'} flex items-center justify-center flex-shrink-0`);
                 bubble.appendChild(iconElement(isReview ? 'help_center' : 'description', 19,
@@ -736,7 +736,7 @@
 
         function batchRow(batch, isNewest) {
             const row = textElement('div',
-                'flex items-center gap-[14px] bg-white border border-border-card rounded-card-sm py-[13px] px-4 shadow-card');
+                'flex flex-wrap items-center gap-[14px] bg-white border border-border-card rounded-card-sm py-[13px] px-4 shadow-card');
             const bubble = textElement('div',
                 'w-9 h-9 rounded-[10px] bg-canvas flex items-center justify-center flex-shrink-0');
             bubble.appendChild(iconElement('description', 19, '#A9A595'));

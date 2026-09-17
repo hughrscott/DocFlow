@@ -24,11 +24,11 @@
         <div id="header"></div>
 
         <!-- Full-height review container -->
-        <div class="flex-1 flex flex-col min-h-0 min-w-[1060px]">
+        <div class="flex-1 flex flex-col min-h-0 lg:min-w-[1060px]">
 
             <!-- Tabs + progress -->
-            <div class="flex items-center gap-5 px-7 pt-[18px] flex-shrink-0">
-                <div class="flex gap-1 bg-sidebar p-1 rounded-[13px]">
+            <div class="flex flex-wrap lg:flex-nowrap items-center gap-3 lg:gap-5 px-4 lg:px-7 pt-[18px] flex-shrink-0">
+                <div class="flex flex-wrap max-w-full gap-1 bg-sidebar p-1 rounded-[13px]">
                     <button id="tab-pending" onclick="switchTab('pending')"
                         class="border-none rounded-[10px] py-2 px-[14px] font-bold text-[13px] cursor-pointer transition-all duration-150 bg-white text-ink shadow-tab">
                         Pending Review <span id="tab-pending-count" class="opacity-55 ml-[5px]"></span>
@@ -49,11 +49,11 @@
                             class="border-none rounded-[10px] py-1.5 px-[11px] font-bold text-[12px] cursor-pointer bg-transparent text-text-olive">All documents</button>
                     </div>
                 </div>
-                <div id="progress-area" class="flex-1 flex items-center gap-3 min-w-0">
+                <div id="progress-area" class="basis-full lg:basis-auto flex-1 flex items-center gap-3 min-w-0">
                     <div class="flex-1 max-w-[300px] h-[7px] rounded-pill bg-[#E2DBCC] overflow-hidden">
                         <div id="review-progress" class="h-full bg-success rounded-pill transition-all duration-300" style="width:0%"></div>
                     </div>
-                    <span id="review-progress-text" class="text-[12px] font-semibold text-text-olive whitespace-nowrap"></span>
+                    <span id="review-progress-text" class="min-w-0 text-[12px] font-semibold text-text-olive lg:whitespace-nowrap"></span>
                 </div>
             </div>
 
@@ -71,10 +71,10 @@
             </div>
 
             <!-- Three-pane workspace -->
-            <div id="workspace" class="flex-1 flex min-h-0 py-4 px-7 gap-4 hidden">
+            <div id="workspace" class="flex-1 flex flex-col lg:flex-row min-h-0 overflow-y-auto lg:overflow-visible py-4 px-4 lg:px-7 gap-4 hidden">
 
                 <!-- LEFT: Queue rail -->
-                <div class="w-[266px] flex-shrink-0 flex flex-col bg-panel border border-border-primary rounded-card p-3">
+                <div class="w-full lg:w-[266px] flex-shrink-0 flex flex-col bg-panel border border-border-primary rounded-card p-3">
                     <div class="flex items-center justify-between px-[6px] pb-[9px]">
                         <span class="text-[10.5px] font-bold tracking-[.1em] uppercase text-text-faint"><span id="queue-scope-label">All documents</span> &middot; <span id="queue-count">0</span></span>
                         <button onclick="onSelectAll()" id="select-all-btn" class="bg-transparent border-none text-text-muted font-bold text-[11.5px] cursor-pointer p-[2px_4px]">Select all</button>
@@ -84,12 +84,12 @@
                             <span class="ms" style="font-size:17px;">done_all</span> Approve <span id="bulk-count">0</span> selected
                         </button>
                     </div>
-                    <div id="queue-list" class="df-scroll flex-1 overflow-y-auto flex flex-col gap-[5px]"></div>
+                    <div id="queue-list" class="df-scroll flex-1 overflow-y-auto max-h-[40vh] lg:max-h-none flex flex-col gap-[5px]"></div>
                 </div>
 
                 <!-- CENTER: Preview -->
-                <div class="flex-1 min-w-0 flex flex-col bg-panel border border-border-primary rounded-card p-[14px]">
-                    <div class="flex items-center gap-2 mb-3 flex-shrink-0">
+                <div class="w-full lg:w-auto flex-none lg:flex-1 min-w-0 flex flex-col bg-panel border border-border-primary rounded-card p-[14px]">
+                    <div class="flex flex-wrap items-center gap-2 mb-3 flex-shrink-0">
                         <div class="flex gap-[3px] bg-[#E2DBCC] p-[3px] rounded-input">
                             <button id="btn-view-image" onclick="setPreviewMode('image')"
                                 class="flex items-center gap-[5px] border-none rounded-tile py-[6px] px-[11px] font-bold text-[11.5px] cursor-pointer transition-all duration-150 bg-white text-ink shadow-[0_1px_3px_rgba(20,23,28,.1)]">
@@ -110,7 +110,7 @@
                             </button>
                         </div>
                     </div>
-                    <div class="df-scroll flex-1 overflow-y-auto flex items-start justify-center min-h-0">
+                    <div class="df-scroll flex-none lg:flex-1 lg:overflow-y-auto flex items-start justify-center min-h-0">
                         <!-- Page image -->
                         <div id="preview-image-container" class="w-full max-w-[520px]">
                             <div onclick="openZoom()" class="bg-white rounded-sm shadow-doc p-[44px_46px] cursor-zoom-in relative">
@@ -143,7 +143,7 @@
                 </div>
 
                 <!-- RIGHT: Decision panel -->
-                <div id="decision-panel" class="w-[362px] flex-shrink-0 flex flex-col bg-white border border-border-primary rounded-card overflow-hidden shadow-raised">
+                <div id="decision-panel" class="w-full lg:w-[362px] flex-shrink-0 flex flex-col bg-white border border-border-primary rounded-card overflow-hidden shadow-raised">
                     <!-- Confidence header -->
                     <div id="conf-header" class="py-[18px] px-5 flex items-center gap-[15px] border-b border-[rgba(20,23,28,.05)]" style="background:#E2F1E9;">
                         <div id="conf-ring" class="w-[58px] h-[58px] rounded-pill flex items-center justify-center flex-shrink-0" style="background:conic-gradient(#0E8A5E 270deg, #EDE7DA 270deg);">
@@ -157,7 +157,7 @@
                         </div>
                     </div>
 
-                    <div class="df-scroll flex-1 overflow-y-auto p-5 flex flex-col gap-[18px]">
+                    <div class="df-scroll flex-none lg:flex-1 lg:overflow-y-auto p-5 flex flex-col gap-[18px]">
                         <!-- Which document these controls belong to -->
                         <div class="bg-inset rounded-input py-[9px] px-[11px]">
                             <p class="m-0 mb-[3px] text-[9px] font-bold tracking-[.06em] uppercase text-text-label">Filing</p>
