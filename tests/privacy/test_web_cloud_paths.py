@@ -392,7 +392,7 @@ def test_legacy_unmatched_suggest_accepts_originals_in_configured_watch_folder(
 # Mode-aware health: local-only is a configured state, never a missing-key error
 # ---------------------------------------------------------------------------
 
-LOCAL_ONLY_DETAIL = "Text extraction is enabled. AI classification is disabled."
+LOCAL_ONLY_DETAIL = "OCR runs locally. AI classification is off."
 
 
 def test_health_reports_local_only_as_a_neutral_configured_state(web, monkeypatch) -> None:

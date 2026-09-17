@@ -79,6 +79,19 @@ def _process(client: TestClient, path: str, key: str | None = None):
     return client.post("/api/process", json=body)
 
 
+def _started(intake, count: int) -> None:
+    """Wait, bounded, until ``count`` pipeline runs have really been entered.
+
+    A submission is accepted before its pipeline task reaches the stub, so counting
+    runs immediately after the POST would race the task rather than the guard.
+    """
+    for _ in range(1000):
+        if len(intake.runs) >= count:
+            return
+        time.sleep(0.01)
+    raise AssertionError(f"only {len(intake.runs)} pipeline runs started, expected {count}")
+
+
 def _finished(client: TestClient, job_id: str) -> dict:
     for _ in range(500):
         state = client.get(f"/api/process/status/{job_id}").json()
@@ -118,6 +131,7 @@ def test_repeated_calls_without_a_key_are_suppressed_only_while_one_is_in_flight
     first, second = _process(app_client, path), _process(app_client, path)
     assert first.json()["job_id"] == second.json()["job_id"]
     assert (first.json()["reused"], second.json()["reused"]) == (False, True)
+    _started(intake, 1)
     assert len(intake.runs) == 1
 
     intake.gate.set()
@@ -243,8 +257,8 @@ def test_status_states_local_only_capabilities_without_promising_ai_titles(
 
     assert capabilities["text_extraction"] is True
     assert capabilities["ai_classification"] is False
-    assert capabilities["summary"] == ("Text extraction is enabled. "
-                                       "AI classification is disabled.")
+    assert capabilities["summary"] == ("OCR runs locally. "
+                                       "AI classification is off.")
     assert "title" not in capabilities["summary"].lower()
     assert "name" not in capabilities["summary"].lower()
 

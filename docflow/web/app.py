@@ -211,30 +211,67 @@ UNCLASSIFIED_RULE = "none"
 
 
 def _capabilities() -> dict:
-    """What this local install really does, in words that promise nothing more."""
+    """What this local install really does, in words that promise nothing more.
+
+    The summary is the one sentence every surface shows (dashboard, review, settings
+    and the shared footer). Local-only is a configuration, so the sentence states it
+    plainly and never borrows the vocabulary of a fault.
+    """
     from docflow.llm.gateway import CloudPromptGateway
 
     classification = not CloudPromptGateway(_config).local_only
     return {
         "text_extraction": True,
         "ai_classification": classification,
-        "summary": "Text extraction is enabled. AI classification is "
-                   + ("enabled." if classification else "disabled."),
+        "summary": "OCR runs locally. AI classification is "
+                   + ("on." if classification else "off."),
     }
 
 
-def _stage_view(stage: str) -> list[dict]:
-    """The stages this pipeline really runs, marked against the one now reached."""
+def _stage_view(stage: str, *, halted: str | None = None) -> list[dict]:
+    """The stages this pipeline really runs, marked against the one now reached.
+
+    ``halted`` describes a run that stopped at ``stage`` without running the rest:
+    ``"done"`` for a deliberate stop (an already-imported scan needs no further work)
+    and ``"failed"`` for one that broke. Stages after the halt are ``skipped``, so a
+    stage that never ran is never displayed as complete.
+    """
     from docflow.filing.processing import DONE_STAGE, PROCESS_STAGES
 
     order = [*PROCESS_STAGES, DONE_STAGE]
+    reached = next((i for i, s in enumerate(order) if s[0] == stage), -1)
+    if halted is not None:
+        return [{"id": key, "label": label,
+                 "status": "done" if index < reached
+                 else halted if index == reached else "skipped"}
+                for index, (key, label, _percent) in enumerate(order)]
     if stage == DONE_STAGE[0]:  # the run finished: every stage really did complete
         return [{"id": key, "label": label, "status": "done"} for key, label, _p in order]
-    reached = next((i for i, s in enumerate(order) if s[0] == stage), -1)
     return [{"id": key, "label": label,
              "status": "done" if index < reached else "active" if index == reached
              else "waiting"}
             for index, (key, label, _percent) in enumerate(order)]
+
+
+# One finished submission has exactly one of these outcomes. The UI must never infer a
+# result from a document count, a review count or an empty list.
+INTAKE_OUTCOMES = ("new", "new_empty", "duplicate", "failed")
+# Statuses that hold no imported batch: offering the same bytes again is a real retry,
+# not a duplicate.
+_NOT_IMPORTED = frozenset({"failed", "undone", "undoing"})
+
+
+def intake_outcome(*, finished: bool, documents_total: int) -> str:
+    """Type a run that has ended, from what the durable job actually reports.
+
+    ``finished`` is whether the durable job really reached a finished state. A finished
+    run that produced documents is ``new``; a finished run that produced none is
+    ``new_empty`` — a genuinely processed batch with no document candidates, which is
+    never used for a scan that was already imported. Anything else is ``failed``.
+    """
+    if not finished:
+        return "failed"
+    return "new" if documents_total > 0 else "new_empty"
 
 
 def _initial_progress_state(filename: str) -> dict:
@@ -252,6 +289,8 @@ def _initial_progress_state(filename: str) -> dict:
         "review_queue": 0,
         "durable_job_id": None,
         "review_url": None,
+        "outcome": None,         # set once, when the run ends
+        "outcome_detail": None,
         "capabilities": _capabilities(),
         "started": _local_iso(),
     }
@@ -349,6 +388,72 @@ async def process_stream(job_id: str):
     return EventSourceResponse(event_generator())
 
 
+def _duplicate_intake(locator: str) -> dict | None:
+    """The batch these exact bytes were already imported as, if there is one.
+
+    Identity is the stored source fingerprint alone, so the same scan offered again
+    under a new name is recognised as the same scan, and the same name is not mistaken
+    for the same submission. This runs before the pipeline admits anything, so no job
+    exists yet for the run being checked. A job that holds no imported batch (failed or
+    undone) is ignored, so re-offering a scan after a failure really does process it.
+
+    A retried submission never reaches here: ``POST /api/process`` returns the job
+    already started for that submission key without running the pipeline again.
+    """
+    from docflow.ingestion.loader import raw_sha256
+
+    source = _filer.source_path(_active_scope_id, locator)
+    digest = raw_sha256(source)
+    prior = [job for job in _state_store.jobs.find_by_source_fingerprint(
+                 _active_scope_id, f"sha256:{digest}")
+             if job.status not in _NOT_IMPORTED]
+    if not prior:
+        return None
+    job = prior[0]
+    pending = [item for item in _state_store.reviews.list(_active_scope_id, "pending")
+               if item.job_id == job.id]
+    filed = [record.relative_path
+             for record in _state_store.files.list_for_job(_active_scope_id, job.id)
+             if record.role == "filed"]
+    # The staged copy of an already-imported scan is not needed and must never be
+    # processed later. Only this submission's own upload staging file is removed, only
+    # after proving it is a regular file still holding exactly the bytes fingerprinted
+    # above. Nothing in the archive is touched.
+    if locator.startswith("upload:") and not source.is_symlink() and source.is_file() \
+            and raw_sha256(source) == digest:
+        source.unlink()
+    return {
+        "job_id": job.id,
+        "source_name": job.source_name,
+        "status": job.status,
+        "created_at": job.created_at,
+        "updated_at": job.updated_at,
+        "pending_review": len(pending),
+        "filed_documents": len(filed),
+        "filed_paths": filed,
+        "review_url": f"/review?job_id={job.id}" if pending else None,
+        "message": "This scan was already imported. Nothing was added.",
+    }
+
+
+def _submitted_name(state: dict) -> str:
+    """The name this submission was acknowledged under, for the outcome sentence."""
+    name = state.get("filename")
+    return name if isinstance(name, str) and name else "this scan"
+
+
+def _outcome_message(outcome: str, filename: str, documents_total: int) -> str:
+    """One sentence that states what really happened, for the outcome the run reached."""
+    if outcome == "new":
+        noun = "document" if documents_total == 1 else "documents"
+        return f"Added {documents_total} {noun} from {filename}."
+    if outcome == "new_empty":
+        return (f"{filename} was read, but no document was found in it. "
+                "Nothing was added to your archive.")
+    return (f"{filename} could not be processed, so nothing was added. "
+            "Check the scan and add it again.")
+
+
 async def _run_pipeline_async(job_id: str, locator: str) -> None:
     """Process one scan through the durable service, publishing in-memory progress only."""
     from docflow.filing.processing import process_scan
@@ -365,6 +470,26 @@ async def _run_pipeline_async(job_id: str, locator: str) -> None:
         loop.call_soon_threadsafe(state.update, {
             "step": step, "progress": percent, "status": "processing",
             "stage": stage, "stages": _stage_view(stage)})
+
+    try:
+        # Recognising an already-imported scan before any work starts is what keeps the
+        # UI from reporting a second batch that was never created.
+        duplicate = await asyncio.to_thread(_duplicate_intake, locator)
+        if duplicate is not None:
+            state.update({
+                "status": "completed", "outcome": "duplicate",
+                "outcome_detail": duplicate,
+                "step": "Already imported", "progress": 100,
+                "stage": "checking", "stages": _stage_view("checking", halted="done"),
+                "documents": [], "documents_total": 0,
+                "auto_filed": 0, "review_queue": 0,
+                "durable_job_id": None, "review_url": None,
+                "capabilities": _capabilities(),
+            })
+            return
+    except Exception:
+        logger.exception("Duplicate check failed for job %s", job_id)
+        # A check that cannot run must not decide anything; the pipeline continues.
 
     try:
         result = await asyncio.to_thread(process_scan, _state_store, _filer, _active_scope_id,
@@ -404,26 +529,48 @@ async def _run_pipeline_async(job_id: str, locator: str) -> None:
                 logger.info("Removed identical watch folder copy")
 
         finished = result.job_status in {"completed", "review"}
+        outcome = intake_outcome(finished=finished, documents_total=len(documents))
+        halted = None if finished else "failed"
+        stage = "done" if finished else state.get("stage", "filing")
         state.update({
             "status": "completed" if finished else "error",
             "step": "Done" if finished else f"Job is {result.job_status}",
             "progress": 100,
-            "stage": "done" if finished else state.get("stage", "filing"),
-            "stages": _stage_view("done" if finished else state.get("stage", "filing")),
+            "stage": stage,
+            "stages": _stage_view(stage, halted=halted),
             "documents": documents,
             "documents_total": len(documents),
             "auto_filed": sum(a.outcome == "filed" for a in result.assignments),
             "review_queue": sum(a.outcome == "review" for a in result.assignments),
-            "durable_job_id": result.job_id,
-            "review_url": f"/review?job_id={result.job_id}" if result.job_id else None,
+            "durable_job_id": result.job_id if finished else None,
+            "review_url": (f"/review?job_id={result.job_id}"
+                           if finished and result.job_id else None),
+            "outcome": outcome,
+            "outcome_detail": {
+                "message": _outcome_message(outcome, _submitted_name(state), len(documents)),
+                "job_id": result.job_id if finished else None,
+            },
             "capabilities": _capabilities(),
         })
     except Exception as exc:
         logger.exception("Pipeline error for job %s", job_id)
+        # A failed run leaves no count or link behind that could read as a success.
         state.update({
             "status": "error",
             "step": f"Error: {str(exc)[:200]}",
             "progress": state.get("progress", 0),
+            "stages": _stage_view(state.get("stage", "checking"), halted="failed"),
+            "documents": [],
+            "documents_total": 0,
+            "auto_filed": 0,
+            "review_queue": 0,
+            "durable_job_id": None,
+            "review_url": None,
+            "outcome": "failed",
+            "outcome_detail": {
+                "message": _outcome_message("failed", _submitted_name(state), 0),
+                "error_code": type(exc).__name__,
+            },
         })
 
 
@@ -1454,6 +1601,85 @@ async def v1_active_scope():
     if _active_scope_id is None:
         raise _V1Error(404, "scope_not_found", "Archive scope is not registered.")
     return {"archive_scope": {"id": _v1_scope(_active_scope_id).id}}
+
+
+# ---------------------------------------------------------------------------
+# API v1: persisted activity (the dashboard's only history source)
+# ---------------------------------------------------------------------------
+
+_ACTIVITY_LIMIT_DEFAULT = 10
+_ACTIVITY_LIMIT_MAX = 50
+_PAGE_STATUS_KEYS = ("pending", "filed", "review", "skipped", "blocked")
+
+
+def _local_date(timestamp: object) -> str:
+    """Local calendar date of a stored UTC timestamp; unparseable values match nothing."""
+    try:
+        return datetime.fromisoformat(str(timestamp)).astimezone().date().isoformat()
+    except (TypeError, ValueError):
+        return ""
+
+
+def _batch_view(scope_id: str, job, pending: dict, filed: dict) -> dict:
+    """One durable intake job as the batch the user actually added."""
+    totals = _state_store.jobs.page_totals(scope_id, job.id)
+    pages = {status: totals.get(status, 0) for status in _PAGE_STATUS_KEYS}
+    return {
+        "job_id": job.id,
+        "source_name": job.source_name,
+        "status": job.status,
+        "created_at": job.created_at,
+        "updated_at": job.updated_at,
+        "page_count": sum(pages.values()),
+        "pages": pages,
+        "pending_review": pending.get(job.id, 0),
+        "filed_documents": filed.get(job.id, 0),
+        "last_error_code": job.last_error_code,
+    }
+
+
+def _activity_payload(scope_id: str, limit: int) -> dict:
+    """Totals over every batch, plus the newest ``limit`` batches, from local state."""
+    store = _state_store
+    pending: dict[str, int] = {}
+    for item in store.reviews.list(scope_id, "pending"):
+        pending[item.job_id] = pending.get(item.job_id, 0) + 1
+    today = datetime.now().astimezone().date().isoformat()
+    filed: dict[str, int] = {}
+    filed_today = 0
+    for record in store.files.list_filed_from_jobs(scope_id):
+        filed[record.job_id] = filed.get(record.job_id, 0) + 1
+        filed_today += _local_date(record.created_at) == today
+    batches = [_batch_view(scope_id, job, pending, filed)
+               for job in store.jobs.list_recent(scope_id, limit=limit)]
+    return {
+        "archive_scope_id": scope_id,
+        "totals": {"pending_review": sum(pending.values()),
+                   "filed_documents": sum(filed.values()),
+                   "filed_today": filed_today,
+                   "batches": store.jobs.count(scope_id)},
+        "newest_batch": batches[0] if batches else None,
+        "batches": batches,
+    }
+
+
+@app.get("/api/v1/activity")
+async def v1_activity(request: Request):
+    """Persisted batch history and global totals for one scope.
+
+    This is what the dashboard reports as activity: durable jobs, review items and
+    file records that local state really holds. No archive log file is consulted, so
+    the page cannot claim an empty history while durable batches exist. Paths are
+    never returned — only the scan's own file name and archive-relative counts.
+    """
+    _v1_require_state()
+    scope_id = request.query_params.get("archive_scope_id", "")
+    limit = request.query_params.get("limit", str(_ACTIVITY_LIMIT_DEFAULT))
+    if not 1 <= len(scope_id) <= 128 or not limit.isdigit() \
+            or not 1 <= int(limit) <= _ACTIVITY_LIMIT_MAX:
+        raise _V1Error(422, "invalid_request", "Request does not match the contract.")
+    scope = _v1_scope(scope_id)
+    return await asyncio.to_thread(_activity_payload, scope.id, int(limit))
 
 
 @app.get("/api/v1/review-items")

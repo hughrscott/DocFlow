@@ -69,20 +69,22 @@ def test_a_real_classification_confidence_is_still_shown(tmp_path) -> None:
     assert "0% Match" not in badges
 
 
-def test_recent_activity_never_renders_an_unclassified_entry_as_zero_percent(
-    tmp_path,
-) -> None:
-    result = run_dashboard(tmp_path, _dashboard([
-        {"method": "GET", "url": "^/api/archive/logs$", "body": {"logs": [{
-            "timestamp": "2026-09-15T00:00:00", "entries": [
-                {"filename": "Unknown.pdf", "target_directory": "Archive/_Unmatched",
-                 "rule_matched": "none", "confidence": None}]}]}},
-    ]), [])
+def test_persisted_history_never_renders_a_confidence_it_does_not_have(tmp_path) -> None:
+    """Recent batches come from durable state, which stores no per-batch confidence.
 
-    markup = "\n".join(write["html"] for write in result["html_writes"])
-    assert "Not classified" in markup
-    assert "0% Match" not in markup
-    assert "NaN" not in markup
+    The surface that used to read archive log files is gone; the guarantee it carried —
+    history never shows an invented score — is pinned here on its replacement.
+    """
+    from tests.review_actions.test_ui_dashboard_outcomes import _activity, _batch, _page
+
+    result = run_dashboard(tmp_path, _page(activity=_activity(
+        [_batch("durable-1", source_name="Unknown-scan.pdf", pending_review=1)],
+        pending_review=1)), ["__text('recent-logs')"])
+
+    listed = result["snapshots"][0]["value"]
+    assert "Unknown-scan.pdf" in listed
+    assert "% Match" not in listed
+    assert "NaN" not in listed and "undefined" not in listed
 
 
 # ---------------------------------------------------------------------------

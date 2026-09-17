@@ -13,7 +13,7 @@ from __future__ import annotations
 from tests.review_actions.test_ui_contract import SCOPE, run_ui
 
 ALARMING = ("No API Key", "no api key", "text-danger", "bg-danger", "danger")
-LOCAL_ONLY_DETAIL = "Text extraction is enabled. AI classification is disabled."
+LOCAL_ONLY_DETAIL = "OCR runs locally. AI classification is off."
 
 
 def _health(**fields) -> dict:

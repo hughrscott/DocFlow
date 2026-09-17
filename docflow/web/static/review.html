@@ -38,6 +38,17 @@
                         Unmatched &amp; Skipped <span id="tab-unmatched-count" class="opacity-55 ml-[5px]"></span>
                     </button>
                 </div>
+                <!-- Which documents this queue is showing. Always visible when a batch
+                     is in context, so the counts below can never be read as global. -->
+                <div id="scope-switch" class="hidden flex items-center gap-2">
+                    <span class="text-[10px] font-bold tracking-[.1em] uppercase text-text-faint">Showing</span>
+                    <div class="flex gap-1 bg-sidebar p-1 rounded-[13px]">
+                        <button id="scope-batch" onclick="setScope('batch')"
+                            class="border-none rounded-[10px] py-1.5 px-[11px] font-bold text-[12px] cursor-pointer bg-white text-ink shadow-tab">This batch</button>
+                        <button id="scope-all" onclick="setScope('all')"
+                            class="border-none rounded-[10px] py-1.5 px-[11px] font-bold text-[12px] cursor-pointer bg-transparent text-text-olive">All documents</button>
+                    </div>
+                </div>
                 <div id="progress-area" class="flex-1 flex items-center gap-3 min-w-0">
                     <div class="flex-1 max-w-[300px] h-[7px] rounded-pill bg-[#E2DBCC] overflow-hidden">
                         <div id="review-progress" class="h-full bg-success rounded-pill transition-all duration-300" style="width:0%"></div>
@@ -54,6 +65,8 @@
                     </div>
                     <h2 id="empty-title" class="m-0 mb-[6px] font-headline font-extrabold text-[24px]">All caught up</h2>
                     <p id="empty-sub" class="m-0 text-text-olive text-[14px]">No documents are waiting for review. Nice work.</p>
+                    <button id="empty-action" onclick="setScope('all')"
+                        class="hidden mt-[18px] bg-ink text-[#F4F1EA] border-none rounded-[11px] py-[11px] px-[18px] font-bold text-[13px] cursor-pointer"></button>
                 </div>
             </div>
 
@@ -63,7 +76,7 @@
                 <!-- LEFT: Queue rail -->
                 <div class="w-[266px] flex-shrink-0 flex flex-col bg-panel border border-border-primary rounded-card p-3">
                     <div class="flex items-center justify-between px-[6px] pb-[9px]">
-                        <span class="text-[10.5px] font-bold tracking-[.1em] uppercase text-text-faint">Queue &middot; <span id="queue-count">0</span></span>
+                        <span class="text-[10.5px] font-bold tracking-[.1em] uppercase text-text-faint"><span id="queue-scope-label">All documents</span> &middot; <span id="queue-count">0</span></span>
                         <button onclick="onSelectAll()" id="select-all-btn" class="bg-transparent border-none text-text-muted font-bold text-[11.5px] cursor-pointer p-[2px_4px]">Select all</button>
                     </div>
                     <div id="bulk-approve" class="hidden mb-2">
@@ -145,6 +158,12 @@
                     </div>
 
                     <div class="df-scroll flex-1 overflow-y-auto p-5 flex flex-col gap-[18px]">
+                        <!-- Which document these controls belong to -->
+                        <div class="bg-inset rounded-input py-[9px] px-[11px]">
+                            <p class="m-0 mb-[3px] text-[9px] font-bold tracking-[.06em] uppercase text-text-label">Filing</p>
+                            <p id="destination-owner" class="m-0 text-[12.5px] font-bold text-ink leading-[1.3]">—</p>
+                        </div>
+
                         <!-- Files to -->
                         <div>
                             <p class="m-0 mb-[9px] text-[10px] font-bold tracking-[.1em] uppercase text-text-label">Files to</p>
@@ -154,7 +173,7 @@
                             <div class="flex gap-[7px]">
                                 <input id="edit-directory" placeholder="Set a destination folder…"
                                     class="flex-1 min-w-0 bg-inset border border-border-primary rounded-input py-[10px] px-3 font-mono font-medium text-[12px] text-ink outline-none" />
-                                <button onclick="openDirectoryPicker(path => { document.getElementById('edit-directory').value = path; updateDirChips(); })"
+                                <button onclick="openDirectoryPicker(path => { document.getElementById('edit-directory').value = path; updateDestination(); })"
                                     class="w-[42px] flex-shrink-0 bg-tile border border-border-primary rounded-input flex items-center justify-center cursor-pointer" title="Browse folders">
                                     <span class="ms" style="font-size:18px;color:#15171C;">folder_open</span>
                                 </button>
@@ -166,6 +185,9 @@
                             <p class="m-0 mb-[9px] text-[10px] font-bold tracking-[.1em] uppercase text-text-label">Filename</p>
                             <input id="edit-filename"
                                 class="w-full bg-inset border border-border-primary rounded-input py-[10px] px-3 font-mono font-medium text-[12px] text-ink outline-none" />
+                            <p class="m-0 mt-[7px] text-[10px] font-bold tracking-[.06em] uppercase text-text-label">Will be filed as</p>
+                            <p id="destination-preview" class="m-0 mt-[2px] font-mono text-[11.5px] text-text-muted break-all"></p>
+                            <p id="destination-error" class="m-0 mt-[5px] text-[11.5px] font-semibold text-danger"></p>
                         </div>
 
                         <!-- Facts -->
@@ -184,11 +206,11 @@
                             </div>
                         </div>
 
-                        <!-- Archivist Reasoning -->
+                        <!-- Why this document is in the queue at all -->
                         <div class="bg-ai-bg border border-ai-border rounded-card-sm p-[14px]">
                             <div class="flex items-center gap-[7px] mb-2">
-                                <span class="ms" style="font-size:16px;color:#34508C;">neurology</span>
-                                <span class="text-[10px] font-bold tracking-[.08em] uppercase text-ai">Archivist Reasoning</span>
+                                <span class="ms" style="font-size:16px;color:#34508C;">help_center</span>
+                                <span class="text-[10px] font-bold tracking-[.08em] uppercase text-ai">Why this needs review</span>
                             </div>
                             <p id="reasoning-text" class="m-0 text-[12.5px] leading-[1.55]" style="color:#3C4252;"></p>
                         </div>
@@ -199,7 +221,7 @@
                         <button id="btn-approve" onclick="doAction('approve')"
                             class="flex items-center justify-center gap-[9px] bg-ink text-[#F4F1EA] border-none rounded-card-sm py-[15px] font-headline font-extrabold text-[14.5px] cursor-pointer shadow-btn-strong hover:-translate-y-px transition-transform duration-150">
                             <span class="ms" style="font-size:20px;">check_circle</span>
-                            <span id="approve-label">Approve &amp; File</span>
+                            <span id="approve-label">File this document</span>
                             <span class="text-[11px] font-semibold opacity-50 border border-[rgba(244,241,234,.3)] rounded-[5px] py-px px-[5px]">A</span>
                         </button>
                         <div class="flex gap-[9px]">
@@ -208,11 +230,12 @@
                                 Skip <span class="text-[10.5px] opacity-60 border border-border-check rounded-[5px] py-px px-[5px]">S</span>
                             </button>
                             <button id="btn-ask-ai" onclick="askAI()"
-                                class="flex-1 flex items-center justify-center gap-[6px] bg-ai-bg-light text-ai border border-ai-border-light rounded-btn py-3 font-bold text-[13px] cursor-pointer hover:bg-[#E4E9F6] transition-colors">
+                                class="hidden flex-1 flex items-center justify-center gap-[6px] bg-ai-bg-light text-ai border border-ai-border-light rounded-btn py-3 font-bold text-[13px] cursor-pointer hover:bg-[#E4E9F6] transition-colors">
                                 <span class="ms" style="font-size:17px;">auto_awesome</span>
                                 <span id="ask-ai-label">Ask AI</span>
                             </button>
                         </div>
+                        <p id="ai-note" class="m-0 text-[11px] text-text-faint text-center"></p>
                     </div>
                 </div>
             </div>
@@ -241,6 +264,13 @@
         let currentPageIdx = 0;
         let selected = {};
         let sessionTotal = 0;
+        // Scope: 'batch' is the durable job named in the URL, 'all' is every pending
+        // document in this archive. The queue always says which one it is showing.
+        let scopeMode = 'all';
+        let globalPending = 0;
+        let sessionFiled = 0;
+        let sessionSkipped = 0;
+        let aiClassification = false;
 
         // ---- Tab switching ----
         function switchTab(tab) {
@@ -273,6 +303,7 @@
             return unmatchedFiles.map(u => ({
                 id: u.id || u.path,
                 institution: u.folder === '_Skipped' ? 'Skipped file' : 'Unmatched file',
+                title: u.name,
                 doc_type: u.name.replace(/\.pdf$/i, ''),
                 period: '—',
                 pages: Array.from({ length: u.pages || 1 }, (_, i) => i + 1),
@@ -294,7 +325,11 @@
             return {
                 id: it.id,
                 institution: it.source_name || 'Unknown source',
-                doc_type: it.doc_type || it.suggested_filename || 'Document',
+                // Nothing here invents a title: a document with no suggested name is
+                // identified by the source pages it came from.
+                title: documentLabel(it.suggested_filename,
+                                     it.source_page_range || pages.join(', ')),
+                doc_type: it.doc_type || '—',
                 period: it.period || '—',
                 pages,
                 // Physical 1-based pages of the source PDF, and how their text turned out.
@@ -309,7 +344,9 @@
             };
         }
 
-        // A job-scoped queue: /review?job_id=<durable job> shows just that batch.
+        // A job-scoped queue: /review?job_id=<durable job> shows just that batch. The
+        // URL keeps the job id even while All documents is showing, so the deep link
+        // still names the batch the user arrived from.
         function jobFilter() {
             try {
                 const value = new URLSearchParams(window.location.search || '').get('job_id');
@@ -319,17 +356,68 @@
             }
         }
 
+        const batchJobId = jobFilter();
+        if (batchJobId) scopeMode = 'batch';
+
+        function scopedToBatch() {
+            return scopeMode === 'batch' && Boolean(batchJobId);
+        }
+
+        function scopeLabel() {
+            return scopedToBatch() ? 'This batch' : 'All documents';
+        }
+
+        function setScope(mode) {
+            if (mode === 'batch' && !batchJobId) return;
+            if ((mode === 'batch') === scopedToBatch()) return;
+            scopeMode = mode;
+            currentIndex = 0;
+            currentPageIdx = 0;
+            selected = {};
+            sessionTotal = 0;   // a different scope is a different denominator
+            loadQueue();
+        }
+
+        const SCOPE_ACTIVE = 'border-none rounded-[10px] py-1.5 px-[11px] font-bold text-[12px] cursor-pointer bg-white text-ink shadow-tab';
+        const SCOPE_IDLE = 'border-none rounded-[10px] py-1.5 px-[11px] font-bold text-[12px] cursor-pointer bg-transparent text-text-olive';
+
+        function renderScope() {
+            const batch = scopedToBatch();
+            document.getElementById('queue-scope-label').textContent = scopeLabel();
+            document.getElementById('scope-switch').classList.toggle('hidden', !batchJobId);
+            document.getElementById('scope-batch').className = batch ? SCOPE_ACTIVE : SCOPE_IDLE;
+            document.getElementById('scope-all').className = batch ? SCOPE_IDLE : SCOPE_ACTIVE;
+        }
+
+        async function pendingItems(job) {
+            const query = `archive_scope_id=${encodeURIComponent(archiveScopeId)}&status=pending`
+                + (job ? `&job_id=${encodeURIComponent(job)}` : '');
+            const { ok, data } = await docflowApi('GET', `/api/v1/review-items?${query}`);
+            if (!ok) {
+                showToast(apiErrorMessage(data, 'Local review state is not available.'),
+                          'error', 5000, 'review-action');
+                return null;
+            }
+            return data && Array.isArray(data.items) ? data.items : [];
+        }
+
         // ---- Load pending queue ----
         async function loadQueue() {
             archiveScopeId = archiveScopeId || await activeArchiveScopeId();
-            const job = jobFilter();
-            const query = `archive_scope_id=${encodeURIComponent(archiveScopeId)}&status=pending`
-                + (job ? `&job_id=${encodeURIComponent(job)}` : '');
-            const { ok, data } = archiveScopeId
-                ? await docflowApi('GET', `/api/v1/review-items?${query}`)
-                : { ok: false, data: null };
-            if (!ok) showToast(apiErrorMessage(data, 'Local review state is not available.'), 'error');
-            queueItems = ok && data && Array.isArray(data.items) ? data.items.map(fromReviewItem) : [];
+            if (!archiveScopeId) {
+                showToast('Local review state is not available.', 'error', 5000, 'review-action');
+                queueItems = [];
+                renderScope();
+                renderView();
+                return;
+            }
+            const job = scopedToBatch() ? batchJobId : null;
+            const items = await pendingItems(job);
+            queueItems = (items || []).map(fromReviewItem);
+            // The size of the whole queue is known whichever scope is showing, so the
+            // switch and the batch-complete state can state it truthfully.
+            globalPending = job === null ? queueItems.length
+                : ((await pendingItems(null)) || []).length;
             if (sessionTotal === 0 && queueItems.length > 0) sessionTotal = queueItems.length;
             document.getElementById('tab-pending-count').textContent = queueItems.length || '';
 
@@ -339,6 +427,7 @@
                 document.getElementById('tab-unmatched-count').textContent = d.count > 0 ? d.count : '';
             }).catch(() => {});
 
+            renderScope();
             renderView();
         }
 
@@ -360,30 +449,53 @@
             document.getElementById('workspace').classList.toggle('hidden', isEmpty);
 
             if (isEmpty) {
-                if (currentTab === 'pending') {
-                    document.getElementById('empty-title').textContent = 'All caught up';
-                    document.getElementById('empty-sub').textContent = 'No documents are waiting for review. Nice work.';
-                } else {
-                    document.getElementById('empty-title').textContent = 'Nothing unmatched';
-                    document.getElementById('empty-sub').textContent = 'Every file has been matched and filed.';
-                }
+                renderEmptyState();
                 return;
             }
+            document.getElementById('empty-action').classList.add('hidden');
 
             // Clamp index
             if (currentIndex >= items.length) currentIndex = Math.max(0, items.length - 1);
 
-            // Update progress
+            // Update progress. The count always says which scope it counted.
             if (currentTab === 'pending') {
                 const reviewed = Math.max(0, sessionTotal - queueItems.length);
                 const pct = sessionTotal > 0 ? Math.round((reviewed / sessionTotal) * 100) : 0;
                 document.getElementById('review-progress').style.width = pct + '%';
-                document.getElementById('review-progress-text').textContent = `${items.length} left \u00b7 ${reviewed} of ${sessionTotal} reviewed`;
+                document.getElementById('review-progress-text').textContent =
+                    `${items.length} left in ${scopeLabel()} \u00b7 ${reviewed} of ${sessionTotal} reviewed`;
             }
 
             renderQueueList();
             selectItem(currentIndex);
             updateBulkUI();
+        }
+
+        // An empty queue means different things in different scopes: a finished batch
+        // still has a queue behind it, and says so; an empty archive queue does not.
+        function renderEmptyState() {
+            const title = document.getElementById('empty-title');
+            const sub = document.getElementById('empty-sub');
+            const action = document.getElementById('empty-action');
+            action.classList.add('hidden');
+            if (currentTab !== 'pending') {
+                title.textContent = 'Nothing unmatched';
+                sub.textContent = 'Every file has been matched and filed.';
+                return;
+            }
+            if (scopedToBatch()) {
+                title.textContent = 'Batch complete';
+                sub.textContent = `${sessionFiled} filed · ${sessionSkipped} skipped in `
+                    + `this batch · ${globalPending} pending elsewhere`;
+                if (globalPending > 0) {
+                    action.textContent =
+                        `Review remaining pending documents (${globalPending})`;
+                    action.classList.remove('hidden');
+                }
+                return;
+            }
+            title.textContent = 'All caught up';
+            sub.textContent = 'No documents are waiting for review. Nice work.';
         }
 
         // ---- Queue rail ----
@@ -415,9 +527,14 @@
                 bar.style.width = `${barW}%`;
                 bar.style.background = ci.color;
                 track.appendChild(bar);
+                // The scan it came from and the physical pages it covers, then what the
+                // document is called — a suggestion, or its own page range.
+                const source = it.source_page_range
+                    ? `${it.institution || 'Unknown'} · pages ${it.source_page_range}`
+                    : (it.institution || 'Unknown');
                 summary.append(
-                    textElement('p', 'm-0 text-[10px] font-bold tracking-[.06em] uppercase text-text-label truncate', it.institution || 'Unknown'),
-                    textElement('p', 'm-0 mt-[2px] mb-[6px] text-[13px] font-bold text-ink truncate', it.doc_type || 'Document'),
+                    textElement('p', 'm-0 text-[10px] font-bold tracking-[.06em] uppercase text-text-label truncate', source),
+                    textElement('p', 'm-0 mt-[2px] mb-[6px] text-[13px] font-bold text-ink truncate', it.title || 'Document'),
                     track);
                 const badge = textElement('span', 'text-[11px] font-bold py-[2px] px-[7px] rounded-pill whitespace-nowrap self-center', confPct);
                 badge.style.color = ci.color;
@@ -461,10 +578,13 @@
                 document.getElementById('conf-ring').style.background = 'conic-gradient(#C9C3B3 200deg, #EDE7DA 200deg)';
             }
 
-            // Fields
+            // Fields. They belong to this document and to no other, so the panel names
+            // it and the destination is re-validated for it.
+            document.getElementById('destination-owner').textContent =
+                it.title || 'This document';
             document.getElementById('edit-filename').value = it.suggested_filename || '';
             document.getElementById('edit-directory').value = it.suggested_directory || '';
-            updateDirChips();
+            updateDestination();
 
             document.getElementById('fact-type').textContent = it.doc_type || '—';
             document.getElementById('fact-period').textContent = it.period || '—';
@@ -475,11 +595,52 @@
             document.getElementById('reasoning-text').textContent = it.reasoning || it.notes || 'No reasoning available.';
 
             // Button labels
-            document.getElementById('approve-label').textContent = currentTab === 'pending' ? 'Approve & File' : 'File Document';
+            document.getElementById('approve-label').textContent = 'File this document';
             document.getElementById('ask-ai-label').textContent = currentTab === 'pending' ? 'Ask AI' : 'Ask AI to classify';
 
             // Preview
             loadPagePreview();
+        }
+
+        // ---- Destination safety ------------------------------------------------
+        // The same shape the server enforces, checked before anything is sent: an
+        // archive-relative folder with no empty, hidden or parent components, and a
+        // single visible .pdf name. This is a usability guard and nothing more — the
+        // server validates and confines every destination again before it writes.
+        function normalizedFilename(raw) {
+            const name = String(raw == null ? '' : raw).trim();
+            if (!name) return '';
+            return /\.pdf$/i.test(name) ? name : `${name}.pdf`;
+        }
+
+        function destinationProblem(directory, filename) {
+            const dir = String(directory == null ? '' : directory).trim();
+            const name = normalizedFilename(filename);
+            if (!dir) return 'Choose a destination folder inside your archive.';
+            if (!name || name.toLowerCase() === '.pdf') return 'Give this document a file name.';
+            if (dir.startsWith('/') || dir.includes('\\') || dir.split('/')[0].includes(':')) {
+                return 'The destination must be a folder inside your archive.';
+            }
+            if (dir.split('/').some(part => !part || part.startsWith('.') || part.startsWith('~'))) {
+                return 'The destination must be a folder inside your archive.';
+            }
+            if (name.includes('/') || name.includes('\\') || name.startsWith('.')
+                    || name.startsWith('~')) {
+                return 'The file name must be one visible name ending in .pdf.';
+            }
+            return '';
+        }
+
+        // The destination exactly as it will be filed, or the reason it cannot be.
+        function updateDestination() {
+            const dir = document.getElementById('edit-directory').value.trim();
+            const name = document.getElementById('edit-filename').value;
+            const problem = destinationProblem(dir, name);
+            document.getElementById('destination-preview').textContent =
+                problem ? '' : `${dir}/${normalizedFilename(name)}`;
+            document.getElementById('destination-error').textContent = problem;
+            document.getElementById('btn-approve').disabled = Boolean(problem);
+            updateDirChips();
         }
 
         function updateDirChips() {
@@ -495,8 +656,9 @@
             }
         }
 
-        // Listen for directory input changes
-        document.getElementById('edit-directory').addEventListener('input', updateDirChips);
+        // Either field changes the destination, so both re-validate it.
+        document.getElementById('edit-directory').addEventListener('input', updateDestination);
+        document.getElementById('edit-filename').addEventListener('input', updateDestination);
 
         // ---- Selection / bulk ----
         function toggleSelect(id) {
@@ -613,14 +775,22 @@
             if (!item) return;
 
             if (currentTab === 'pending') {
-                const fn = document.getElementById('edit-filename').value.trim();
                 const dir = document.getElementById('edit-directory').value.trim();
+                const fn = normalizedFilename(document.getElementById('edit-filename').value);
                 const payload = { archive_scope_id: archiveScopeId, idempotency_key: newIdempotencyKey(action) };
                 const base = `/api/v1/review-items/${encodeURIComponent(item.id)}`;
                 let url = `${base}/skip`;
-                let label = `Skipped "${item.institution || item.suggested_filename}"`;
+                let label = `Skipped "${item.title || item.suggested_filename || 'this document'}"`;
                 if (action === 'approve') {
-                    label = `Filed "${fn || item.suggested_filename}"`;
+                    // A destination that could not be filed is never sent: the reason is
+                    // already on screen beside the fields it belongs to.
+                    const problem = destinationProblem(dir, fn);
+                    if (problem) {
+                        updateDestination();
+                        showToast(problem, 'warning', 5000, 'review-action');
+                        return;
+                    }
+                    label = `Filed "${fn}" to ${dir}`;
                     url = `${base}/approve`;
                     if (fn !== item.suggested_filename || dir !== item.suggested_directory) {
                         url = `${base}/correct`;
@@ -631,8 +801,13 @@
                 }
                 const { ok, data } = await docflowApi('POST', url, payload);
                 if (!ok) {
-                    showToast(apiErrorMessage(data, 'Action failed'), 'error');
+                    // One notification at a time: the previous item's message must not
+                    // sit beside the document now on screen.
+                    showToast(apiErrorMessage(data, 'Action failed'), 'error', 5000,
+                              'review-action');
                 } else {
+                    if (action === 'approve') sessionFiled += 1; else sessionSkipped += 1;
+                    dismissToastGroup('review-action');
                     rememberOperation(data.operation, label);
                 }
                 await loadQueue();
@@ -689,8 +864,23 @@
             io_error: 'the archive could not be read or written; retry later',
         };
 
+        // ---- What this install can actually do ----
+        // AI classification is off in local-only mode, so the page does not offer to ask
+        // an AI: the control is hidden and the state is stated in the server's own words.
+        async function applyCapabilities() {
+            const health = await healthStatus();
+            aiClassification = Boolean(health && health.ai_classification);
+            const button = document.getElementById('btn-ask-ai');
+            button.classList.toggle('hidden', !aiClassification);
+            button.disabled = !aiClassification;
+            document.getElementById('ai-note').textContent = aiClassification ? ''
+                : ((health && health.llm_status_detail)
+                   || 'OCR runs locally. AI classification is off.');
+        }
+
         // ---- Ask AI ----
         async function askAI() {
+            if (!aiClassification) return;
             const items = activeItems();
             const item = items[currentIndex];
             if (!item) return;
@@ -881,6 +1071,7 @@
 
         const restoredOperation = storedOperation();
         if (restoredOperation) offerUndo(restoredOperation, true);
+        applyCapabilities();
         loadQueue();
     </script>
 </body>

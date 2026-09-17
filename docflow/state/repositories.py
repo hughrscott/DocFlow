@@ -357,6 +357,40 @@ class JobRepository(_Repository):
         )
         return [Job(**dict(r)) for r in rows]
 
+    def list_recent(self, scope_id: str, *, limit: int | None = None) -> list[Job]:
+        """Jobs in this scope, newest first. Insertion order breaks a same-second tie."""
+        self.require_scope(scope_id)
+        clause, params = "", [scope_id]
+        if limit is not None:
+            if type(limit) is not int or limit < 1:
+                raise UnsafeValueError("limit must be a positive integer")
+            clause, params = " LIMIT ?", [scope_id, limit]
+        rows = self.conn.execute(
+            "SELECT * FROM jobs WHERE archive_scope_id = ? "
+            f"ORDER BY created_at DESC, rowid DESC{clause}", params,
+        )
+        return [Job(**dict(r)) for r in rows]
+
+    def count(self, scope_id: str) -> int:
+        """How many jobs this scope has ever recorded, whatever their status."""
+        self.require_scope(scope_id)
+        return self.conn.execute(
+            "SELECT COUNT(*) FROM jobs WHERE archive_scope_id = ?", (scope_id,)
+        ).fetchone()[0]
+
+    def find_by_source_fingerprint(self, scope_id: str, source_fingerprint: str) -> list[Job]:
+        """Every job admitted from these exact source bytes, oldest first.
+
+        Identity is the raw content fingerprint alone, so the same scan renamed and
+        offered again is recognised as the same scan.
+        """
+        self.require_scope(scope_id)
+        rows = self.conn.execute(
+            "SELECT * FROM jobs WHERE archive_scope_id = ? AND source_fingerprint = ? "
+            "ORDER BY created_at, rowid", (scope_id, source_fingerprint),
+        )
+        return [Job(**dict(r)) for r in rows]
+
     def page_totals(self, scope_id: str, job_id: str) -> dict[str, int]:
         self.require_scope(scope_id)
         rows = self.conn.execute(

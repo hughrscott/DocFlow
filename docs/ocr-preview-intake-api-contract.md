@@ -280,7 +280,7 @@ Clients should generate one key per user action, exactly like `idempotency_key`:
   "capabilities": {
     "text_extraction": true,
     "ai_classification": false,
-    "summary": "Text extraction is enabled. AI classification is disabled."
+    "summary": "OCR runs locally. AI classification is off."
   },
   "started": "2026-09-15T21:01:20"
 }

@@ -47,7 +47,7 @@ mode is on, which capabilities are active, and whether the configured LLM is usa
   "llm_status": "local_only",
   "llm_status_label": "Local Only",
   "llm_status_level": "neutral",
-  "llm_status_detail": "Text extraction is enabled. AI classification is disabled."
+  "llm_status_detail": "OCR runs locally. AI classification is off."
 }
 ```
 
@@ -55,7 +55,7 @@ mode is on, which capabilities are active, and whether the configured LLM is usa
 - `llm_status` is `local_only`.
 - `llm_status_label` is `Local Only`.
 - `llm_status_level` is `neutral` — this is an informational state, **not** an error or warning.
-- `llm_status_detail` is exactly: `Text extraction is enabled. AI classification is disabled.`
+- `llm_status_detail` is exactly: `OCR runs locally. AI classification is off.`
 
 #### 2. Cloud provider, required API key missing
 

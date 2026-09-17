@@ -55,7 +55,7 @@ function renderNav() {
 
         <button onclick="globalUpload()" class="mt-6 mb-[22px] flex items-center justify-center gap-2 bg-ink text-[#F4F1EA] border-none rounded-btn py-[13px] font-bold text-[13.5px] cursor-pointer shadow-btn hover:-translate-y-px transition-transform duration-150">
             <span class="ms" style="font-size:18px;">add</span>
-            <span class="nav-label">Scan Mail</span>
+            <span class="nav-label">Add scanned mail</span>
         </button>
 
         <nav class="flex flex-col gap-1 flex-1">${navItems}</nav>
@@ -295,10 +295,23 @@ const STATUS_LEVEL_CLASS = {
     warning: 'text-danger font-bold',
 };
 
+// One answer per page load: the footer, the review page's AI state and anything else
+// that needs the runtime posture read the same server response.
+let _healthPromise = null;
+
+function healthStatus() {
+    if (!_healthPromise) {
+        _healthPromise = fetch('/api/health')
+            .then(resp => (resp.ok ? resp.json() : null))
+            .catch(() => null);
+    }
+    return _healthPromise;
+}
+
 async function updateHealthStatus() {
     try {
-        const resp = await fetch('/api/health');
-        const data = await resp.json();
+        const data = await healthStatus();
+        if (!data) return;
         const watchEl = document.getElementById('watch-status');
         const llmEl = document.getElementById('llm-status');
         if (watchEl) watchEl.textContent = data.watch_folder ? 'Active' : 'Not Set';
@@ -332,7 +345,35 @@ async function updateReviewBadge() {
 }
 
 // ---------------------------------------------------------------------------
-// Scan Mail: there is exactly one Add-scanned-mail flow, on the dashboard.
+// Document labels
+// ---------------------------------------------------------------------------
+// A compact label for physical source pages: "2", "3-4", "1, 3-5". This mirrors the
+// range the server reports, so one document reads the same on every page.
+function pageRangeLabel(pages) {
+    const numbers = (Array.isArray(pages) ? pages : [])
+        .filter(p => Number.isInteger(p) && p >= 1).sort((a, b) => a - b);
+    const runs = [];
+    numbers.forEach(page => {
+        const last = runs[runs.length - 1];
+        if (last && page === last[last.length - 1]) return;      // the same page twice
+        if (last && page === last[last.length - 1] + 1) last.push(page);
+        else runs.push([page]);
+    });
+    return runs.map(r => (r.length === 1 ? String(r[0]) : `${r[0]}-${r[r.length - 1]}`))
+        .join(', ');
+}
+
+// What to call a document. Nothing invents a title: when no filename was suggested the
+// document is named by the source pages it came from, which the user can verify.
+function documentLabel(filename, pages) {
+    if (typeof filename === 'string' && filename.trim()) return filename;
+    const range = typeof pages === 'string' ? pages.trim() : pageRangeLabel(pages);
+    if (!range) return 'Document';
+    return /[-,]/.test(range) ? `Document from pages ${range}` : `Document from page ${range}`;
+}
+
+// ---------------------------------------------------------------------------
+// Add scanned mail: there is exactly one intake flow, on the dashboard.
 // This button never uploads or starts processing itself; from another page it
 // routes to the dashboard, where the same file input handles the submission.
 // ---------------------------------------------------------------------------
@@ -453,9 +494,17 @@ function activeArchiveScopeId() {
     return _scopePromise;
 }
 
-function showToast(message, type = 'error', duration = 5000) {
+// ``group`` names a stream of notifications where only the latest is true — a new one
+// replaces the previous instead of appearing beside it, so an action from an earlier
+// item can never sit next to the current one.
+function showToast(message, type = 'error', duration = 5000, group = null) {
     initToastContainer();
     const container = document.getElementById('toast-container');
+    if (group) {
+        Array.from(container.children)
+            .filter(node => node.getAttribute('data-toast-group') === group)
+            .forEach(node => node.remove());
+    }
 
     const colors = {
         error:   'bg-danger-bg border border-danger/20 text-danger',
@@ -468,6 +517,7 @@ function showToast(message, type = 'error', duration = 5000) {
     const toast = document.createElement('div');
     toast.className = `pointer-events-auto flex items-center gap-3 px-4 py-3 rounded-btn shadow-btn ${colors[type] || colors.info} transform translate-x-full opacity-0 transition-all duration-300`;
     toast.setAttribute('role', type === 'error' ? 'alert' : 'status');
+    if (group) toast.setAttribute('data-toast-group', group);
     const close = textElement('button', 'opacity-50 hover:opacity-100 transition-opacity border-none bg-transparent cursor-pointer');
     close.setAttribute('aria-label', 'Dismiss');
     close.appendChild(iconElement('close', 16));
@@ -484,6 +534,16 @@ function showToast(message, type = 'error', duration = 5000) {
             setTimeout(() => toast.remove(), 300);
         }, duration);
     }
+}
+
+// Remove every notification in one group — used when the action they described is no
+// longer the current one.
+function dismissToastGroup(group) {
+    const container = document.getElementById('toast-container');
+    if (!container || !group) return;
+    Array.from(container.children)
+        .filter(node => node.getAttribute('data-toast-group') === group)
+        .forEach(node => node.remove());
 }
 
 // ---------------------------------------------------------------------------

@@ -193,8 +193,8 @@ def _status(**overrides) -> dict:
         "pages_total": 4, "durable_job_id": "durable-1",
         "review_url": "/review?job_id=durable-1",
         "capabilities": {"text_extraction": True, "ai_classification": False,
-                         "summary": "Text extraction is enabled. "
-                                    "AI classification is disabled."},
+                         "summary": "OCR runs locally. "
+                                    "AI classification is off."},
         "started": "2026-09-15T00:00:00", **overrides,
     }
 
@@ -288,7 +288,7 @@ def test_local_only_capability_copy_is_shown_and_promises_no_ai_titles(tmp_path)
     result = run_dashboard(tmp_path, _dashboard(), [SELECT, "__tick()"])
 
     rendered = _rendered(result)
-    assert "Text extraction is enabled. AI classification is disabled." in rendered
+    assert "OCR runs locally. AI classification is off." in rendered
     assert "AI title" not in rendered and "AI name" not in rendered
 
 

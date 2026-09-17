@@ -38,8 +38,8 @@ def _status(**overrides) -> dict:
         "documents": [], "documents_total": 2, "auto_filed": 1, "review_queue": 1,
         "durable_job_id": "durable-1", "review_url": "/review?job_id=durable-1",
         "capabilities": {"text_extraction": True, "ai_classification": False,
-                         "summary": "Text extraction is enabled. "
-                                    "AI classification is disabled."},
+                         "summary": "OCR runs locally. "
+                                    "AI classification is off."},
         "started": "2026-09-15T00:00:00", **overrides,
     }
 
@@ -72,8 +72,7 @@ def _routes(extra: list[dict] = ()) -> list[dict]:
             "privacy_mode": "local_only", "text_extraction": True,
             "ai_classification": False, "llm_ready": False, "llm_status": "local_only",
             "llm_status_label": "Local Only", "llm_status_level": "neutral",
-            "llm_status_detail": "Text extraction is enabled. AI classification is "
-                                 "disabled.",
+            "llm_status_detail": "OCR runs locally. AI classification is off.",
             "model": "local", "threshold": 0.75}},
         {"method": "GET", "url": r"^/api/process/active", "body": {"job_id": None}},
         {"method": "POST", "url": r"^/api/upload",
@@ -302,7 +301,7 @@ def test_a_local_only_run_renders_unclassified_documents_neutrally(stub, browser
     assert not any(shade in str(badge) for shade in DANGER)
     # The honest capability sentence is still what the server sent.
     assert browser.evaluate(text_of("capability-note")) == (
-        "Text extraction is enabled. AI classification is disabled.")
+        "OCR runs locally. AI classification is off.")
 
 
 def test_a_cloud_classification_confidence_is_still_shown_in_the_browser(
