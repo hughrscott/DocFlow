@@ -332,3 +332,21 @@ def test_a_run_that_created_no_batch_is_not_labelled_this_batch(tmp_path) -> Non
     assert duplicate["snapshots"][3]["value"] is True
     assert failed["snapshots"][2]["value"] is True
     assert new["snapshots"][2]["value"] is False
+
+
+def test_review_notices_name_the_scope_their_count_belongs_to(tmp_path) -> None:
+    """The finished-run notice counts this batch; the callout counts all documents."""
+    toasts = ("(() => document.getElementById('toast-container').children"
+              ".map(t => t.textContent))()")
+    result = run_dashboard(tmp_path, _page(activity=_activity(
+        [_batch(pending_review=2)], pending_review=3)),
+        [SELECT, "__tick()", toasts, "__text('callout-count')"],
+    )
+    # The status body reports this batch's review_queue of 1; the archive holds 3.
+    [notice] = [t for t in result["snapshots"][2]["value"] if "review" in t]
+    assert "This batch" in notice and "1 document needs review" in notice
+    assert result["snapshots"][3]["value"] == "3"
+    # The callout sentence around that count is static markup (see the metric tiles).
+    callout = re.search(r'id="callout-count">0</span>([^<]*)<',
+                        (STATIC / "dashboard.html").read_text())
+    assert callout and "All documents" in callout.group(1)

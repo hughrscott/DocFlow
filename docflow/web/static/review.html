@@ -387,6 +387,8 @@
             document.getElementById('scope-switch').classList.toggle('hidden', !batchJobId);
             document.getElementById('scope-batch').className = batch ? SCOPE_ACTIVE : SCOPE_IDLE;
             document.getElementById('scope-all').className = batch ? SCOPE_IDLE : SCOPE_ACTIVE;
+            document.getElementById('scope-batch').setAttribute('aria-pressed', String(batch));
+            document.getElementById('scope-all').setAttribute('aria-pressed', String(!batch));
         }
 
         async function pendingItems(job) {

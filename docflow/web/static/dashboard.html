@@ -46,7 +46,7 @@
                 <span class="ms fill" style="font-size:24px;color:#B5751F;">rate_review</span>
             </div>
             <div class="flex-1">
-                <p class="m-0 font-bold text-[15px] text-ink"><span id="callout-count">0</span> documents need your review</p>
+                <p class="m-0 font-bold text-[15px] text-ink"><span id="callout-count">0</span> documents need your review &middot; All documents</p>
                 <p class="m-0 mt-[3px] text-[12.5px]" style="color:#9C7B3C;">Low-confidence filings waiting for a quick approve or correction.</p>
             </div>
             <div class="flex items-center gap-[7px] bg-ink text-[#F4F1EA] py-[11px] px-[18px] rounded-[11px] font-bold text-[13px] flex-shrink-0">
@@ -656,7 +656,7 @@
             }
             const review = state.review_queue || 0;
             showToast(review > 0
-                ? `${review} ${review === 1 ? 'document needs' : 'documents need'} review`
+                ? `This batch \u00b7 ${review} ${review === 1 ? 'document needs' : 'documents need'} review`
                 : 'Every document in this batch was filed',
                 review > 0 ? 'warning' : 'success', 5000, 'intake');
         }

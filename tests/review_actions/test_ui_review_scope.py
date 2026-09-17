@@ -126,6 +126,16 @@ def test_the_scope_switch_moves_between_this_batch_and_all_documents(tmp_path) -
     assert any("job_id=" not in url for url in _listings(result))
 
 
+def test_the_scope_switch_exposes_which_scope_is_active(tmp_path) -> None:
+    pressed = ("(() => ['scope-batch', 'scope-all'].map("
+               "id => document.getElementById(id).getAttribute('aria-pressed')))()")
+    result = run_review(tmp_path, _page([_item()], [_item(), _item("item-2")]),
+                        [pressed, "setScope('all')", pressed])
+
+    assert result["snapshots"][0]["value"] == ["true", "false"]
+    assert result["snapshots"][2]["value"] == ["false", "true"]
+
+
 # ---------------------------------------------------------------------------
 # Neutral document identity
 # ---------------------------------------------------------------------------
