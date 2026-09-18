@@ -450,6 +450,11 @@
             document.getElementById('empty-state').classList.toggle('hidden', !isEmpty);
             document.getElementById('workspace').classList.toggle('hidden', isEmpty);
 
+            // Progress is refreshed before the empty pane returns: the two are the same
+            // screen, so a terminal state may never sit beside a count that still says
+            // documents are waiting.
+            renderProgress();
+
             if (isEmpty) {
                 renderEmptyState();
                 return;
@@ -459,18 +464,23 @@
             // Clamp index
             if (currentIndex >= items.length) currentIndex = Math.max(0, items.length - 1);
 
-            // Update progress. The count always says which scope it counted.
-            if (currentTab === 'pending') {
-                const reviewed = Math.max(0, sessionTotal - queueItems.length);
-                const pct = sessionTotal > 0 ? Math.round((reviewed / sessionTotal) * 100) : 0;
-                document.getElementById('review-progress').style.width = pct + '%';
-                document.getElementById('review-progress-text').textContent =
-                    `${items.length} left in ${scopeLabel()} \u00b7 ${reviewed} of ${sessionTotal} reviewed`;
-            }
-
             renderQueueList();
             selectItem(currentIndex);
             updateBulkUI();
+        }
+
+        // How much of this session's queue is left. The count always says which scope it
+        // counted; a queue that was empty before the session began has none to describe
+        // and stays silent rather than inventing a 0 of 0.
+        function renderProgress() {
+            if (currentTab !== 'pending') return;
+            const remaining = queueItems.length;
+            const reviewed = Math.max(0, sessionTotal - remaining);
+            const pct = sessionTotal > 0 ? Math.round((reviewed / sessionTotal) * 100) : 0;
+            document.getElementById('review-progress').style.width = pct + '%';
+            document.getElementById('review-progress-text').textContent = sessionTotal === 0
+                ? ''
+                : `${remaining} left in ${scopeLabel()} · ${reviewed} of ${sessionTotal} reviewed`;
         }
 
         // An empty queue means different things in different scopes: a finished batch
