@@ -23,17 +23,17 @@
         <div id="header"></div>
         <div class="df-body df-scroll">
 
-    <main class="p-[34px] max-w-[1180px] mx-auto">
-        <!-- Upload drop bar (compact) -->
-        <div id="drop-zone" role="button" aria-label="Upload scanned documents"
-             class="flex items-center gap-[15px] border-[1.5px] border-dashed border-border-dashed bg-soft-hover rounded-[14px] py-[13px] px-4 cursor-pointer transition-all duration-150 hover:border-ink hover:bg-white">
+    <main class="p-4 lg:p-[34px] max-w-[1180px] mx-auto">
+        <!-- The one intake: the same flow the sidebar's Add scanned mail button opens -->
+        <div id="drop-zone" role="button" aria-label="Add scanned mail"
+             class="flex flex-wrap items-center gap-[15px] border-[1.5px] border-dashed border-border-dashed bg-soft-hover rounded-[14px] py-[13px] px-4 cursor-pointer transition-all duration-150 hover:border-ink hover:bg-white">
             <input type="file" id="upload-input" accept=".pdf" multiple class="hidden" />
             <div class="w-10 h-10 rounded-[11px] bg-tile flex items-center justify-center flex-shrink-0">
                 <span class="ms" style="font-size:22px;color:#15171C;">upload_file</span>
             </div>
             <div class="flex-1 min-w-0">
-                <p class="m-0 font-bold text-[14px] text-ink">Upload scanned mail</p>
-                <p class="m-0 mt-0.5 text-text-faint text-[12px]">Drag &amp; drop a batch PDF, or click to browse &middot; PDF, batch enabled</p>
+                <p class="m-0 font-bold text-[14px] text-ink">Add scanned mail</p>
+                <p class="m-0 mt-0.5 text-text-faint text-[12px]">Drag &amp; drop a scan PDF, or click to browse</p>
             </div>
             <div class="flex items-center gap-[6px] bg-ink text-[#F4F1EA] py-[9px] px-[15px] rounded-input font-bold text-[12.5px] flex-shrink-0">
                 <span class="ms" style="font-size:16px;">folder_open</span> Browse
@@ -41,12 +41,12 @@
         </div>
 
         <!-- Review callout (shown when pending > 0) -->
-        <a href="/review" id="review-callout" class="hidden mt-[18px] flex items-center gap-[18px] bg-warm-bg border border-warm-border rounded-[18px] py-5 px-6 cursor-pointer transition-transform duration-150 hover:-translate-y-px no-underline">
+        <a href="/review" id="review-callout" class="hidden mt-[18px] flex flex-col sm:flex-row items-start sm:items-center gap-[18px] bg-warm-bg border border-warm-border rounded-[18px] py-5 px-5 sm:px-6 cursor-pointer transition-transform duration-150 hover:-translate-y-px no-underline">
             <div class="w-[46px] h-[46px] rounded-[13px] bg-warm-icon flex items-center justify-center flex-shrink-0">
                 <span class="ms fill" style="font-size:24px;color:#B5751F;">rate_review</span>
             </div>
             <div class="flex-1">
-                <p class="m-0 font-bold text-[15px] text-ink"><span id="callout-count">0</span> documents need your review</p>
+                <p class="m-0 font-bold text-[15px] text-ink"><span id="callout-count">0</span> documents need your review &middot; All documents</p>
                 <p class="m-0 mt-[3px] text-[12.5px]" style="color:#9C7B3C;">Low-confidence filings waiting for a quick approve or correction.</p>
             </div>
             <div class="flex items-center gap-[7px] bg-ink text-[#F4F1EA] py-[11px] px-[18px] rounded-[11px] font-bold text-[13px] flex-shrink-0">
@@ -54,43 +54,46 @@
             </div>
         </a>
 
-        <!-- Stats grid -->
-        <div class="grid grid-cols-4 gap-[14px] mt-[18px]" id="stats-grid">
+        <!-- Global metrics. Every tile is explicitly scoped to the whole archive. -->
+        <div class="grid grid-cols-2 lg:grid-cols-4 gap-[14px] mt-[18px]" id="stats-grid">
             <div class="bg-white border border-border-card rounded-card p-[18px_20px] shadow-card">
                 <div class="flex items-center gap-2 mb-[10px]">
                     <span class="ms" style="font-size:18px;color:#B5751F;">rate_review</span>
-                    <span class="text-[10.5px] font-bold tracking-[.1em] uppercase text-text-faint">To Review</span>
+                    <span class="text-[10.5px] font-bold tracking-[.1em] uppercase text-text-faint">To review &middot; All documents</span>
                 </div>
                 <p class="m-0 font-headline font-extrabold text-[26px] tracking-[-0.02em]" id="stat-review">0</p>
             </div>
             <div class="bg-white border border-border-card rounded-card p-[18px_20px] shadow-card">
                 <div class="flex items-center gap-2 mb-[10px]">
                     <span class="ms" style="font-size:18px;color:#0E8A5E;">task_alt</span>
-                    <span class="text-[10.5px] font-bold tracking-[.1em] uppercase text-text-faint">Filed Today</span>
+                    <span class="text-[10.5px] font-bold tracking-[.1em] uppercase text-text-faint">Filed today &middot; All documents</span>
                 </div>
                 <p class="m-0 font-headline font-extrabold text-[26px] tracking-[-0.02em]" id="stat-filed">0</p>
             </div>
             <div class="bg-white border border-border-card rounded-card p-[18px_20px] shadow-card">
                 <div class="flex items-center gap-2 mb-[10px]">
                     <span class="ms" style="font-size:18px;color:#15171C;">inventory_2</span>
-                    <span class="text-[10.5px] font-bold tracking-[.1em] uppercase text-text-faint">Total Archived</span>
+                    <span class="text-[10.5px] font-bold tracking-[.1em] uppercase text-text-faint">Documents filed &middot; All documents</span>
                 </div>
-                <p class="m-0 font-headline font-extrabold text-[26px] tracking-[-0.02em]" id="stat-total">—</p>
+                <p class="m-0 font-headline font-extrabold text-[26px] tracking-[-0.02em]" id="stat-total">0</p>
             </div>
             <div class="bg-white border border-border-card rounded-card p-[18px_20px] shadow-card">
                 <div class="flex items-center gap-2 mb-[10px]">
-                    <span class="ms" style="font-size:18px;color:#34508C;">bolt</span>
-                    <span class="text-[10.5px] font-bold tracking-[.1em] uppercase text-text-faint">Auto-file Rate</span>
+                    <span class="ms" style="font-size:18px;color:#34508C;">inbox</span>
+                    <span class="text-[10.5px] font-bold tracking-[.1em] uppercase text-text-faint">Batches added &middot; All documents</span>
                 </div>
-                <p class="m-0 font-headline font-extrabold text-[26px] tracking-[-0.02em]" id="stat-rate">—</p>
+                <p class="m-0 font-headline font-extrabold text-[26px] tracking-[-0.02em]" id="stat-batches">0</p>
             </div>
         </div>
 
-        <!-- Processing Section (hidden until upload) -->
+        <!-- The scan being added, or the one that was added last -->
         <section id="processing-section" class="mt-[18px] hidden">
             <div class="flex items-end justify-between mb-4">
                 <div>
-                    <span class="text-[10px] font-bold tracking-[.1em] uppercase text-gold bg-amber-bg px-2 py-0.5 rounded-sm mb-2 inline-block">Processing Live</span>
+                    <span class="flex items-center gap-2 mb-2">
+                        <span id="batch-state" class="text-[10px] font-bold tracking-[.1em] uppercase text-gold bg-amber-bg px-2 py-0.5 rounded-sm inline-block">Processing live</span>
+                        <span id="batch-scope-label" class="text-[10px] font-bold tracking-[.1em] uppercase text-text-faint">This batch</span>
+                    </span>
                     <h2 class="text-[20px] font-headline font-extrabold text-ink m-0" id="batch-name">Processing...</h2>
                 </div>
                 <div class="text-right">
@@ -103,74 +106,25 @@
                     <div id="progress-bar" role="progressbar" aria-valuenow="0" aria-valuemax="100" aria-label="Processing progress"
                          class="bg-success h-full rounded-pill transition-all duration-500" style="width: 0%"></div>
                 </div>
-                <div class="grid grid-cols-4 lg:grid-cols-8 gap-3">
-                    <div class="flex flex-col items-center gap-1.5 text-center" id="step-load">
-                        <div class="w-8 h-8 rounded-full bg-skeleton flex items-center justify-center">
-                            <span class="ms text-text-dim" style="font-size:16px;">upload_file</span>
-                        </div>
-                        <p class="text-[9px] font-bold tracking-wider uppercase text-text-dim leading-tight m-0">Load</p>
-                    </div>
-                    <div class="flex flex-col items-center gap-1.5 text-center" id="step-ocr">
-                        <div class="w-8 h-8 rounded-full bg-skeleton flex items-center justify-center">
-                            <span class="ms text-text-dim" style="font-size:16px;">text_fields</span>
-                        </div>
-                        <p class="text-[9px] font-bold tracking-wider uppercase text-text-dim leading-tight m-0">OCR</p>
-                    </div>
-                    <div class="flex flex-col items-center gap-1.5 text-center" id="step-cluster">
-                        <div class="w-8 h-8 rounded-full bg-skeleton flex items-center justify-center">
-                            <span class="ms text-text-dim" style="font-size:16px;">auto_awesome</span>
-                        </div>
-                        <p class="text-[9px] font-bold tracking-wider uppercase text-text-dim leading-tight m-0">Cluster</p>
-                    </div>
-                    <div class="flex flex-col items-center gap-1.5 text-center" id="step-classify">
-                        <div class="w-8 h-8 rounded-full bg-skeleton flex items-center justify-center">
-                            <span class="ms text-text-dim" style="font-size:16px;">category</span>
-                        </div>
-                        <p class="text-[9px] font-bold tracking-wider uppercase text-text-dim leading-tight m-0">Classify</p>
-                    </div>
-                    <div class="flex flex-col items-center gap-1.5 text-center" id="step-gate">
-                        <div class="w-8 h-8 rounded-full bg-skeleton flex items-center justify-center">
-                            <span class="ms text-text-dim" style="font-size:16px;">verified_user</span>
-                        </div>
-                        <p class="text-[9px] font-bold tracking-wider uppercase text-text-dim leading-tight m-0">Gate</p>
-                    </div>
-                    <div class="flex flex-col items-center gap-1.5 text-center" id="step-file">
-                        <div class="w-8 h-8 rounded-full bg-skeleton flex items-center justify-center">
-                            <span class="ms text-text-dim" style="font-size:16px;">drive_file_move</span>
-                        </div>
-                        <p class="text-[9px] font-bold tracking-wider uppercase text-text-dim leading-tight m-0">File</p>
-                    </div>
-                    <div class="flex flex-col items-center gap-1.5 text-center" id="step-summary">
-                        <div class="w-8 h-8 rounded-full bg-skeleton flex items-center justify-center">
-                            <span class="ms text-text-dim" style="font-size:16px;">summarize</span>
-                        </div>
-                        <p class="text-[9px] font-bold tracking-wider uppercase text-text-dim leading-tight m-0">Summary</p>
-                    </div>
-                    <div class="flex flex-col items-center gap-1.5 text-center" id="step-archive">
-                        <div class="w-8 h-8 rounded-full bg-skeleton flex items-center justify-center">
-                            <span class="ms text-text-dim" style="font-size:16px;">archive</span>
-                        </div>
-                        <p class="text-[9px] font-bold tracking-wider uppercase text-text-dim leading-tight m-0">Archive</p>
-                    </div>
-                </div>
+                <!-- Stages are rendered from what the server reports it actually ran. -->
+                <div id="stage-list" class="grid grid-cols-3 lg:grid-cols-6 gap-3"></div>
+                <p id="capability-note" class="m-0 mt-5 text-[11.5px] text-text-faint"></p>
+                <div id="completion-summary" class="mt-4 hidden flex flex-wrap items-center gap-[14px] bg-soft-hover border border-border-card rounded-card-sm py-[13px] px-4"></div>
             </div>
         </section>
 
-        <!-- Documents List (shown after processing completes) -->
+        <!-- Documents found in this batch -->
         <section id="documents-section" class="mt-[18px] hidden">
             <div class="flex items-center justify-between mb-[14px]">
-                <h3 class="m-0 font-headline font-bold text-[16px]" id="doc-count">Identified Documents</h3>
-                <button onclick="reprocessJob()" class="flex items-center gap-1.5 px-3 py-1.5 rounded-input text-xs font-bold bg-inset text-text-muted hover:bg-sidebar transition-colors border-none cursor-pointer">
-                    <span class="ms" style="font-size:16px;">refresh</span> Re-process
-                </button>
+                <h3 class="m-0 font-headline font-bold text-[16px]" id="doc-count">Documents in this batch</h3>
             </div>
             <div class="flex flex-col gap-[9px]" id="documents-list"></div>
         </section>
 
-        <!-- Recent Activity (shown when idle) -->
+        <!-- Recent batches, read from durable local state -->
         <section id="recent-section" class="mt-[30px]">
             <div class="flex items-center justify-between mb-[14px]">
-                <h3 class="m-0 font-headline font-bold text-[16px]">Recent Activity</h3>
+                <h3 class="m-0 font-headline font-bold text-[16px]" id="recent-title">Recent batches &middot; All documents</h3>
                 <a href="/archive" class="bg-transparent border-none text-text-muted font-semibold text-[12.5px] cursor-pointer flex items-center gap-1 no-underline hover:text-ink transition-colors">
                     View all <span class="ms" style="font-size:16px;">chevron_right</span>
                 </a>
@@ -189,12 +143,6 @@
     <script>
         initPage('Dashboard');
 
-        const stepIcons = {
-            'step-load': 'upload_file', 'step-ocr': 'text_fields', 'step-cluster': 'auto_awesome',
-            'step-classify': 'category', 'step-gate': 'verified_user', 'step-file': 'drive_file_move',
-            'step-summary': 'summarize', 'step-archive': 'archive',
-        };
-
         // Check for active job on page load (handles navigation away and back)
         (async function checkActiveJob() {
             const savedJobId = sessionStorage.getItem('docflow_active_job');
@@ -204,7 +152,9 @@
                     if (resp.ok) {
                         const state = await resp.json();
                         if (state.status === 'processing' || state.status === 'starting') {
-                            // Re-attach to active job
+                            // Re-attach to active job. The guard goes on before polling,
+                            // so a reload mid-run cannot start a second submission.
+                            holdRecoveredRun();
                             document.getElementById('processing-section').classList.remove('hidden');
                             document.getElementById('recent-section').classList.add('hidden');
                             document.getElementById('batch-name').textContent = state.pdf?.split('/').pop() || 'Processing...';
@@ -234,6 +184,8 @@
                     const data = await resp.json();
                     if (data.job_id && data.status !== 'completed') {
                         sessionStorage.setItem('docflow_active_job', data.job_id);
+                        // Same guard for the job the server reports as still running.
+                        holdRecoveredRun();
                         document.getElementById('processing-section').classList.remove('hidden');
                         document.getElementById('recent-section').classList.add('hidden');
                         document.getElementById('batch-name').textContent = data.pdf?.split('/').pop() || 'Processing...';
@@ -285,7 +237,58 @@
             }).join('');
         }
 
+        // One submission at a time. The guard is set synchronously before the first
+        // await, so repeated change/drop events cannot start a second job; the server
+        // enforces the same rule with the submission key.
+        let _submitting = false;
+
+        function setSubmitting(busy) {
+            _submitting = busy;
+            fileInput.disabled = busy;
+            dropZone.classList.toggle('opacity-60', busy);
+            dropZone.setAttribute('aria-busy', busy ? 'true' : 'false');
+        }
+
+        // A run recovered on load (saved job or server-reported) is not driven by
+        // handleFiles, so it holds the guard itself until it reaches a terminal state.
+        let _recovered = false;
+
+        function holdRecoveredRun() {
+            _recovered = true;
+            setSubmitting(true);
+        }
+
+        function releaseRecoveredRun() {
+            if (!_recovered) return;
+            _recovered = false;
+            setSubmitting(false);
+        }
+
+        // Acknowledge the chosen file the moment it is selected, before any upload.
+        function acknowledgeSelection(name) {
+            document.getElementById('processing-section').classList.remove('hidden');
+            document.getElementById('recent-section').classList.add('hidden');
+            document.getElementById('documents-section').classList.add('hidden');
+            document.getElementById('documents-list').replaceChildren();
+            // No action or state from the previous batch may sit beside the new file
+            // name — this runs before any await, so a failed upload cannot leave one
+            // behind.
+            const completion = document.getElementById('completion-summary');
+            completion.replaceChildren();
+            completion.classList.add('hidden');
+            setBatchState('Processing live', 'running');
+            document.getElementById('batch-scope-label').classList.remove('hidden');
+            document.getElementById('batch-name').textContent = name;
+            document.getElementById('progress-pct').textContent = '0%';
+            document.getElementById('progress-step').textContent = `Added ${name}`;
+            document.getElementById('progress-bar').style.width = '0%';
+            document.getElementById('progress-bar').classList.remove('bg-red-500');
+            renderStages([]);
+            renderCapabilities(null);
+        }
+
         async function handleFiles(files) {
+            if (_submitting) return;   // a submission is already in flight
             const pdfs = Array.from(files).filter(f => f.name.toLowerCase().endsWith('.pdf'));
             if (pdfs.length === 0 && files.length > 0) {
                 showToast('Only PDF files are supported', 'warning');
@@ -293,74 +296,71 @@
             }
             if (pdfs.length === 0) return;
 
+            setSubmitting(true);
             _batchQueue = pdfs.map(f => f.name);
             _batchCurrent = 0;
+            acknowledgeSelection(pdfs[0].name);
+            updateBatchIndicator();
 
-            for (const file of pdfs) {
-                // Upload
-                let upload;
-                try {
-                    const formData = new FormData();
-                    formData.append('file', file);
-                    const uploadResp = await fetch('/api/upload', { method: 'POST', body: formData });
-                    if (!uploadResp.ok) {
-                        const err = await uploadResp.json().catch(() => ({}));
-                        showToast(err.detail || `Upload failed: ${file.name}`, 'error');
-                        continue;
+            try {
+                for (const file of pdfs) {
+                    acknowledgeSelection(file.name);
+                    await submitOne(file);
+                    if (pdfs.length > 1) {
+                        _batchCurrent++;
+                        updateBatchIndicator();
                     }
-                    upload = await uploadResp.json();
-                } catch (e) {
-                    showToast(`Network error uploading ${file.name}`, 'error');
-                    continue;
                 }
-
-                // Start processing
-                let proc;
-                try {
-                    const procResp = await fetch('/api/process', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ path: upload.path }),
-                    });
-                    if (!procResp.ok) {
-                        const err = await procResp.json().catch(() => ({}));
-                        showToast(err.detail || `Failed to start processing: ${file.name}`, 'error');
-                        continue;
-                    }
-                    proc = await procResp.json();
-                } catch (e) {
-                    showToast(`Failed to start processing: ${file.name}`, 'error');
-                    continue;
-                }
-
-                // Save job ID for reconnection after navigation
-                sessionStorage.setItem('docflow_active_job', proc.job_id);
-
-                // Reset and show processing UI
-                document.getElementById('processing-section').classList.remove('hidden');
-                document.getElementById('recent-section').classList.add('hidden');
-                document.getElementById('documents-section').classList.add('hidden');
-                document.getElementById('documents-list').innerHTML = '';
-                document.getElementById('batch-name').textContent = file.name;
-                document.getElementById('progress-pct').textContent = '0%';
-                document.getElementById('progress-step').textContent = 'Starting...';
-                document.getElementById('progress-bar').style.width = '0%';
-                document.getElementById('progress-bar').classList.remove('bg-red-500');
-                resetSteps();
-                updateBatchIndicator();
-
-                // Start polling — wait for completion before processing next in batch
-                startPolling(proc.job_id);
-                if (pdfs.length > 1) {
-                    await new Promise(resolve => {
-                        const check = setInterval(() => {
-                            if (!_pollInterval) { clearInterval(check); resolve(); }
-                        }, 500);
-                    });
-                    _batchCurrent++;
-                    updateBatchIndicator();
-                }
+            } finally {
+                setSubmitting(false);
+                fileInput.value = '';
             }
+        }
+
+        async function submitOne(file) {
+            // One key per submission: the server returns the same job for a retry.
+            const submissionKey = newIdempotencyKey('submission');
+            let upload;
+            try {
+                const formData = new FormData();
+                formData.append('file', file);
+                const uploadResp = await fetch('/api/upload', { method: 'POST', body: formData });
+                if (!uploadResp.ok) {
+                    const err = await uploadResp.json().catch(() => ({}));
+                    showToast(err.detail || `Upload failed: ${file.name}`, 'error');
+                    return;
+                }
+                upload = await uploadResp.json();
+            } catch (e) {
+                showToast(`Network error uploading ${file.name}`, 'error');
+                return;
+            }
+
+            let proc;
+            try {
+                const procResp = await fetch('/api/process', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ path: upload.path, submission_key: submissionKey }),
+                });
+                if (!procResp.ok) {
+                    const err = await procResp.json().catch(() => ({}));
+                    showToast(err.detail || `Failed to start processing: ${file.name}`, 'error');
+                    return;
+                }
+                proc = await procResp.json();
+            } catch (e) {
+                showToast(`Failed to start processing: ${file.name}`, 'error');
+                return;
+            }
+
+            sessionStorage.setItem('docflow_active_job', proc.job_id);
+            startPolling(proc.job_id);
+            await new Promise(resolve => {
+                const check = setInterval(() => {
+                    if (!_pollInterval) { clearInterval(check); resolve(); }
+                }, 500);
+            });
         }
 
         // Active polling interval (cleared when job completes)
@@ -376,6 +376,14 @@
                     const resp = await fetch('/api/process/status/' + jobId);
                     if (!resp.ok) {
                         document.getElementById('progress-step').textContent = 'Poll error: HTTP ' + resp.status;
+                        if (resp.status === 404) {
+                            // The server no longer knows this job: stop polling so a
+                            // recovered run can never hold intake shut for good.
+                            clearInterval(_pollInterval);
+                            _pollInterval = null;
+                            sessionStorage.removeItem('docflow_active_job');
+                            releaseRecoveredRun();
+                        }
                         return;
                     }
                     const state = await resp.json();
@@ -383,25 +391,15 @@
                     document.getElementById('progress-step').textContent = state.step || '';
                     document.getElementById('progress-bar').style.width = state.progress + '%';
 
-                    // Step indicators (8 stages)
-                    updateSteps(state.progress);
+                    renderStages(state.stages);
+                    renderCapabilities(state.capabilities);
 
                     if (state.status === 'completed' || state.status === 'error') {
                         clearInterval(_pollInterval);
                         _pollInterval = null;
                         sessionStorage.removeItem('docflow_active_job');
-
-                        if (state.status === 'completed' || (state.documents && state.documents.length > 0)) {
-                            showDocuments(state.documents, state.auto_filed, state.review_queue);
-                            if (state.status === 'completed') {
-                                const rc = state.review_queue || 0;
-                                showToast(rc > 0 ? rc + ' item(s) need review' : 'All documents filed successfully', rc > 0 ? 'warning' : 'success');
-                            }
-                        }
-                        if (state.status === 'error') {
-                            showToast(state.step || 'Processing failed', 'error', 0);
-                            document.getElementById('progress-bar').classList.add('bg-red-500');
-                        }
+                        releaseRecoveredRun();
+                        finishRun(state);
                     }
                 } catch (e) {
                     document.getElementById('progress-step').textContent = 'Poll error: ' + e.message;
@@ -409,41 +407,36 @@
             }, 500);
         }
 
-        // Minimal step indicator update that won't throw
-        function setStep(id, status) {
-            try {
-                const el = document.getElementById(id);
-                if (!el) return;
-                const icon = el.querySelector('.w-8');
-                if (!icon) return;
+        // Stages come from the server, which reports only what the pipeline runs.
+        // "skipped" is a stage that never ran — it must not look like one that is
+        // still to come, and certainly not like one that completed.
+        const STAGE_STYLES = {
+            done: ['bg-success-bg', 'check_circle', '#0E8A5E', 'fill'],
+            active: ['bg-amber-bg', 'pending', '#B5751F', ''],
+            waiting: ['bg-skeleton', 'radio_button_unchecked', '#A9A595', ''],
+            skipped: ['bg-inset', 'remove', '#A9A595', ''],
+            failed: ['bg-danger-bg', 'error', '#BE4029', 'fill'],
+        };
 
-                if (status === 'done') {
-                    icon.className = 'w-8 h-8 rounded-full bg-success-bg flex items-center justify-center';
-                    icon.innerHTML = '<span class="ms fill" style="font-size:16px;color:#0E8A5E;">check_circle</span>';
-                } else if (status === 'active') {
-                    icon.className = 'w-8 h-8 rounded-full bg-amber-bg flex items-center justify-center';
-                    icon.innerHTML = '<span class="ms" style="font-size:16px;color:#B5751F;">pending</span>';
-                } else {
-                    icon.className = 'w-8 h-8 rounded-full bg-skeleton flex items-center justify-center';
-                    icon.innerHTML = '<span class="ms text-text-dim" style="font-size:16px;">' + (stepIcons[id] || 'circle') + '</span>';
-                }
-            } catch (e) { /* never let step UI break polling */ }
+        function renderStages(stages) {
+            const list = document.getElementById('stage-list');
+            if (!list) return;
+            list.replaceChildren(...(Array.isArray(stages) ? stages : []).map(stage => {
+                const [bg, icon, color, fill] = STAGE_STYLES[stage.status] || STAGE_STYLES.waiting;
+                const cell = textElement('div', 'flex flex-col items-center gap-1.5 text-center');
+                const bubble = textElement('div',
+                    `w-8 h-8 rounded-full ${bg} flex items-center justify-center`);
+                bubble.appendChild(iconElement(icon, 16, color, fill));
+                cell.append(bubble, textElement('p',
+                    'text-[9px] font-bold tracking-wider uppercase text-text-dim leading-tight m-0',
+                    stage.label));
+                return cell;
+            }));
         }
 
-        // Map progress % to 8 pipeline stages
-        function updateSteps(p) {
-            setStep('step-load',    p >= 15 ? 'done' : p >= 5  ? 'active' : 'waiting');
-            setStep('step-ocr',     p >= 40 ? 'done' : p >= 15 ? 'active' : 'waiting');
-            setStep('step-cluster', p >= 60 ? 'done' : p >= 40 ? 'active' : 'waiting');
-            setStep('step-classify',p >= 75 ? 'done' : p >= 60 ? 'active' : 'waiting');
-            setStep('step-gate',    p >= 80 ? 'done' : p >= 75 ? 'active' : 'waiting');
-            setStep('step-file',    p >= 85 ? 'done' : p >= 80 ? 'active' : 'waiting');
-            setStep('step-summary', p >= 90 ? 'done' : p >= 85 ? 'active' : 'waiting');
-            setStep('step-archive', p >= 95 ? 'done' : p >= 90 ? 'active' : 'waiting');
-        }
-
-        function resetSteps() {
-            Object.keys(stepIcons).forEach(id => setStep(id, 'waiting'));
+        function renderCapabilities(capabilities) {
+            const note = document.getElementById('capability-note');
+            if (note) note.textContent = (capabilities && capabilities.summary) || '';
         }
 
         // Legacy — used by checkActiveJob
@@ -452,163 +445,332 @@
             document.getElementById('progress-pct').textContent = state.progress + '%';
             document.getElementById('progress-step').textContent = state.step || '';
             document.getElementById('progress-bar').style.width = state.progress + '%';
-            updateSteps(state.progress);
-            if (state.status === 'completed' || (state.status === 'error' && state.documents && state.documents.length > 0)) {
-                showDocuments(state.documents, state.auto_filed, state.review_queue);
-            }
+            renderStages(state.stages);
+            renderCapabilities(state.capabilities);
+            if (state.status === 'completed' || state.status === 'error') finishRun(state);
         }
 
-        // Re-process the current job's PDF
-        async function reprocessJob() {
-            const jobId = sessionStorage.getItem('docflow_active_job') || _lastJobId;
-            if (!jobId) { showToast('No job to re-process', 'warning'); return; }
-            try {
-                const resp = await fetch('/api/reprocess/' + jobId, { method: 'POST' });
-                if (!resp.ok) {
-                    const err = await resp.json().catch(() => ({}));
-                    showToast(err.detail || 'Re-process failed', 'error');
-                    return;
-                }
-                const data = await resp.json();
-                sessionStorage.setItem('docflow_active_job', data.job_id);
-                document.getElementById('documents-section').classList.add('hidden');
-                document.getElementById('documents-list').innerHTML = '';
-                document.getElementById('progress-pct').textContent = '0%';
-                document.getElementById('progress-step').textContent = 'Re-processing...';
-                document.getElementById('progress-bar').style.width = '0%';
-                document.getElementById('progress-bar').classList.remove('bg-red-500');
-                resetSteps();
-                startPolling(data.job_id);
-                showToast('Re-processing started', 'info', 3000);
-            } catch (e) {
-                showToast('Network error', 'error');
+        // What a run that has ended is allowed to show: the outcome the server typed,
+        // this batch's documents if it produced any, and refreshed global counts so the
+        // tiles can never disagree with the batch panel.
+        function finishRun(state) {
+            const documents = Array.isArray(state.documents) ? state.documents : [];
+            showDocuments(documents, state.review_url);
+            renderOutcome(state);
+            if (state.status === 'error') {
+                document.getElementById('progress-bar').classList.add('bg-red-500');
             }
+            announceOutcome(state);
+            loadActivity();
         }
+
         let _lastJobId = null;
 
-        function showDocuments(documents, autoFiled, reviewCount) {
-            document.getElementById('documents-section').classList.remove('hidden');
-            document.getElementById('doc-count').textContent = `Identified Documents (${documents.length})`;
-            _lastJobId = sessionStorage.getItem('docflow_active_job') || _lastJobId;
-
-            const list = document.getElementById('documents-list');
-            list.innerHTML = documents.map(doc => {
-                const isReview = !doc.auto_filed;
-                const borderCls = isReview ? 'border-gold' : 'border-border-card';
-                const iconBg = isReview ? 'bg-amber-bg' : 'bg-canvas';
-                const iconColor = isReview ? 'color:#B5751F' : 'color:#A9A595';
-                const iconName = isReview ? 'help_center' : 'description';
-                const action = isReview
-                    ? `<a href="/review" class="flex items-center gap-[6px] bg-ink text-[#F4F1EA] px-[14px] py-[9px] rounded-[11px] text-[12.5px] font-bold no-underline hover:-translate-y-px transition-transform">Review</a>`
-                    : '';
-
-                return `
-                <div class="flex items-center gap-[14px] bg-white border ${borderCls} rounded-card-sm py-[13px] px-4 shadow-card">
-                    <div class="w-9 h-9 rounded-[10px] ${iconBg} flex items-center justify-center flex-shrink-0">
-                        <span class="ms" style="font-size:19px;${iconColor};">${iconName}</span>
-                    </div>
-                    <div class="flex-1 min-w-0">
-                        <p class="m-0 font-mono font-medium text-[12.5px] text-ink truncate">${doc.filename}</p>
-                        <p class="m-0 mt-[3px] text-[11.5px] text-text-faint flex items-center gap-1">
-                            <span class="ms" style="font-size:13px;">folder</span>${doc.directory.split('/').slice(-2).join('/')}
-                        </p>
-                    </div>
-                    <div class="flex items-center gap-3">
-                        ${confidenceBadge(doc.confidence)}
-                        ${action}
-                    </div>
-                </div>`;
-            }).join('');
+        // A same-origin path only; anything else falls back to the unscoped queue.
+        function reviewHref(url) {
+            return typeof url === 'string' && url.startsWith('/') && !url.startsWith('//')
+                ? url : '/review';
         }
 
-        // Load recent filing logs
-        async function loadRecentActivity() {
-            try {
-                const resp = await fetch('/api/archive/logs');
-                const data = await resp.json();
-                const container = document.getElementById('recent-logs');
+        function showDocuments(documents, reviewUrl) {
+            const section = document.getElementById('documents-section');
+            if (documents.length === 0) {   // nothing to list is not an empty list
+                section.classList.add('hidden');
+                document.getElementById('documents-list').replaceChildren();
+                return;
+            }
+            section.classList.remove('hidden');
+            document.getElementById('doc-count').textContent =
+                `Documents in this batch (${documents.length})`;
+            _lastJobId = sessionStorage.getItem('docflow_active_job') || _lastJobId;
 
-                if (!data.logs || data.logs.length === 0) {
-                    container.innerHTML = `
-                        <div class="text-center py-12">
-                            <div class="w-16 h-16 bg-tile rounded-full flex items-center justify-center mx-auto mb-4">
-                                <span class="ms" style="font-size:28px;color:#A9A595;">scan</span>
-                            </div>
-                            <p class="text-ink font-medium mb-1 m-0">No documents processed yet</p>
-                            <p class="text-text-faint text-sm m-0 mt-1">Drop a scanned PDF above to get started</p>
-                        </div>`;
-                    return;
+            // Filenames and folders come from documents and the model: text, never markup.
+            const list = document.getElementById('documents-list');
+            list.replaceChildren(...documents.map(doc => {
+                const isReview = !doc.auto_filed;
+                const row = textElement('div',
+                    `flex flex-wrap items-center gap-[14px] bg-white border ${isReview ? 'border-gold' : 'border-border-card'} rounded-card-sm py-[13px] px-4 shadow-card`);
+                const bubble = textElement('div',
+                    `w-9 h-9 rounded-[10px] ${isReview ? 'bg-amber-bg' : 'bg-canvas'} flex items-center justify-center flex-shrink-0`);
+                bubble.appendChild(iconElement(isReview ? 'help_center' : 'description', 19,
+                                               isReview ? '#B5751F' : '#A9A595'));
+                const text = textElement('div', 'flex-1 min-w-0');
+                const folder = textElement('p',
+                    'm-0 mt-[3px] text-[11.5px] text-text-faint flex items-center gap-1');
+                const directory = String(doc.directory || '').split('/').slice(-2).join('/');
+                folder.append(iconElement('folder', 13),
+                    textElement('span', null, directory || 'No destination yet'));
+                // Nothing named this document, so it is identified by its source pages
+                // rather than by an invented title.
+                text.append(textElement('p',
+                    'm-0 font-mono font-medium text-[12.5px] text-ink truncate',
+                    documentLabel(doc.filename, doc.pages)),
+                    folder);
+                const right = textElement('div', 'flex items-center gap-3');
+                // A run that never classified this document has no score to show: the
+                // badge says so neutrally instead of claiming a 0% match.
+                const info = confidenceInfo(doc.confidence);
+                const badge = textElement('span',
+                    'text-[11px] font-bold px-[9px] py-1 rounded-pill whitespace-nowrap',
+                    confidenceLabel(doc.confidence));
+                badge.style.background = info.bg;
+                badge.style.color = info.color;
+                right.appendChild(badge);
+                if (isReview) {
+                    const action = textElement('a',
+                        'flex items-center gap-[6px] bg-ink text-[#F4F1EA] px-[14px] py-[9px] rounded-[11px] text-[12.5px] font-bold no-underline hover:-translate-y-px transition-transform',
+                        'Review');
+                    action.href = reviewHref(reviewUrl);
+                    right.appendChild(action);
                 }
+                row.append(bubble, text, right);
+                return row;
+            }));
+        }
 
-                const entries = data.logs.flatMap(log => {
-                    const logTime = log.timestamp || '';
-                    return (log.entries || []).map(e => ({...e, _logTime: logTime}));
-                }).slice(0, 6);
+        // The state badge for this batch. A finished run never keeps a live label.
+        const BATCH_STATE_TONES = {
+            running: 'text-gold bg-amber-bg',
+            new: 'text-success bg-success-bg',
+            new_empty: 'text-text-muted bg-inset',
+            duplicate: 'text-text-muted bg-inset',
+            failed: 'text-danger bg-danger-bg',
+        };
 
-                // Update stats
-                const totalFiled = data.logs.reduce((sum, log) => sum + (log.entries || []).length, 0);
-                document.getElementById('stat-total').textContent = totalFiled;
+        function setBatchState(label, tone) {
+            const badge = document.getElementById('batch-state');
+            if (!badge) return;
+            badge.className = 'text-[10px] font-bold tracking-[.1em] uppercase px-2 py-0.5 '
+                + 'rounded-sm inline-block ' + (BATCH_STATE_TONES[tone] || BATCH_STATE_TONES.running);
+            badge.textContent = label;
+        }
 
-                // Count filed today
-                const today = new Date().toISOString().slice(0, 10);
-                const filedToday = data.logs.flatMap(log => (log.entries || []).map(e => ({...e, _logTime: log.timestamp || ''}))).filter(e => {
-                    const ts = e.filed_at || e._logTime || '';
-                    return ts.slice(0, 10) === today;
-                }).length;
-                document.getElementById('stat-filed').textContent = filedToday;
+        const BATCH_STATE_LABELS = {
+            new: 'Batch complete',
+            new_empty: 'Batch complete',
+            duplicate: 'Already imported',
+            failed: 'Batch failed',
+        };
 
-                // Auto-file rate
-                const allEntries = data.logs.flatMap(log => log.entries || []);
-                if (allEntries.length > 0) {
-                    const autoFiled = allEntries.filter(e => e.confidence >= 0.75).length;
-                    document.getElementById('stat-rate').textContent = Math.round((autoFiled / allEntries.length) * 100) + '%';
-                }
+        // The outcome the server typed for this run. Nothing here is inferred from a
+        // document count: an already-imported scan, a failed run and an empty run each
+        // say what really happened, and only a run that created a batch links to one.
+        function renderOutcome(state) {
+            const panel = document.getElementById('completion-summary');
+            if (!panel) return;
+            const outcome = state.outcome
+                || (state.status === 'error' ? 'failed' : 'new');
+            const detail = (state.outcome_detail && typeof state.outcome_detail === 'object')
+                ? state.outcome_detail : {};
+            setBatchState(BATCH_STATE_LABELS[outcome] || 'Batch complete', outcome);
+            // A duplicate or a failed run created no batch, so nothing may call it one.
+            document.getElementById('batch-scope-label').classList.toggle('hidden',
+                outcome === 'duplicate' || outcome === 'failed');
 
-                container.innerHTML = entries.map(e => {
-                    const ts = e.filed_at || e._logTime || '';
-                    let timeStr = '';
-                    if (ts) {
-                        try {
-                            const d = ts.includes('T') ? new Date(ts) : new Date(ts.replace(/(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})/, '$1-$2-$3T$4:$5:$6'));
-                            timeStr = d.toLocaleDateString('en-US', {month: 'short', day: 'numeric'}) + ', ' + d.toLocaleTimeString('en-US', {hour: 'numeric', minute: '2-digit'});
-                        } catch(_) {}
-                    }
-                    return `
-                    <div class="flex items-center gap-[14px] bg-white border border-border-card rounded-card-sm py-[13px] px-4 shadow-card">
-                        <div class="w-9 h-9 rounded-[10px] bg-canvas flex items-center justify-center flex-shrink-0">
-                            <span class="ms" style="font-size:19px;color:#A9A595;">description</span>
-                        </div>
-                        <div class="flex-1 min-w-0">
-                            <p class="m-0 font-mono font-medium text-[12.5px] text-ink truncate">${e.filename}</p>
-                            <p class="m-0 mt-[3px] text-[11.5px] text-text-faint flex items-center gap-1">
-                                <span class="ms" style="font-size:13px;">folder</span>${e.target_directory.split('/').slice(-2).join('/')}
-                            </p>
-                        </div>
-                        ${timeStr ? `<span class="text-[11px] text-text-dim whitespace-nowrap">${timeStr}</span>` : ''}
-                        ${confidenceBadge(e.confidence)}
-                    </div>`;
-                }).join('');
-            } catch (e) {
-                document.getElementById('recent-logs').innerHTML = '<p class="text-text-muted text-sm">Could not load recent activity.</p>';
+            const summary = textElement('div', 'flex-1 min-w-0');
+            const [headline, subline, action] = outcomeCopy(outcome, state, detail);
+            summary.append(
+                textElement('p', 'm-0 font-bold text-[13.5px] text-ink', headline),
+                textElement('p', 'm-0 mt-[3px] text-[12px] text-text-muted', subline));
+            panel.replaceChildren(summary);
+            if (action) {
+                const link = textElement('a',
+                    'flex items-center gap-[6px] bg-ink text-[#F4F1EA] px-[14px] py-[9px] rounded-[11px] text-[12.5px] font-bold no-underline flex-shrink-0',
+                    action[0]);
+                link.href = reviewHref(action[1]);
+                panel.appendChild(link);
+            }
+            panel.classList.remove('hidden');
+        }
+
+        // [headline, subline, [action label, action href] | null] for one outcome.
+        function outcomeCopy(outcome, state, detail) {
+            const name = state.filename || 'this scan';
+            if (outcome === 'duplicate') return duplicateCopy(detail, name);
+            if (outcome === 'failed') {
+                return [detail.message || `${name} could not be processed.`,
+                        'Nothing was added to your archive.', null];
+            }
+            if (outcome === 'new_empty') {
+                return [detail.message || `${name} was read, but no document was found in it.`,
+                        'Nothing was added to your archive.', null];
+            }
+            const filed = state.auto_filed || 0;
+            const review = state.review_queue || 0;
+            const total = state.documents_total || (state.documents || []).length;
+            const headline = detail.message
+                || `Added ${total} ${total === 1 ? 'document' : 'documents'} from ${name}`;
+            const subline = `${filed} filed \u00b7 ${review} ${review === 1 ? 'needs' : 'need'} review`;
+            const action = (review > 0 && state.review_url)
+                ? ['Review this batch', state.review_url] : null;
+            return [headline, subline, action];
+        }
+
+        // An already-imported scan names the batch it was first added as. It offers the
+        // existing batch only while that batch still has something to review; when it is
+        // fully filed it states where the document already is, and invents no link.
+        function duplicateCopy(detail, name) {
+            const first = detail.source_name || name;
+            const when = formatWhen(detail.created_at);
+            const pending = detail.pending_review || 0;
+            const filedPaths = Array.isArray(detail.filed_paths) ? detail.filed_paths : [];
+            const headline = `Already imported \u00b7 ${name}`;
+            if (pending > 0) {
+                return [headline,
+                        `First added as ${first}${when ? ' on ' + when : ''} \u00b7 `
+                        + `${pending} ${pending === 1 ? 'document' : 'documents'} still to review`,
+                        ['Open existing batch', detail.review_url]];
+            }
+            if (filedPaths.length > 0) {
+                const more = filedPaths.length > 1 ? ` (+${filedPaths.length - 1} more)` : '';
+                return [headline, `Already filed \u00b7 ${filedPaths[0]}${more}`, null];
+            }
+            return [headline, `First added as ${first}${when ? ' on ' + when : ''}`, null];
+        }
+
+        function formatWhen(timestamp) {
+            if (typeof timestamp !== 'string' || !timestamp) return '';
+            const moment = new Date(timestamp);
+            if (isNaN(moment.getTime())) return '';
+            return moment.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+                + ', ' + moment.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+        }
+
+        // One notification per finished run, replacing whatever the previous run left.
+        const OUTCOME_TOASTS = {
+            duplicate: ['This scan was already imported', 'info'],
+            new_empty: ['No document was found in this scan', 'warning'],
+        };
+
+        function announceOutcome(state) {
+            const outcome = state.outcome || (state.status === 'error' ? 'failed' : 'new');
+            if (outcome === 'failed') {
+                showToast((state.outcome_detail || {}).message || state.step
+                          || 'Processing failed', 'error', 0, 'intake');
+                return;
+            }
+            const fixed = OUTCOME_TOASTS[outcome];
+            if (fixed) {
+                showToast(fixed[0], fixed[1], 5000, 'intake');
+                return;
+            }
+            const review = state.review_queue || 0;
+            showToast(review > 0
+                ? `This batch \u00b7 ${review} ${review === 1 ? 'document needs' : 'documents need'} review`
+                : 'Every document in this batch was filed',
+                review > 0 ? 'warning' : 'success', 5000, 'intake');
+        }
+
+        // ---------------------------------------------------------------------
+        // Global metrics and batch history, read from durable local state.
+        // Every number on this page comes from one answer, so the tiles and the
+        // batch panel can never contradict each other.
+        // ---------------------------------------------------------------------
+        const ACTIVITY_LIMIT = 8;
+        const JOB_STATUS_LABELS = {
+            review: 'Needs review', completed: 'Filed', failed: 'Failed',
+            filing: 'Filing', ocr: 'Reading', classified: 'Matching rules',
+            ready: 'Queued', discovered: 'Queued', stabilizing: 'Queued',
+            awaiting_model: 'Waiting for the model', privacy_blocked: 'Held back',
+            undoing: 'Undoing', undone: 'Undone',
+        };
+
+        function setStat(id, value) {
+            const el = document.getElementById(id);
+            if (el) el.textContent = typeof value === 'number' ? String(value) : '0';
+        }
+
+        async function loadActivity() {
+            const container = document.getElementById('recent-logs');
+            const scopeId = await activeArchiveScopeId();
+            if (!scopeId) { renderActivityProblem(container); return; }
+            const { ok, data } = await docflowApi('GET',
+                `/api/v1/activity?archive_scope_id=${encodeURIComponent(scopeId)}`
+                + `&limit=${ACTIVITY_LIMIT}`);
+            if (!ok || !data || typeof data !== 'object') {
+                renderActivityProblem(container);
+                return;
+            }
+            const totals = (data.totals && typeof data.totals === 'object') ? data.totals : {};
+            setStat('stat-review', totals.pending_review);
+            setStat('stat-filed', totals.filed_today);
+            setStat('stat-total', totals.filed_documents);
+            setStat('stat-batches', totals.batches);
+            renderReviewCallout(totals.pending_review || 0);
+            renderBatches(container, Array.isArray(data.batches) ? data.batches : []);
+            updateReviewBadge();
+        }
+
+        function renderActivityProblem(container) {
+            if (container) {
+                container.replaceChildren(textElement('p', 'text-text-muted text-sm',
+                    'Recent batches could not be read from local state.'));
             }
         }
 
-        // Load review queue count for callout + stats
-        async function loadReviewCount() {
-            try {
-                const resp = await fetch('/api/queue');
-                const data = await resp.json();
-                const count = (data.items || []).length;
-                document.getElementById('stat-review').textContent = count;
-                if (count > 0) {
-                    document.getElementById('review-callout').classList.remove('hidden');
-                    document.getElementById('callout-count').textContent = count;
-                }
-            } catch (e) { /* ignore */ }
+        function renderReviewCallout(count) {
+            const callout = document.getElementById('review-callout');
+            if (!callout) return;
+            callout.classList.toggle('hidden', count === 0);
+            document.getElementById('callout-count').textContent = count;
         }
 
-        loadRecentActivity();
-        loadReviewCount();
+        // Batch names and statuses are document-derived strings: text, never markup.
+        function renderBatches(container, batches) {
+            if (!container) return;
+            if (batches.length === 0) {
+                const empty = textElement('div', 'text-center py-12');
+                const bubble = textElement('div',
+                    'w-16 h-16 bg-tile rounded-full flex items-center justify-center mx-auto mb-4');
+                bubble.appendChild(iconElement('scan', 28, '#A9A595'));
+                empty.append(bubble,
+                    textElement('p', 'text-ink font-medium mb-1 m-0', 'No documents added yet'),
+                    textElement('p', 'text-text-faint text-sm m-0 mt-1',
+                        'Add a scanned PDF above to get started'));
+                container.replaceChildren(empty);
+                return;
+            }
+            container.replaceChildren(...batches.map((batch, index) =>
+                batchRow(batch, index === 0)));
+        }
+
+        function batchRow(batch, isNewest) {
+            const row = textElement('div',
+                'flex flex-wrap items-center gap-[14px] bg-white border border-border-card rounded-card-sm py-[13px] px-4 shadow-card');
+            const bubble = textElement('div',
+                'w-9 h-9 rounded-[10px] bg-canvas flex items-center justify-center flex-shrink-0');
+            bubble.appendChild(iconElement('description', 19, '#A9A595'));
+            const text = textElement('div', 'flex-1 min-w-0');
+            const title = textElement('p',
+                'm-0 flex items-center gap-2 font-mono font-medium text-[12.5px] text-ink truncate');
+            title.appendChild(textElement('span', null, batch.source_name || 'Scan'));
+            if (isNewest) {
+                title.appendChild(textElement('span',
+                    'text-[9.5px] font-bold tracking-[.08em] uppercase text-text-muted bg-inset px-[6px] py-[1px] rounded-pill',
+                    'Newest'));
+            }
+            const pages = batch.page_count || 0;
+            text.append(title, textElement('p', 'm-0 mt-[3px] text-[11.5px] text-text-faint',
+                `${JOB_STATUS_LABELS[batch.status] || batch.status} · ${pages} `
+                + `${pages === 1 ? 'page' : 'pages'} · ${batch.filed_documents || 0} filed `
+                + `· ${batch.pending_review || 0} to review`));
+            row.append(bubble, text);
+            const when = formatWhen(batch.created_at);
+            if (when) {
+                row.appendChild(textElement('span',
+                    'text-[11px] text-text-dim whitespace-nowrap', when));
+            }
+            if ((batch.pending_review || 0) > 0 && batch.job_id) {
+                const link = textElement('a',
+                    'flex items-center gap-[6px] bg-ink text-[#F4F1EA] px-[12px] py-[7px] rounded-[9px] text-[12px] font-bold no-underline flex-shrink-0',
+                    'Open review');
+                link.href = `/review?job_id=${encodeURIComponent(batch.job_id)}`;
+                row.appendChild(link);
+            }
+            return row;
+        }
+
+        loadActivity();
     </script>
 </body>
 </html>

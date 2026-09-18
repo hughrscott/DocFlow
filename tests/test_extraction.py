@@ -1,14 +1,13 @@
 """Tests for src/extraction/extractor."""
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import pytest
 from pypdf import PdfWriter
 
-from docflow.clustering.clusterer import DocumentCandidate
 from docflow.classification.classifier import FilingDecision
+from docflow.clustering.clusterer import DocumentCandidate
 from docflow.extraction.extractor import extract_documents
 
 
@@ -30,7 +29,7 @@ def _make_decision(
     target_dir: str,
 ) -> FilingDecision:
     candidate = DocumentCandidate(
-        pages=pages, institution="pnc", account="1236",
+        pages=pages, institution="pnc", account="7364",
         period="February2026", doc_type="statement",
         clustering_confidence=0.9,
     )
@@ -68,15 +67,14 @@ class TestExtractDocuments:
         extract_documents(three_page_pdf, decisions, config)
         assert Path(target).is_dir()
 
-    def test_filing_log_written(self, three_page_pdf, tmp_path):
-        target = str(tmp_path / "output")
+    def test_no_filing_log_or_hash_json_written_to_archive(self, three_page_pdf, tmp_path):
+        # Phase 3: the archive plane holds only filed PDFs and originals.
         archive = tmp_path / "archive"
+        target = str(archive / "output")
         decisions = [_make_decision([1], "test.pdf", target)]
         config = {"archive_root": str(archive)}
         extract_documents(three_page_pdf, decisions, config)
 
-        logs = list(archive.glob("filing_log_*.json"))
-        assert len(logs) == 1
-        data = json.loads(logs[0].read_text())
-        assert len(data["entries"]) == 1
-        assert data["entries"][0]["filename"] == "test.pdf"
+        assert sorted(p.relative_to(archive).as_posix()
+                      for p in archive.rglob("*") if p.is_file()) == ["output/test.pdf"]
+        assert not list(tmp_path.rglob("*.json"))

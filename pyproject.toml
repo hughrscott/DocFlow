@@ -38,5 +38,8 @@ docflow = "docflow.cli:cli"
 [tool.hatch.build.targets.wheel]
 packages = ["docflow"]
 
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]

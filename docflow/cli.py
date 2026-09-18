@@ -295,7 +295,7 @@ def init() -> None:
     console.print(f"  Config created: {config_dest}")
 
     # Archive root
-    archive = click.prompt("Archive root directory", default="~/ElectronicFiles")
+    archive = click.prompt("Archive root directory", default="~/DocFlowExample/archive")
     archive_path = Path(os.path.expanduser(archive))
     archive_path.mkdir(parents=True, exist_ok=True)
     console.print(f"  Archive root: {archive_path}")
@@ -323,10 +323,10 @@ def init() -> None:
     with open(config_dest, "w") as f:
         yaml.dump(config, f, default_flow_style=False, sort_keys=False)
 
-    console.print(f"\n[green]Setup complete![/green]")
+    console.print("\n[green]Setup complete![/green]")
     console.print(f"  Config: {config_dest}")
-    console.print(f"  Start:  docflow start")
-    console.print(f"  Check:  docflow check")
+    console.print("  Start:  docflow start")
+    console.print("  Check:  docflow check")
 
 
 # ---------------------------------------------------------------------------
@@ -427,36 +427,52 @@ def uninstall_service() -> None:
 # ui (foreground server)
 # ---------------------------------------------------------------------------
 
+def _loopback_host(ctx, param, value: str) -> str:
+    """The UI is local-only: refuse any bind that is not a loopback address."""
+    from docflow.web.binding import NonLoopbackBindError, require_loopback_host
+
+    try:
+        return require_loopback_host(value)
+    except NonLoopbackBindError:
+        raise click.BadParameter(
+            "must be a loopback address (127.0.0.1, ::1 or localhost)") from None
+
+
 @cli.command()
 @click.pass_context
-@click.option("--host", default="127.0.0.1", help="Server host.")
+@click.option("--host", default="127.0.0.1", callback=_loopback_host,
+              help="Loopback server host (non-loopback binds are rejected).")
 @click.option("--port", default=_DEFAULT_PORT, type=int, help="Server port.")
 def ui(ctx, host: str, port: int) -> None:
     """Launch the full DocFlow web UI (foreground)."""
     import uvicorn
-    from docflow.web.app import app, configure
+    from docflow.web.app import app, configure, configure_state
+    from docflow.web.bootstrap import StateBootstrapError, open_local_state
 
     config_path = ctx.obj["config_path"]
     config = _load_config(config_path)
+    try:
+        state = open_local_state(config)
+    except StateBootstrapError as exc:
+        raise click.ClickException(str(exc)) from None
     configure(config, config_path=config_path)
+    configure_state(state.store, state.filer, scope_id=state.scope_id)
     click.echo(f"\n  DocFlow UI: http://{host}:{port}\n")
-    uvicorn.run(app, host=host, port=port, log_level="info")
+    try:
+        uvicorn.run(app, host=host, port=port, log_level="info")
+    finally:
+        configure_state(None)
+        state.close()
 
 
 @cli.command()
 @click.pass_context
-@click.option("--host", default="127.0.0.1", help="Server host.")
+@click.option("--host", default="127.0.0.1", callback=_loopback_host,
+              help="Loopback server host (non-loopback binds are rejected).")
 @click.option("--port", default=_DEFAULT_PORT, type=int, help="Server port.")
 def review(ctx, host: str, port: int) -> None:
-    """Launch the review queue web UI (legacy)."""
-    import uvicorn
-    from docflow.review.server import app, configure
-
-    config_path = ctx.obj["config_path"]
-    config = _load_config(config_path)
-    configure(config)
-    click.echo(f"Review queue: http://{host}:{port}")
-    uvicorn.run(app, host=host, port=port, log_level="warning")
+    """Launch the durable review queue (the same local UI as ``docflow ui``; open /review)."""
+    ctx.invoke(ui, host=host, port=port)
 
 
 # ---------------------------------------------------------------------------
@@ -472,7 +488,14 @@ def learn(ctx) -> None:
 
     console = Console()
     config = _load_config(ctx.obj["config_path"])
-    suggestions = suggest_rules(config)
+    from docflow.config.learner import CORRECTIONS_FILENAME
+    from docflow.web.bootstrap import StateBootstrapError, local_state_paths
+
+    try:
+        _, paths = local_state_paths(config)
+    except StateBootstrapError as exc:
+        raise click.ClickException(str(exc)) from None
+    suggestions = suggest_rules(config, log_path=paths.logs / CORRECTIONS_FILENAME)
 
     if not suggestions:
         console.print("[dim]No rule suggestions yet. Corrections from the review queue "
@@ -486,7 +509,7 @@ def learn(ctx) -> None:
         console.print(f"    file_to: {s['file_to']}")
         console.print(f"    template: {s['filename_template']}")
 
-    console.print(f"\n[dim]To add these rules, copy them into your config YAML.[/dim]")
+    console.print("\n[dim]To add these rules, copy them into your config YAML.[/dim]")
 
 
 @cli.command("scan-archive")
@@ -610,7 +633,7 @@ def watch(ctx, interval: int) -> None:
     config = _load_config(config_path)
 
     watch_dir = Path(os.path.expanduser(
-        config.get("scan_watch_folder", "~/ElectronicFiles/ToBeOrganized")
+        config.get("scan_watch_folder", "~/DocFlowExample/inbox")
     ))
     docflow_state_dir = _docflow_dir()
     processed_file = docflow_state_dir / "processed.txt"
@@ -650,83 +673,94 @@ def watch(ctx, interval: int) -> None:
 # Pipeline
 # ---------------------------------------------------------------------------
 
+def _stage_cli_input(input_pdf: Path, filer) -> str:
+    """Source handle for a CLI input: ``watch:`` inside the watch folder, else ``upload:``.
+
+    A file outside the configured roots is copied (never linked, so the retained original
+    is independent of it) into the upload folder under a collision-safe name, and is itself
+    never moved or removed.
+    """
+    from docflow.filing.operations import FilingError, collision_candidates, confined
+    from docflow.ingestion.loader import raw_sha256
+    from docflow.state.repositories import UnsafeValueError, validate_source_locator
+
+    source = Path(input_pdf).absolute()
+    watch = filer.source_roots.get("watch")
+    if watch is not None:
+        try:
+            relative = source.relative_to(watch.absolute()).as_posix()
+            confined(watch, relative)
+            return validate_source_locator(f"watch:{relative}")
+        except (ValueError, UnsafeValueError):
+            pass
+    uploads = filer.source_roots["upload"]
+    uploads.mkdir(parents=True, exist_ok=True)
+    expected = raw_sha256(source)
+    for relative in collision_candidates(".", source.name):
+        name = Path(relative).name
+        staged = uploads / name
+        if staged.exists() or staged.is_symlink():
+            if not staged.is_symlink() and staged.is_file() and raw_sha256(staged) == expected:
+                return validate_source_locator(f"upload:{name}")
+            continue
+        try:
+            with open(source, "rb") as reader, open(staged, "xb") as writer:
+                shutil.copyfileobj(reader, writer)
+                writer.flush()
+                os.fsync(writer.fileno())
+        except FileExistsError:
+            continue
+        if raw_sha256(staged) != expected:
+            staged.unlink()
+            raise FilingError("source_changed")
+        return validate_source_locator(f"upload:{name}")
+    raise FilingError("collision_limit_exceeded")
+
+
 def _run_pipeline(input_pdf: Path, config_path: Path) -> None:
-    """Execute the full mail archiver pipeline."""
-    from docflow.ingestion.loader import load_pdf
-    from docflow.ocr.analyzer import analyze_pages
-    from docflow.clustering.clusterer import cluster_pages
-    from docflow.classification.classifier import classify_candidates
-    from docflow.filing.confidence_gate import gate_decisions
-    from docflow.extraction.extractor import extract_documents
-    from docflow.summary.generator import generate_summary
-    from docflow.ingestion.archiver import archive_original
-    from docflow.review.queue import save_review_queue
+    """Process one scan durably: local OCR, classification and journaled filing.
+
+    Review items land in local application state (``docflow ui`` lists them); nothing
+    operational (queue, summary, log) is written to the archive.
+    """
     from rich.console import Console
+
+    from docflow.filing.processing import process_scan
+    from docflow.llm.gateway import PSEUDONYMIZATION_WARNING
+    from docflow.web.bootstrap import StateBootstrapError, open_local_state
 
     console = Console()
     config = _load_config(config_path)
-
     console.rule("[bold blue]Mail Archiver")
     console.print(f"Input:  {input_pdf}")
     console.print(f"Config: {config_path}")
+    if config.get("privacy_mode") == "local_only":
+        console.print("[dim]Local-only mode: no model calls will be made.[/dim]")
+    else:
+        console.print(f"[dim]{PSEUDONYMIZATION_WARNING}[/dim]")
 
-    # 0. Build dedup index on first run
-    from docflow.filing.dedup import is_empty, build_initial_index
-    if is_empty():
-        console.print("\n[bold]Building duplicate index (first run)...[/bold]")
-        count = build_initial_index(config.get("archive_root", "~/ElectronicFiles"))
-        console.print(f"   Indexed {count} existing files")
+    try:
+        state = open_local_state(config)
+    except StateBootstrapError as exc:
+        raise click.ClickException(str(exc)) from None
+    try:
+        locator = _stage_cli_input(Path(input_pdf), state.filer)
+        result = process_scan(state.store, state.filer, state.scope_id, locator, config,
+                              progress=lambda step, percent: console.print(f"  {step}..."))
+    finally:
+        state.close()
 
-    # 1. Ingestion
-    console.print("\n[bold]1. Ingesting PDF...[/bold]")
-    page_images = load_pdf(input_pdf)
-    console.print(f"   {len(page_images)} pages loaded")
-
-    # 2. OCR
-    console.print("\n[bold]2. OCR + signal extraction...[/bold]")
-    page_records = analyze_pages(page_images)
-
-    # 3. Clustering
-    console.print("\n[bold]3. Clustering pages into documents...[/bold]")
-    candidates = cluster_pages(page_records, config)
-    console.print(f"   {len(candidates)} document candidates identified")
-
-    # 4. Classification
-    console.print("\n[bold]4. Classifying and routing...[/bold]")
-    decisions = classify_candidates(candidates, config)
-
-    # 5. Confidence gate
-    console.print("\n[bold]5. Confidence gate...[/bold]")
-    auto_file, review_queue = gate_decisions(decisions, config)
-    console.print(f"   Auto-file: {len(auto_file)}  |  Review queue: {len(review_queue)}")
-
-    # 6. Extraction
-    console.print("\n[bold]6. Extracting and filing documents...[/bold]")
-    extract_documents(input_pdf, auto_file, config)
-
-    # 7. Summary
-    console.print("\n[bold]7. Generating summary...[/bold]")
-    generate_summary(auto_file, review_queue, config)
-
-    # 8. Archive original
-    console.print("\n[bold]8. Archiving original scan...[/bold]")
-    archived_path = archive_original(input_pdf, config)
-
-    if review_queue:
-        save_review_queue(review_queue, archived_path, config)
-        console.rule("[bold yellow]Review Required")
-        for decision in review_queue:
-            console.print(
-                f"  [yellow]LOW CONFIDENCE ({decision.confidence:.2f})[/yellow] "
-                f"{decision.candidate.institution or 'Unknown'} — "
-                f"pages {decision.candidate.pages} — {decision.notes or 'no notes'}"
-            )
+    accounting = result.payload.get("page_accounting", {})
+    console.print(f"\n  Job status: {result.job_status}  |  pages filed: "
+                  f"{accounting.get('filed', 0)}  |  pages for review: "
+                  f"{accounting.get('review', 0)}")
+    for entry in result.payload.get("files", []):
+        console.print(f"  [green]{entry['role'].upper()}[/green] {entry['relative_path']}")
+    if result.job_status == "review":
         console.print(
-            f"\n  [bold]{len(review_queue)} item(s) need review.[/bold]\n"
-            f"  Run: [cyan]docflow ui[/cyan]\n"
-            f"  Or open: [cyan]http://127.0.0.1:{_DEFAULT_PORT}[/cyan]"
+            f"\n  [bold]Review required.[/bold] Run: [cyan]docflow ui[/cyan]\n"
+            f"  Or open: [cyan]http://127.0.0.1:{_DEFAULT_PORT}/review[/cyan]"
         )
-
     console.rule("[bold green]Done")
 
 

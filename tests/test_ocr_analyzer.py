@@ -148,7 +148,7 @@ class TestExtractPageOfN:
 
 class TestExtractAccountHint:
     def test_account_number(self):
-        assert extract_account_hint("Account #****1236") == "1236"
+        assert extract_account_hint("Account #****7364") == "7364"
 
     def test_acct_colon(self):
         assert extract_account_hint("Acct: ***5678") == "5678"
@@ -193,7 +193,7 @@ class TestPageRecord:
             page_number=1,
             raw_text="test",
             institution="pnc",
-            account_hint="1236",
+            account_hint="7364",
             period_hint="February2026",
             page_of_n="Page 1 of 3",
             doc_type_hint="statement",

@@ -1,15 +1,29 @@
-"""LLM client: multi-provider support via OpenAI-compatible API."""
+"""Provider adapter for CloudPromptGateway (OpenAI-compatible APIs).
+
+This is the only module allowed to import or call a provider SDK. It sends
+nothing but requests sealed by the gateway, with SDK automatic retries disabled.
+"""
 from __future__ import annotations
 
 import json
 import logging
 import os
+from collections.abc import Mapping
 
+import openai
 from openai import OpenAI
+
+from docflow.llm.gateway import (
+    DEFAULT_MODEL,
+    SanitizedRequest,
+    TransportFailure,
+    verify_sealed,
+)
+from docflow.privacy.types import GatewayBypassError
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_MODEL = "google/gemini-2.0-flash-001"
+__all__ = ["DEFAULT_MODEL", "PROVIDERS", "OpenAICompatibleTransport", "build_transport"]
 
 # Provider presets — base_url and env var for API key
 PROVIDERS = {
@@ -32,88 +46,61 @@ PROVIDERS = {
 }
 
 
-def _get_client(config: dict | None = None) -> OpenAI:
-    """Build an OpenAI client for the configured provider."""
+class OpenAICompatibleTransport:
+    """Send sealed gateway requests to an OpenAI-compatible chat completions API."""
+
+    def __init__(self, *, base_url: str, api_key: str, provider: str, http_client=None) -> None:
+        self.provider = provider
+        self.client = OpenAI(base_url=base_url, api_key=api_key, max_retries=0,
+                             http_client=http_client)
+
+    def send(self, request: SanitizedRequest) -> str:
+        verify_sealed(request)
+        payload = json.loads(request.body)
+        try:
+            response = self.client.chat.completions.create(
+                **payload,
+                timeout=request.timeout,
+                extra_headers={"Idempotency-Key": request.idempotency_key},
+            )
+        except openai.APITimeoutError:
+            raise TransportFailure("provider timed out", code="timeout", retryable=True) from None
+        except (openai.APIConnectionError, openai.RateLimitError, openai.InternalServerError):
+            raise TransportFailure("provider unavailable", retryable=True) from None
+        except openai.OpenAIError:
+            raise TransportFailure("provider rejected the request") from None
+        choices = response.choices or []
+        return (choices[0].message.content or "") if choices else ""
+
+
+def build_transport(config: Mapping) -> OpenAICompatibleTransport:
+    """Build the configured provider transport (default factory for the gateway)."""
     from dotenv import load_dotenv
     load_dotenv()
 
-    cfg = config or {}
+    provider = config.get("llm_provider", "openrouter")
+    preset = PROVIDERS.get(provider)
+    if preset is None:  # never redirect an unrecognised provider to a cloud preset
+        raise TransportFailure("unknown model provider", code="transport_unavailable")
+    base_url = config.get("llm_base_url") or preset["base_url"]
 
-    # Determine provider and settings
-    provider = cfg.get("llm_provider", "openrouter")
-    preset = PROVIDERS.get(provider, PROVIDERS["openrouter"])
-
-    # Config can override base_url directly
-    base_url = cfg.get("llm_base_url", preset["base_url"])
-
-    # API key: config > env var > provider-specific env var
-    api_key = cfg.get("llm_api_key")
-    # Skip masked placeholder from settings UI
+    # API key: config > provider-specific env var > generic fallback
+    api_key = config.get("llm_api_key")
     if api_key in ("", "••••••••", None):
         api_key = None
     if not api_key and preset["env_key"]:
         api_key = os.environ.get(preset["env_key"])
     if not api_key:
-        # Try generic fallback
         api_key = os.environ.get("OPENROUTER_API_KEY")
-
     if not api_key and provider != "ollama":
-        raise RuntimeError(
-            f"No API key found for provider '{provider}'. "
-            f"Set it in config (llm_api_key), in .env ({preset.get('env_key', '?')}), "
-            f"or in the Settings UI."
-        )
+        raise TransportFailure("no API key configured for the model provider",
+                               code="transport_unavailable")
 
     # Ollama doesn't need a real key but the SDK requires one
-    if not api_key:
-        api_key = "ollama"
-
-    return OpenAI(base_url=base_url, api_key=api_key, timeout=60.0)
+    return OpenAICompatibleTransport(base_url=base_url, api_key=api_key or "ollama",
+                                     provider=provider)
 
 
-def chat_json(
-    prompt: str,
-    *,
-    system: str = "You are a document analysis assistant. Always respond with valid JSON.",
-    model: str | None = None,
-    config: dict | None = None,
-) -> dict | list:
-    """Send a prompt and parse the JSON response.
-
-    Supports any OpenAI-compatible API (OpenRouter, OpenAI, Groq, Ollama).
-    """
-    cfg = config or {}
-    if model is None:
-        model = cfg.get("llm_model") or cfg.get("openrouter_model") or DEFAULT_MODEL
-
-    client = _get_client(cfg)
-
-    logger.info("LLM call: model=%s, prompt_length=%d", model, len(prompt))
-
-    kwargs = {
-        "model": model,
-        "messages": [
-            {"role": "system", "content": system},
-            {"role": "user", "content": prompt},
-        ],
-        "temperature": 0.1,
-    }
-
-    # Not all providers support response_format
-    provider = cfg.get("llm_provider", "openrouter")
-    if provider != "ollama":
-        kwargs["response_format"] = {"type": "json_object"}
-
-    response = client.chat.completions.create(**kwargs)
-
-    raw = response.choices[0].message.content
-    logger.debug("LLM raw response: %s", raw)
-
-    try:
-        return json.loads(raw)
-    except json.JSONDecodeError as exc:
-        import re
-        m = re.search(r"```(?:json)?\s*([\s\S]*?)```", raw)
-        if m:
-            return json.loads(m.group(1))
-        raise ValueError(f"LLM returned invalid JSON: {raw[:500]}") from exc
+def chat_json(prompt: str, **kwargs) -> dict | list:
+    """Removed direct model call. All model use must go through CloudPromptGateway."""
+    raise GatewayBypassError("direct model calls are disabled; use CloudPromptGateway")

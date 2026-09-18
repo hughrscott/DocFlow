@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import calendar
+import dataclasses
 import logging
 import os
 import re
@@ -72,7 +73,7 @@ def _sanitise_filename(filename: str) -> str:
 
 def _resolve_target_directory(file_to: str, config: dict, year: str = "") -> str:
     """Build the absolute target directory path."""
-    archive_root = os.path.expanduser(config.get("archive_root", "~/ElectronicFiles"))
+    archive_root = os.path.expanduser(config.get("archive_root", "~/DocFlowExample/archive"))
     resolved = file_to.format(year=year) if "{year}" in file_to else file_to
     return os.path.join(archive_root, resolved)
 
@@ -154,7 +155,7 @@ def _generate_filename(template: str, candidate: DocumentCandidate) -> str:
 # ---------------------------------------------------------------------------
 
 def classify_candidates(
-    candidates: list[DocumentCandidate], config: dict
+    candidates: list[DocumentCandidate], config: dict, gateway=None
 ) -> list[FilingDecision]:
     """Return a FilingDecision for each candidate.
 
@@ -163,12 +164,17 @@ def classify_candidates(
        signal clarity, use it directly without an LLM call.
     2. Otherwise, use LLM classification with rules.md as context.
     3. Fall back to unmatched if both fail.
+
+    Model calls go only through the job's CloudPromptGateway.
     """
     from docflow.config.rules_manager import load_rules_md
+    from docflow.llm.gateway import CloudPromptGateway
 
     filing_rules = config.get("filing_rules", [])
     threshold = config.get("confidence_threshold", 0.75)
     rules_md_content = load_rules_md(config)
+    if gateway is None:
+        gateway = CloudPromptGateway(config, rules_md=rules_md_content)
     decisions: list[FilingDecision] = []
 
     for candidate in candidates:
@@ -181,12 +187,12 @@ def classify_candidates(
         # LLM classification (primary path when rules.md exists)
         if decision is None and rules_md_content:
             decision = _llm_classify_with_rules_md(
-                candidate, rules_md_content, config, threshold
+                candidate, rules_md_content, config, threshold, gateway
             )
 
         # Legacy LLM fallback (when no rules.md but YAML rules exist)
         if decision is None and filing_rules:
-            decision = _llm_classify_legacy(candidate, config, threshold)
+            decision = _llm_classify_legacy(candidate, config, threshold, gateway)
 
         # Unmatched fallback
         if decision is None:
@@ -239,156 +245,125 @@ def _try_rule_match(
 
 
 # ---------------------------------------------------------------------------
-# LLM classification using rules.md
+# Model classification through CloudPromptGateway
 # ---------------------------------------------------------------------------
+
+def _model_classify(candidate: DocumentCandidate, rules: list, gateway):
+    """Return a validated Classification, or None when no model result is accepted."""
+    from docflow.privacy.types import NoModelResult
+
+    raw_texts = candidate.raw_signals.get("raw_texts", [])
+    document = {
+        "pages": candidate.pages,
+        "institution": candidate.institution,
+        "doc_type": candidate.doc_type,
+        "period": candidate.period,
+        "account": candidate.account,
+        "text_preview": raw_texts[0][:500] if raw_texts else "",
+    }
+    try:
+        return gateway.classify(document, rules)
+    except NoModelResult as exc:
+        logger.info("Model classification unavailable (%s)", exc.code)
+        return None
+
+
+def _rule_decision(
+    candidate: DocumentCandidate, result, config: dict, threshold: float, label: str, notes: str,
+) -> FilingDecision | None:
+    """Build filename and destination locally from a matched rule."""
+    rule = result.rule
+    if not rule.file_to or not rule.filename_template:
+        return None
+    period = candidate.period or result.period
+    year = _extract_year(period)
+    try:
+        filename = _generate_filename(rule.filename_template,
+                                      dataclasses.replace(candidate, period=period))
+        target_dir = _resolve_target_directory(rule.file_to, config, year=year)
+    except (KeyError, IndexError, ValueError):
+        return None
+    confidence = round(result.confidence, 3)
+    return FilingDecision(
+        candidate=candidate,
+        filename=filename,
+        target_directory=target_dir,
+        rule_matched=label,
+        confidence=confidence,
+        auto_file=confidence >= threshold,
+        notes=notes,
+    )
+
+
+def _suggested_decision(
+    candidate: DocumentCandidate, result, config: dict, threshold: float, label: str, notes: str,
+    default_directory: str | None = None,
+) -> FilingDecision | None:
+    """Use a validated, archive-confined model suggestion for a new location."""
+    directory = result.relative_directory or default_directory
+    if not result.filename or not directory:
+        return None
+    confidence = round(result.confidence, 3)
+    return FilingDecision(
+        candidate=candidate,
+        filename=result.filename,
+        target_directory=_resolve_target_directory(directory, config),
+        rule_matched=label,
+        confidence=confidence,
+        auto_file=confidence >= threshold,
+        notes=notes,
+    )
+
 
 def _llm_classify_with_rules_md(
     candidate: DocumentCandidate,
     rules_md: str,
     config: dict,
     threshold: float,
+    gateway=None,
 ) -> FilingDecision | None:
-    """Use LLM with rules.md context to classify a document."""
-    from docflow.llm.client import chat_json
-    from docflow.llm.prompts import build_rules_md_classification_prompt
+    """Classify with the model using rules.md rules (sent only as opaque rule tokens)."""
+    from docflow.config.rules_manager import parse_rules_md
+    from docflow.llm.gateway import CloudPromptGateway, LocalRule
 
-    raw_text_preview = ""
-    raw_texts = candidate.raw_signals.get("raw_texts", [])
-    if raw_texts:
-        raw_text_preview = raw_texts[0][:500]
-
-    document_summary = {
-        "pages": candidate.pages,
-        "institution": candidate.institution,
-        "doc_type": candidate.doc_type,
-        "period": candidate.period,
-        "account": candidate.account,
-        "raw_text_preview": raw_text_preview,
-    }
-
-    prompt = build_rules_md_classification_prompt(
-        document_summary,
-        rules_md,
-        config.get("entities", []),
-        config.get("family", []),
-        config.get("user", {}),
-    )
-
-    try:
-        result = chat_json(prompt, config=config)
-    except Exception:
-        logger.exception("LLM classification with rules.md failed")
+    gateway = gateway or CloudPromptGateway(config, rules_md=rules_md)
+    rules = [LocalRule.from_rules_md(r) for r in parse_rules_md(rules_md)]
+    result = _model_classify(candidate, rules, gateway)
+    if result is None:
         return None
-
-    suggested_filename = result.get("suggested_filename", "")
-    suggested_dir = result.get("suggested_directory", "")
-    confidence = result.get("confidence", 0.5)
-    rule_name = result.get("rule_matched", "")
-    reasoning = result.get("reasoning", "")
-
-    if not suggested_filename or not suggested_dir:
-        return None
-
-    # Use the period from LLM if candidate doesn't have one
-    period = candidate.period or result.get("period")
-    year = _extract_year(period)
-
-    filename = _sanitise_filename(suggested_filename)
-    target_dir = _resolve_target_directory(suggested_dir, config, year=year)
-
-    matched_label = f"rules_md:{rule_name}" if rule_name else "llm_suggested"
-
-    return FilingDecision(
-        candidate=candidate,
-        filename=filename,
-        target_directory=target_dir,
-        rule_matched=matched_label,
-        confidence=round(confidence, 3),
-        auto_file=confidence >= threshold,
-        notes=f"AI classification: {reasoning}",
-    )
+    notes = f"AI classification: {result.reasoning}"
+    if result.rule is not None:
+        return _rule_decision(candidate, result, config, threshold,
+                              f"rules_md:{result.rule.key}", notes)
+    return _suggested_decision(candidate, result, config, threshold, "llm_suggested", notes)
 
 
 # ---------------------------------------------------------------------------
-# Legacy LLM fallback (YAML-based prompt, for backwards compatibility)
+# Legacy model fallback (YAML rules, for backwards compatibility)
 # ---------------------------------------------------------------------------
 
 def _llm_classify_legacy(
     candidate: DocumentCandidate,
     config: dict,
     threshold: float,
+    gateway=None,
 ) -> FilingDecision | None:
-    """Use LLM with YAML rules context (legacy path)."""
-    from docflow.llm.client import chat_json
-    from docflow.llm.prompts import build_classification_prompt
+    """Classify with the model using YAML filing rules (sent only as opaque rule tokens)."""
+    from docflow.llm.gateway import CloudPromptGateway, LocalRule
 
-    raw_text_preview = ""
-    raw_texts = candidate.raw_signals.get("raw_texts", [])
-    if raw_texts:
-        raw_text_preview = raw_texts[0][:500]
-
-    document_summary = {
-        "pages": candidate.pages,
-        "institution": candidate.institution,
-        "doc_type": candidate.doc_type,
-        "period": candidate.period,
-        "account": candidate.account,
-        "raw_text_preview": raw_text_preview,
-    }
-
-    prompt = build_classification_prompt(
-        document_summary,
-        config.get("filing_rules", []),
-        config.get("entities", []),
-        config.get("family", []),
-        config.get("user", {}),
-    )
-
-    try:
-        result = chat_json(prompt, config=config)
-    except Exception:
-        logger.exception("Legacy LLM classification failed")
+    gateway = gateway or CloudPromptGateway(config)
+    rules = [LocalRule.from_yaml(r) for r in config.get("filing_rules", [])]
+    result = _model_classify(candidate, rules, gateway)
+    if result is None:
         return None
 
-    # If LLM matched an existing rule, validate
-    rule_id = result.get("rule_matched")
-    if rule_id:
-        filing_rules = config.get("filing_rules", [])
-        matched = next((r for r in filing_rules if r["id"] == rule_id), None)
-        if matched and _match_rule(matched, candidate):
-            filename = _generate_filename(matched["filename_template"], candidate)
-            file_to = matched["file_to"].format(
-                year=_extract_year(candidate.period or result.get("period"))
-            )
-            target_dir = _resolve_target_directory(file_to, config)
-            confidence = result.get("confidence", 0.6)
-            return FilingDecision(
-                candidate=candidate,
-                filename=filename,
-                target_directory=target_dir,
-                rule_matched=rule_id,
-                confidence=round(confidence, 3),
-                auto_file=confidence >= threshold,
-                notes=f"LLM matched rule: {result.get('reasoning', '')}",
-            )
+    # If the model matched an existing rule, validate it locally
+    if result.rule is not None and _match_rule(result.rule.source, candidate):
+        decision = _rule_decision(candidate, result, config, threshold, result.rule.key,
+                                  f"LLM matched rule: {result.reasoning}")
+        if decision is not None:
+            return decision
 
-    # LLM suggested a new filing location
-    suggested_filename = result.get("suggested_filename", "")
-    suggested_dir = result.get("suggested_directory", "_LLMSuggested")
-    confidence = result.get("confidence", 0.5)
-
-    if not suggested_filename:
-        return None
-
-    filename = _sanitise_filename(suggested_filename)
-    target_dir = _resolve_target_directory(suggested_dir, config)
-
-    return FilingDecision(
-        candidate=candidate,
-        filename=filename,
-        target_directory=target_dir,
-        rule_matched="llm_suggested",
-        confidence=round(confidence, 3),
-        auto_file=confidence >= threshold,
-        notes=f"LLM classification: {result.get('reasoning', '')}",
-    )
+    return _suggested_decision(candidate, result, config, threshold, "llm_suggested",
+                               f"LLM classification: {result.reasoning}",
+                               default_directory="_LLMSuggested")

@@ -114,9 +114,10 @@ class TestLearner:
                 corrected_filename=f"NewBankStatement{i}.pdf",
                 corrected_directory=str(tmp_path / "Finance" / "NewBank"),
                 config=config,
+                log_path=tmp_path / "state" / "corrections_log.json",
             )
 
-        suggestions = suggest_rules(config)
+        suggestions = suggest_rules(config, log_path=tmp_path / "state" / "corrections_log.json")
         assert len(suggestions) >= 1
         assert suggestions[0]["match"]["institution"] == "new_bank"
 
@@ -131,12 +132,13 @@ class TestLearner:
             corrected_filename="Fixed.pdf",
             corrected_directory="/new",
             config=config,
+            log_path=tmp_path / "state" / "corrections_log.json",
         )
 
-        suggestions = suggest_rules(config)
+        suggestions = suggest_rules(config, log_path=tmp_path / "state" / "corrections_log.json")
         assert len(suggestions) == 0
 
     def test_empty_corrections(self, tmp_path):
         config = {"archive_root": str(tmp_path)}
-        suggestions = suggest_rules(config)
+        suggestions = suggest_rules(config, log_path=tmp_path / "state" / "corrections_log.json")
         assert suggestions == []

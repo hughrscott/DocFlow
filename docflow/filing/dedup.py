@@ -1,163 +1,132 @@
-"""Content-hash deduplication for filed documents."""
+"""Content deduplication for filed documents, backed by application-state SQLite.
+
+The duplicate key is the canonical rendered-pixel document fingerprint (150 DPI,
+8-bit grayscale, page order and count). Extracted text, page dimensions, file names
+and page counts are never sufficient. The legacy ``~/.docflow/content_hashes.json``
+index is no longer read or written; Phase 1 migration inventories it and leaves it
+untouched. Without a state store these adapters are inert rather than falling back
+to a JSON file.
+"""
 from __future__ import annotations
 
-import hashlib
-import json
+import io
 import logging
 import os
+import tempfile
 from pathlib import Path
+
+from pypdf import PdfWriter
+
+from docflow.filing.operations import confined
+from docflow.ingestion.loader import fingerprint_pdf
+from docflow.state.repositories import StateStore, UnsafeValueError
 
 logger = logging.getLogger(__name__)
 
-HASH_DB_FILENAME = "content_hashes.json"
-
-
-def _hash_db_path() -> Path:
-    """Return path to the hash database."""
-    db_dir = Path.home() / ".docflow"
-    db_dir.mkdir(parents=True, exist_ok=True)
-    return db_dir / HASH_DB_FILENAME
-
-
-def _load_hashes() -> dict[str, str]:
-    """Load the hash database. Returns {hash: filepath}."""
-    path = _hash_db_path()
-    if not path.exists():
-        return {}
-    try:
-        with open(path) as f:
-            return json.load(f)
-    except (json.JSONDecodeError, KeyError):
-        return {}
-
-
-def _save_hashes(hashes: dict[str, str]) -> None:
-    """Save the hash database."""
-    with open(_hash_db_path(), "w") as f:
-        json.dump(hashes, f, indent=2)
-
 
 def hash_pdf_content(pdf_path: Path) -> str:
-    """Compute a content hash for a PDF based on page content.
-
-    Extracts text and page dimensions from each page to produce a
-    content-stable hash that doesn't change when the same pages are
-    re-extracted (which produces different PDF metadata/timestamps).
-    Falls back to raw file hash if text extraction fails.
-    """
-    try:
-        from pypdf import PdfReader
-        reader = PdfReader(str(pdf_path))
-        h = hashlib.sha256()
-        for page in reader.pages:
-            text = page.extract_text() or ""
-            h.update(text.encode("utf-8"))
-            # Include page dimensions for non-text PDFs (scanned images)
-            box = page.mediabox
-            h.update(f"{box.width}x{box.height}".encode("utf-8"))
-        return h.hexdigest()
-    except Exception:
-        # Fallback to raw file hash
-        h = hashlib.sha256()
-        with open(pdf_path, "rb") as f:
-            for chunk in iter(lambda: f.read(8192), b""):
-                h.update(chunk)
-        return h.hexdigest()
+    """Rendered-pixel document fingerprint of every page of *pdf_path*, in order."""
+    return fingerprint_pdf(Path(pdf_path)).document_sha256
 
 
 def hash_pages(reader, page_numbers: list[int]) -> str:
-    """Hash specific pages from a PdfReader without writing a file.
-
-    page_numbers are 1-indexed.
-    """
-    h = hashlib.sha256()
-    for pn in page_numbers:
-        page = reader.pages[pn - 1]
-        text = page.extract_text() or ""
-        h.update(text.encode("utf-8"))
-        box = page.mediabox
-        h.update(f"{box.width}x{box.height}".encode("utf-8"))
-    return h.hexdigest()
+    """Rendered-pixel fingerprint of 1-indexed *page_numbers* from a PdfReader."""
+    writer = PdfWriter()
+    for page in page_numbers:
+        writer.add_page(reader.pages[page - 1])
+    buffer = io.BytesIO()
+    writer.write(buffer)
+    with tempfile.TemporaryDirectory(prefix="docflow-hash-") as scratch:
+        path = Path(scratch) / "pages.pdf"
+        path.write_bytes(buffer.getvalue())
+        return hash_pdf_content(path)
 
 
-def is_duplicate(pdf_path: Path) -> tuple[bool, str | None]:
-    """Check if a PDF is a duplicate of an already-filed document.
+def _scope_root(store: StateStore, scope_id: str) -> Path:
+    return Path(store.scopes.get(scope_id).canonical_root)
 
-    Returns (is_dup, existing_path) where existing_path is the path
-    of the original file if it's a duplicate.
-    """
-    content_hash = hash_pdf_content(pdf_path)
-    hashes = _load_hashes()
 
-    if content_hash in hashes:
-        existing = hashes[content_hash]
-        # Verify the original still exists
-        if Path(existing).exists():
-            return True, existing
-        else:
-            # Original was deleted, remove stale entry
-            del hashes[content_hash]
-            _save_hashes(hashes)
-
+def is_duplicate(
+    pdf_path: Path, *, store: StateStore | None = None, scope_id: str | None = None
+) -> tuple[bool, str | None]:
+    """(True, archive-relative path) when a recorded filed PDF still renders identically."""
+    if store is None:
+        return False, None
+    expected = hash_pdf_content(pdf_path)
+    root = _scope_root(store, scope_id)
+    for record in store.files.find_by_content(scope_id, expected, "filed"):
+        try:
+            path = confined(root, record.relative_path)
+        except UnsafeValueError:
+            continue
+        if path.is_file() and not path.is_symlink() and hash_pdf_content(path) == expected:
+            return True, record.relative_path
     return False, None
 
 
-def register_file(pdf_path: Path) -> None:
-    """Register a filed document in the hash database."""
-    content_hash = hash_pdf_content(pdf_path)
-    hashes = _load_hashes()
-    hashes[content_hash] = str(pdf_path)
-    _save_hashes(hashes)
+def register_file(
+    pdf_path: Path,
+    *,
+    store: StateStore | None = None,
+    scope_id: str | None = None,
+    job_id: str | None = None,
+    page_numbers: list[int] | None = None,
+) -> None:
+    """Record an archive PDF as filed; no-op without a state store."""
+    if store is None:
+        return
+    root = _scope_root(store, scope_id)
+    fingerprint = fingerprint_pdf(Path(pdf_path))
+    relative = Path(pdf_path).resolve().relative_to(root).as_posix()
+    store.files.add(scope_id, job_id=job_id, relative_path=relative,
+                    content_sha256=fingerprint.document_sha256,
+                    page_numbers=page_numbers or list(range(1, fingerprint.page_count + 1)),
+                    role="filed")
 
 
-def is_empty() -> bool:
-    """Check if the hash database is empty or doesn't exist."""
-    hashes = _load_hashes()
-    return len(hashes) == 0
+def is_empty(*, store: StateStore | None = None, scope_id: str | None = None) -> bool:
+    """True only when a scope has no file records; without state there is nothing to build."""
+    if store is None:
+        return False
+    store.files.require_scope(scope_id)
+    row = store.db.connection.execute(
+        "SELECT 1 FROM file_records WHERE archive_scope_id = ? LIMIT 1", (scope_id,)
+    ).fetchone()
+    return row is None
 
 
-def build_initial_index(archive_root: str | Path, progress_callback=None) -> int:
-    """Scan the entire archive and build the hash database from scratch.
+def build_initial_index(
+    archive_root: str | Path,
+    progress_callback=None,
+    *,
+    store: StateStore | None = None,
+    scope_id: str | None = None,
+) -> int:
+    """Record existing archive PDFs as filed file records; returns how many were added.
 
-    Only runs when the hash database is empty. Returns the number of
-    files indexed.
-
-    Args:
-        archive_root: Root directory of the archive.
-        progress_callback: Optional callable(indexed, total) for progress.
+    Skips ``_``/``.`` folders, symlinks and paths that already have a record, so
+    migrated history is never altered. Without a state store nothing is indexed.
     """
-    root = Path(os.path.expanduser(str(archive_root)))
-    if not root.exists():
+    if store is None:
         return 0
-
-    # Collect all PDFs (skip system folders like _Unmatched, _Skipped, _cache)
-    pdfs = []
-    for pdf in root.rglob("*.pdf"):
-        rel_parts = pdf.relative_to(root).parts
-        if any(part.startswith("_") or part.startswith(".") for part in rel_parts):
-            continue
-        pdfs.append(pdf)
-
-    if not pdfs:
-        return 0
-
-    hashes = _load_hashes()
+    root = _scope_root(store, scope_id)
+    if Path(os.path.expanduser(str(archive_root))).resolve() != root:
+        raise UnsafeValueError("archive root does not match the archive scope")
+    pdfs = sorted(
+        pdf for pdf in root.rglob("*.pdf")
+        if not any(part.startswith(("_", ".")) for part in pdf.relative_to(root).parts)
+        and not pdf.is_symlink() and pdf.is_file()
+    )
     indexed = 0
-
-    for i, pdf in enumerate(pdfs):
-        try:
-            content_hash = hash_pdf_content(pdf)
-            if content_hash not in hashes:
-                hashes[content_hash] = str(pdf)
+    for position, pdf in enumerate(pdfs, start=1):
+        relative = pdf.relative_to(root).as_posix()
+        if store.files.get_by_path(scope_id, relative) is None:
+            try:
+                register_file(pdf, store=store, scope_id=scope_id)
                 indexed += 1
-            if progress_callback:
-                progress_callback(i + 1, len(pdfs))
-            # Save every 50 files so progress isn't lost
-            if indexed % 50 == 0 and indexed > 0:
-                _save_hashes(hashes)
-        except Exception as exc:
-            logger.warning("Failed to hash %s: %s", pdf, exc)
-
-    _save_hashes(hashes)
-    logger.info("Built initial hash index: %d files indexed from %s", indexed, root)
+            except Exception as exc:  # noqa: BLE001 - unreadable PDFs are reported, not indexed
+                logger.warning("Failed to fingerprint %s: %s", relative, type(exc).__name__)
+        if progress_callback:
+            progress_callback(position, len(pdfs))
+    logger.info("Indexed %d archive PDF(s) into application state", indexed)
     return indexed

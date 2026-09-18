@@ -23,7 +23,7 @@
         <div id="header"></div>
         <div class="df-body df-scroll">
 
-    <main class="p-[32px_34px] max-w-[1180px] min-w-[1020px] mx-auto flex gap-7 items-start">
+    <main class="p-[20px_16px] lg:p-[32px_34px] max-w-[1180px] lg:min-w-[1020px] mx-auto flex flex-col lg:flex-row gap-7 items-stretch lg:items-start">
         <!-- Left column -->
         <div class="flex-1 min-w-0 flex flex-col gap-[34px]">
 
@@ -43,7 +43,7 @@
                         </button>
                     </div>
                 </div>
-                <div id="entities-grid" class="grid grid-cols-2 gap-3"></div>
+                <div id="entities-grid" class="grid grid-cols-1 sm:grid-cols-2 gap-3"></div>
             </section>
 
             <!-- Storage & Paths -->
@@ -67,7 +67,7 @@
                     <span class="ms" style="font-size:22px;color:#C0A86E;">auto_awesome</span>
                     <h3 class="m-0 font-headline font-extrabold text-[20px]">AI Processing Engine</h3>
                 </div>
-                <div class="grid grid-cols-2 gap-[18px]">
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-[18px]">
                     <!-- Provider -->
                     <div>
                         <label class="block text-[10px] font-bold tracking-[.1em] uppercase mb-[9px]" style="color:#8E8F86;">Provider</label>
@@ -127,7 +127,7 @@
         </div>
 
         <!-- Right column -->
-        <div class="w-[316px] flex-shrink-0 flex flex-col gap-[18px]">
+        <div class="w-full lg:w-[316px] flex-shrink-0 flex flex-col gap-[18px]">
             <!-- Filing Rules -->
             <div class="bg-white border border-border-primary rounded-card p-5 shadow-card">
                 <div class="flex items-center justify-between mb-4">
@@ -248,12 +248,21 @@
 
             // Health
             document.getElementById('health-llm').textContent = (health.model || '').split('/').pop() || '—';
+            // Styled from the level the server reports; an unknown level stays neutral,
+            // so local-only mode is never presented as a key failure.
+            const HEALTH_LEVEL = {
+                ok: ['bg-success', 'text-success'],
+                neutral: ['bg-text-dim', 'text-text-olive'],
+                warning: ['bg-danger', 'text-danger'],
+            };
+            const [dotClass, textClass] = HEALTH_LEVEL[health.llm_status_level]
+                || HEALTH_LEVEL.neutral;
             const apiEl = document.getElementById('health-api');
-            if (health.llm_ready) {
-                apiEl.innerHTML = '<span class="w-[7px] h-[7px] rounded-pill bg-success"></span><span class="text-[12.5px] font-bold text-success">Connected</span>';
-            } else {
-                apiEl.innerHTML = '<span class="w-[7px] h-[7px] rounded-pill bg-danger"></span><span class="text-[12.5px] font-bold text-danger">No API Key</span>';
-            }
+            const dot = document.createElement('span');
+            dot.className = `w-[7px] h-[7px] rounded-pill ${dotClass}`;
+            apiEl.replaceChildren(dot, textElement('span',
+                `text-[12.5px] font-bold ${textClass}`, health.llm_status_label || 'Unavailable'));
+            apiEl.setAttribute('title', health.llm_status_detail || '');
         }
 
         const PROVIDER_DEFAULTS = {
@@ -315,6 +324,9 @@
                 const data = await resp.json();
                 if (data.status === 'connected') {
                     showToast(`Connected — model: ${data.model}`, 'success', 5000);
+                } else if (data.status === 'local_only') {
+                    // Not a failure: no connection was attempted, by configuration.
+                    showToast(data.error, 'info', 5000);
                 } else {
                     showToast(`Connection failed: ${data.error}`, 'error', 0);
                 }
@@ -399,7 +411,7 @@
             modal.className = 'fixed inset-0 z-[200] flex items-center justify-center';
             modal.innerHTML = `
                 <div class="absolute inset-0 bg-[rgba(20,23,28,0.42)] backdrop-blur-[3px]" onclick="closeSettingsModal()"></div>
-                <div class="relative w-[440px] bg-soft-hover rounded-modal shadow-modal overflow-hidden">
+                <div class="relative w-full max-w-[440px] bg-soft-hover rounded-modal shadow-modal overflow-hidden">
                     <div class="py-[18px] px-5 border-b border-border-card flex items-center justify-between">
                         <h3 class="m-0 font-headline font-extrabold text-[16px] text-ink">${title}</h3>
                         <button onclick="closeSettingsModal()" class="w-[30px] h-[30px] border-none bg-tile rounded-[9px] flex items-center justify-center cursor-pointer">

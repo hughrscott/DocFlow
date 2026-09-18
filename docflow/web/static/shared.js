@@ -55,7 +55,7 @@ function renderNav() {
 
         <button onclick="globalUpload()" class="mt-6 mb-[22px] flex items-center justify-center gap-2 bg-ink text-[#F4F1EA] border-none rounded-btn py-[13px] font-bold text-[13.5px] cursor-pointer shadow-btn hover:-translate-y-px transition-transform duration-150">
             <span class="ms" style="font-size:18px;">add</span>
-            <span class="nav-label">Scan Mail</span>
+            <span class="nav-label">Add scanned mail</span>
         </button>
 
         <nav class="flex flex-col gap-1 flex-1">${navItems}</nav>
@@ -101,7 +101,7 @@ function renderHeader(title) {
 // ---------------------------------------------------------------------------
 function renderFooter() {
     return `
-    <footer id="status-bar" role="contentinfo" class="flex items-center justify-between py-2 px-[34px] border-t border-border-primary bg-panel flex-shrink-0">
+    <footer id="status-bar" role="contentinfo" class="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 py-2 px-4 lg:px-[34px] border-t border-border-primary bg-panel flex-shrink-0">
         <p class="m-0 text-[10.5px] font-semibold tracking-[.06em] uppercase text-text-olive">
             Watch Folder: <span class="text-success font-bold" id="watch-status">Checking...</span>
             &nbsp;&bull;&nbsp; LLM Status: <span class="text-success font-bold" id="llm-status">Checking...</span>
@@ -186,8 +186,7 @@ function injectResponsiveStyles() {
         @media (max-width: 767px) {
             #sidebar { display: none; }
             #mobile-tabs { display: flex !important; }
-            .df-main { margin-left: 0 !important; }
-            #status-bar { bottom: 3.5rem; }
+            .df-main { margin-left: 0 !important; padding-bottom: 3.5rem; }
             #search-container input { width: 8rem; }
             #search-results { width: calc(100vw - 2rem); right: -1rem; }
         }
@@ -254,20 +253,30 @@ async function runSearch(query) {
         if (!resp.ok) { results.classList.add('hidden'); return; }
         const data = await resp.json();
         if (!data.results || data.results.length === 0) {
-            results.innerHTML = '<div class="p-4 text-sm text-text-muted text-center">No results found</div>';
+            results.replaceChildren(textElement('div', 'p-4 text-sm text-text-muted text-center', 'No results found'));
             results.classList.remove('hidden');
             return;
         }
-        results.innerHTML = data.results.map(r => `
-            <a href="${r.url || '#'}" class="flex items-center gap-3 px-4 py-3 hover:bg-soft-hover transition-colors border-b border-border-card last:border-0 no-underline">
-                <span class="ms text-text-dim" style="font-size:18px;">${r.icon || 'description'}</span>
-                <div class="min-w-0 flex-1">
-                    <p class="text-[12.5px] font-mono font-medium text-ink truncate m-0">${r.filename || r.name}</p>
-                    <p class="text-[11.5px] text-text-faint truncate m-0 mt-0.5">${r.directory || r.path || ''}</p>
-                </div>
-                ${r.confidence != null ? confidenceBadge(r.confidence) : ''}
-            </a>
-        `).join('');
+        results.replaceChildren(...data.results.map(r => {
+            const link = textElement('a', 'flex items-center gap-3 px-4 py-3 hover:bg-soft-hover transition-colors border-b border-border-card last:border-0 no-underline');
+            const url = typeof r.url === 'string' ? r.url : '';
+            link.href = url.startsWith('/') && !url.startsWith('//') ? url : '#';
+            const text = textElement('div', 'min-w-0 flex-1');
+            text.append(
+                textElement('p', 'text-[12.5px] font-mono font-medium text-ink truncate m-0', r.filename || r.name || ''),
+                textElement('p', 'text-[11.5px] text-text-faint truncate m-0 mt-0.5', r.directory || r.path || ''));
+            const icon = /^[a-z_]+$/.test(r.icon || '') ? r.icon : 'description';
+            link.append(iconElement(icon, 18, null, 'text-text-dim'), text);
+            if (typeof r.confidence === 'number') {
+                const pct = Math.round(r.confidence * 100);
+                const info = confidenceInfo(r.confidence);
+                const badge = textElement('span', 'text-[11px] font-bold px-[9px] py-1 rounded-pill whitespace-nowrap', `${pct}% Match`);
+                badge.style.background = info.bg;
+                badge.style.color = info.color;
+                link.appendChild(badge);
+            }
+            return link;
+        }));
         results.classList.remove('hidden');
     } catch (e) {
         results.classList.add('hidden');
@@ -277,16 +286,39 @@ async function runSearch(query) {
 // ---------------------------------------------------------------------------
 // Health status
 // ---------------------------------------------------------------------------
+// Severity classes for a server-reported status level. An unknown or absent level is
+// neutral, never danger: the UI must not invent a failure it was not told about.
+const STATUS_LEVEL_CLASS = {
+    ok: 'text-success font-bold',
+    neutral: 'text-text-olive font-bold',
+    warning: 'text-danger font-bold',
+};
+
+// One answer per page load: the footer, the review page's AI state and anything else
+// that needs the runtime posture read the same server response.
+let _healthPromise = null;
+
+function healthStatus() {
+    if (!_healthPromise) {
+        _healthPromise = fetch('/api/health')
+            .then(resp => (resp.ok ? resp.json() : null))
+            .catch(() => null);
+    }
+    return _healthPromise;
+}
+
 async function updateHealthStatus() {
     try {
-        const resp = await fetch('/api/health');
-        const data = await resp.json();
+        const data = await healthStatus();
+        if (!data) return;
         const watchEl = document.getElementById('watch-status');
         const llmEl = document.getElementById('llm-status');
         if (watchEl) watchEl.textContent = data.watch_folder ? 'Active' : 'Not Set';
         if (llmEl) {
-            llmEl.textContent = data.llm_ready ? 'Ready' : 'No API Key';
-            llmEl.className = data.llm_ready ? 'text-success font-bold' : 'text-danger font-bold';
+            llmEl.textContent = data.llm_status_label || 'Unavailable';
+            llmEl.className = STATUS_LEVEL_CLASS[data.llm_status_level]
+                || STATUS_LEVEL_CLASS.neutral;
+            llmEl.setAttribute('title', data.llm_status_detail || '');
         }
     } catch (e) { /* ignore */ }
 }
@@ -294,87 +326,90 @@ async function updateHealthStatus() {
 // ---------------------------------------------------------------------------
 // Review queue badge in sidebar
 // ---------------------------------------------------------------------------
+// Show a pending count the caller already has an authoritative answer for. Zero is a
+// real answer and hides the badge: a page that has just emptied the queue must not go
+// on showing the number it loaded with.
+function setReviewBadge(count) {
+    const badge = document.getElementById('nav-review-badge');
+    if (!badge) return;
+    const pending = Number.isFinite(count) && count > 0 ? Math.floor(count) : 0;
+    badge.textContent = pending > 0 ? String(pending) : '';
+    badge.classList.toggle('hidden', pending === 0);
+}
+
 async function updateReviewBadge() {
     try {
-        const resp = await fetch('/api/queue');
-        const data = await resp.json();
+        const scopeId = await activeArchiveScopeId();
         const badge = document.getElementById('nav-review-badge');
-        if (!badge) return;
-        const count = (data.items || []).length;
-        if (count > 0) {
-            badge.textContent = count;
-            badge.classList.remove('hidden');
-        } else {
-            badge.classList.add('hidden');
-        }
+        if (!badge || !scopeId) return;
+        const { ok, data } = await docflowApi('GET',
+            `/api/v1/review-items?archive_scope_id=${encodeURIComponent(scopeId)}&status=pending`);
+        setReviewBadge(ok && data && Array.isArray(data.items) ? data.items.length : 0);
     } catch (e) { /* ignore */ }
 }
 
 // ---------------------------------------------------------------------------
-// Global upload (works from any page)
+// Document labels
+// ---------------------------------------------------------------------------
+// A compact label for physical source pages: "2", "3-4", "1, 3-5". This mirrors the
+// range the server reports, so one document reads the same on every page.
+function pageRangeLabel(pages) {
+    const numbers = (Array.isArray(pages) ? pages : [])
+        .filter(p => Number.isInteger(p) && p >= 1).sort((a, b) => a - b);
+    const runs = [];
+    numbers.forEach(page => {
+        const last = runs[runs.length - 1];
+        if (last && page === last[last.length - 1]) return;      // the same page twice
+        if (last && page === last[last.length - 1] + 1) last.push(page);
+        else runs.push([page]);
+    });
+    return runs.map(r => (r.length === 1 ? String(r[0]) : `${r[0]}-${r[r.length - 1]}`))
+        .join(', ');
+}
+
+// What to call a document. Nothing invents a title: when no filename was suggested the
+// document is named by the source pages it came from, which the user can verify.
+function documentLabel(filename, pages) {
+    if (typeof filename === 'string' && filename.trim()) return filename;
+    const range = typeof pages === 'string' ? pages.trim() : pageRangeLabel(pages);
+    if (!range) return 'Document';
+    return /[-,]/.test(range) ? `Document from pages ${range}` : `Document from page ${range}`;
+}
+
+// ---------------------------------------------------------------------------
+// Add scanned mail: there is exactly one intake flow, on the dashboard.
+// This button never uploads or starts processing itself; from another page it
+// routes to the dashboard, where the same file input handles the submission.
 // ---------------------------------------------------------------------------
 function globalUpload() {
     const dashInput = document.getElementById('upload-input');
-    if (dashInput) { dashInput.click(); return; }
-
-    let input = document.getElementById('global-upload-input');
-    if (!input) {
-        input = document.createElement('input');
-        input.type = 'file';
-        input.id = 'global-upload-input';
-        input.accept = '.pdf';
-        input.multiple = true;
-        input.className = 'hidden';
-        input.addEventListener('change', async (e) => {
-            const files = Array.from(e.target.files).filter(f => f.name.toLowerCase().endsWith('.pdf'));
-            if (files.length === 0) return;
-            for (const file of files) {
-                try {
-                    const formData = new FormData();
-                    formData.append('file', file);
-                    const uploadResp = await fetch('/api/upload', { method: 'POST', body: formData });
-                    if (!uploadResp.ok) { showToast('Upload failed', 'error'); continue; }
-                    const upload = await uploadResp.json();
-                    const procResp = await fetch('/api/process', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ path: upload.path }),
-                    });
-                    if (!procResp.ok) { showToast('Failed to start processing', 'error'); continue; }
-                    const proc = await procResp.json();
-                    sessionStorage.setItem('docflow_active_job', proc.job_id);
-                    showToast('Processing started — redirecting to dashboard', 'info', 2000);
-                    setTimeout(() => { window.location = '/'; }, 500);
-                    return;
-                } catch (e) {
-                    showToast('Network error', 'error');
-                }
-            }
-            input.value = '';
-        });
-        document.body.appendChild(input);
+    if (dashInput) {
+        if (!dashInput.disabled) dashInput.click();
+        return;
     }
-    input.click();
+    window.location = '/';
 }
 
 // ---------------------------------------------------------------------------
 // Badges
 // ---------------------------------------------------------------------------
+// A run that never classified the document reports no confidence. That is neutral
+// information, not a zero score: it is never shown as a low-confidence percentage.
 function confidenceBadge(confidence) {
-    const pct = Math.round(confidence * 100);
-    let bg, color;
-    if (confidence >= 0.75) {
-        bg = '#E2F1E9'; color = '#0E8A5E';
-    } else if (confidence >= 0.60) {
-        bg = '#F6E9D3'; color = '#B5751F';
-    } else {
-        bg = '#F7E3DD'; color = '#BE4029';
-    }
-    return `<span style="background:${bg};color:${color};" class="text-[11px] font-bold px-[9px] py-1 rounded-pill whitespace-nowrap">${pct}% Match</span>`;
+    const info = confidenceInfo(confidence);
+    return `<span style="background:${info.bg};color:${info.color};" class="text-[11px] font-bold px-[9px] py-1 rounded-pill whitespace-nowrap">${confidenceLabel(confidence)}</span>`;
+}
+
+// The badge text for one confidence value: a percentage, or the neutral wording.
+function confidenceLabel(confidence) {
+    return typeof confidence === 'number'
+        ? `${Math.round(confidence * 100)}% Match` : confidenceInfo(null).label;
 }
 
 function confidenceInfo(confidence) {
-    if (confidence == null) return { color: '#8A8B72', bg: '#ECE7DC', label: 'Unclassified' };
+    if (typeof confidence !== 'number') {
+        return { color: '#8A8B72', bg: '#ECE7DC', label: 'Not classified' };
+    }
     if (confidence >= 0.75) return { color: '#0E8A5E', bg: '#E2F1E9', label: 'Confident' };
     if (confidence >= 0.60) return { color: '#B5751F', bg: '#F6E9D3', label: 'Needs a look' };
     return { color: '#BE4029', bg: '#F7E3DD', label: 'Low confidence' };
@@ -386,7 +421,7 @@ function ruleBadge(rule) {
     } else if (rule === 'none') {
         return `<span class="flex items-center gap-[6px]"><span class="w-[6px] h-[6px] rounded-pill bg-danger flex-shrink-0"></span><span class="text-[11.5px] text-text-muted truncate">Unmatched</span></span>`;
     }
-    return `<span class="flex items-center gap-[6px]"><span class="w-[6px] h-[6px] rounded-pill bg-success flex-shrink-0"></span><span class="text-[11.5px] text-text-muted truncate">Rule: ${rule}</span></span>`;
+    return `<span class="flex items-center gap-[6px]"><span class="w-[6px] h-[6px] rounded-pill bg-success flex-shrink-0"></span><span class="text-[11.5px] text-text-muted truncate">Rule: ${escapeHtml(rule)}</span></span>`;
 }
 
 // ---------------------------------------------------------------------------
@@ -400,9 +435,80 @@ function initToastContainer() {
     document.body.appendChild(container);
 }
 
-function showToast(message, type = 'error', duration = 5000) {
+// Build an element whose text is set with textContent: document/model strings are never markup.
+function textElement(tag, className, text) {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text !== undefined && text !== null) node.textContent = String(text);
+    return node;
+}
+
+function iconElement(name, size, color, extraClass = '') {
+    const icon = textElement('span', `ms ${extraClass}`.trim(), name);
+    icon.style.fontSize = `${size}px`;
+    if (color) icon.style.color = color;
+    return icon;
+}
+
+function escapeHtml(value) {
+    return String(value ?? '').replace(/[&<>"']/g, ch => (
+        { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+}
+
+// ---------------------------------------------------------------------------
+// Local /api/v1 helpers
+// ---------------------------------------------------------------------------
+async function docflowApi(method, url, body) {
+    const options = { method, headers: {} };
+    if (body !== undefined) {
+        options.headers['Content-Type'] = 'application/json';
+        options.body = JSON.stringify(body);
+    }
+    try {
+        const resp = await fetch(url, options);
+        const data = await resp.json().catch(() => null);
+        return { ok: resp.ok, status: resp.status, data };
+    } catch (e) {
+        return { ok: false, status: 0, data: null };
+    }
+}
+
+function apiErrorMessage(data, fallback) {
+    const message = data && data.error && data.error.message;
+    return typeof message === 'string' ? message : fallback;
+}
+
+// One new key per user action; the server stores the result under it.
+function newIdempotencyKey(prefix) {
+    const random = (window.crypto && typeof window.crypto.randomUUID === 'function')
+        ? window.crypto.randomUUID()
+        : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+    return `${prefix}-${random}`;
+}
+
+let _scopePromise = null;
+function activeArchiveScopeId() {
+    if (!_scopePromise) {
+        _scopePromise = docflowApi('GET', '/api/v1/archive-scopes/active').then(({ ok, data }) => {
+            const id = ok && data && data.archive_scope && data.archive_scope.id;
+            if (typeof id !== 'string') { _scopePromise = null; return null; }
+            return id;
+        });
+    }
+    return _scopePromise;
+}
+
+// ``group`` names a stream of notifications where only the latest is true — a new one
+// replaces the previous instead of appearing beside it, so an action from an earlier
+// item can never sit next to the current one.
+function showToast(message, type = 'error', duration = 5000, group = null) {
     initToastContainer();
     const container = document.getElementById('toast-container');
+    if (group) {
+        Array.from(container.children)
+            .filter(node => node.getAttribute('data-toast-group') === group)
+            .forEach(node => node.remove());
+    }
 
     const colors = {
         error:   'bg-danger-bg border border-danger/20 text-danger',
@@ -414,13 +520,14 @@ function showToast(message, type = 'error', duration = 5000) {
 
     const toast = document.createElement('div');
     toast.className = `pointer-events-auto flex items-center gap-3 px-4 py-3 rounded-btn shadow-btn ${colors[type] || colors.info} transform translate-x-full opacity-0 transition-all duration-300`;
-    toast.innerHTML = `
-        <span class="ms" style="font-size:18px;">${icons[type] || icons.info}</span>
-        <span class="text-sm font-semibold flex-1">${message}</span>
-        <button onclick="this.parentElement.remove()" class="opacity-50 hover:opacity-100 transition-opacity border-none bg-transparent cursor-pointer">
-            <span class="ms" style="font-size:16px;">close</span>
-        </button>
-    `;
+    toast.setAttribute('role', type === 'error' ? 'alert' : 'status');
+    if (group) toast.setAttribute('data-toast-group', group);
+    const close = textElement('button', 'opacity-50 hover:opacity-100 transition-opacity border-none bg-transparent cursor-pointer');
+    close.setAttribute('aria-label', 'Dismiss');
+    close.appendChild(iconElement('close', 16));
+    close.addEventListener('click', () => toast.remove());
+    toast.append(iconElement(icons[type] || icons.info, 18),
+        textElement('span', 'text-sm font-semibold flex-1', message), close);
 
     container.appendChild(toast);
     requestAnimationFrame(() => toast.classList.remove('translate-x-full', 'opacity-0'));
@@ -433,31 +540,70 @@ function showToast(message, type = 'error', duration = 5000) {
     }
 }
 
+// Remove every notification in one group — used when the action they described is no
+// longer the current one.
+function dismissToastGroup(group) {
+    const container = document.getElementById('toast-container');
+    if (!container || !group) return;
+    Array.from(container.children)
+        .filter(node => node.getAttribute('data-toast-group') === group)
+        .forEach(node => node.remove());
+}
+
 // ---------------------------------------------------------------------------
 // Undo snackbar
 // ---------------------------------------------------------------------------
 let _undoTimer = null;
 let _undoCallback = null;
 
-function showUndoSnackbar(label, onUndo) {
+// onUndo must perform a durable undo (POST /api/v1/operations/{id}/undo).
+// options.persistent keeps a restored snackbar visible; options.onDismiss forgets it.
+function showUndoSnackbar(label, onUndo, options = {}) {
+    if (typeof onUndo !== 'function') return;
     hideUndoSnackbar();
     _undoCallback = onUndo;
 
     const snack = document.createElement('div');
     snack.id = 'undo-snackbar';
-    snack.className = 'fixed bottom-[26px] left-1/2 -translate-x-1/2 z-[120] flex items-center gap-[14px] bg-ink text-[#F4F1EA] rounded-[14px] py-3 pl-[18px] pr-[14px] shadow-snackbar';
+    snack.className = 'fixed bottom-[calc(3.5rem+16px)] md:bottom-[26px] left-4 right-4 md:left-1/2 md:right-auto md:-translate-x-1/2 z-[120] max-w-[420px] mx-auto md:mx-0 md:w-auto flex flex-wrap items-center gap-[14px] bg-ink text-[#F4F1EA] rounded-[14px] py-3 pl-[18px] pr-[14px] shadow-snackbar';
     snack.style.animation = 'dfup .2s ease-out';
-    snack.innerHTML = `
-        <span class="ms fill" style="font-size:20px;color:#7FD7AB;">check_circle</span>
-        <span class="text-[13.5px] font-semibold">${label}</span>
-        <button onclick="triggerUndo()" class="flex items-center gap-[6px] bg-white/10 text-[#F4F1EA] border-none rounded-[9px] py-2 px-[13px] font-bold text-[12.5px] cursor-pointer hover:bg-white/20 transition-colors">
-            <span class="ms" style="font-size:16px;">undo</span> Undo
-            <span class="opacity-50 text-[10.5px] border border-white/30 rounded px-1">U</span>
-        </button>
-    `;
+    snack.setAttribute('role', 'status');
+    const undo = textElement('button', 'flex items-center gap-[6px] bg-white/10 text-[#F4F1EA] border-none rounded-[9px] py-2 px-[13px] font-bold text-[12.5px] cursor-pointer hover:bg-white/20 transition-colors');
+    undo.append(iconElement('undo', 16), ' Undo ',
+        textElement('span', 'opacity-50 text-[10.5px] border border-white/30 rounded px-1', 'U'));
+    undo.addEventListener('click', triggerUndo);
+    snack.append(iconElement('check_circle', 20, '#7FD7AB', 'fill'),
+        textElement('span', 'text-[13.5px] font-semibold', label), undo);
+    if (typeof options.onDismiss === 'function') {
+        const dismiss = textElement('button', 'bg-transparent text-[#F4F1EA] border-none cursor-pointer opacity-60 hover:opacity-100');
+        dismiss.setAttribute('aria-label', 'Dismiss');
+        dismiss.appendChild(iconElement('close', 16));
+        dismiss.addEventListener('click', () => { hideUndoSnackbar(); options.onDismiss(); });
+        snack.appendChild(dismiss);
+    }
     document.body.appendChild(snack);
 
-    _undoTimer = setTimeout(() => hideUndoSnackbar(), 6000);
+    if (!options.persistent) _undoTimer = setTimeout(() => hideUndoSnackbar(), 6000);
+}
+
+// A visible, persistent report when undo could not compensate every step.
+function showUndoFailure(message, details, onRetry, onDismiss) {
+    hideUndoSnackbar();
+    const previous = document.getElementById('undo-failure');
+    if (previous) previous.remove();
+    const panel = textElement('div', 'fixed bottom-[26px] left-1/2 -translate-x-1/2 z-[120] max-w-[560px] flex flex-col gap-2 bg-danger-bg border border-danger/20 text-danger rounded-[14px] py-3 px-[18px] shadow-snackbar');
+    panel.id = 'undo-failure';
+    panel.setAttribute('role', 'alert');
+    const list = textElement('ul', 'm-0 pl-5 text-[12.5px]');
+    details.forEach(detail => list.appendChild(textElement('li', 'font-mono', detail)));
+    const actions = textElement('div', 'flex gap-2');
+    const retry = textElement('button', 'bg-white border border-danger/20 rounded-[9px] py-1 px-3 font-bold text-[12.5px] cursor-pointer', 'Try undo again');
+    retry.addEventListener('click', () => { panel.remove(); onRetry(); });
+    const dismiss = textElement('button', 'bg-transparent border-none font-bold text-[12.5px] cursor-pointer', 'Dismiss');
+    dismiss.addEventListener('click', () => { panel.remove(); if (onDismiss) onDismiss(); });
+    actions.append(retry, dismiss);
+    panel.append(textElement('p', 'm-0 text-[13.5px] font-semibold', message), list, actions);
+    document.body.appendChild(panel);
 }
 
 function hideUndoSnackbar() {
@@ -529,7 +675,7 @@ async function openDirectoryPicker(callback) {
     modal.className = 'fixed inset-0 z-[200] flex items-center justify-center';
     modal.innerHTML = `
         <div class="absolute inset-0 bg-[rgba(20,23,28,0.42)] backdrop-blur-[3px]" onclick="closeDirPicker()"></div>
-        <div class="relative w-[440px] max-h-[74vh] flex flex-col bg-soft-hover rounded-modal shadow-modal overflow-hidden">
+        <div class="relative w-full max-w-[440px] max-h-[74vh] flex flex-col bg-soft-hover rounded-modal shadow-modal overflow-hidden">
             <div class="py-[18px] px-5 pb-[14px] border-b border-border-card">
                 <div class="flex items-center justify-between mb-[13px]">
                     <h3 class="m-0 font-headline font-extrabold text-[16px] text-ink">Choose Filing Location</h3>
@@ -574,7 +720,7 @@ async function openDirectoryPicker(callback) {
 
 function _renderDirPickerTree(nodes, filter, depth = 0) {
     const container = document.getElementById('dir-picker-tree');
-    if (depth === 0) container.innerHTML = '';
+    if (depth === 0) container.replaceChildren();
 
     for (const node of nodes) {
         const matchesFilter = !filter || node.path.toLowerCase().includes(filter) || node.name.toLowerCase().includes(filter);
@@ -586,11 +732,9 @@ function _renderDirPickerTree(nodes, filter, depth = 0) {
         const item = document.createElement('div');
         item.className = 'flex items-center gap-[9px] py-[9px] px-[10px] rounded-[9px] cursor-pointer hover:bg-sidebar transition-colors';
         item.style.paddingLeft = `${indent}px`;
-        item.innerHTML = `
-            <span class="ms" style="font-size:18px;color:#C0A86E;">folder</span>
-            <span class="flex-1 text-[13px] text-ink truncate">${node.name}</span>
-            <span class="text-[10.5px] text-text-dim font-semibold">${node.pdf_count || ''}</span>
-        `;
+        item.append(iconElement('folder', 18, '#C0A86E'),
+            textElement('span', 'flex-1 text-[13px] text-ink truncate', node.name),
+            textElement('span', 'text-[10.5px] text-text-dim font-semibold', node.pdf_count || ''));
         item.addEventListener('click', () => {
             if (window._dirPickerCallback) window._dirPickerCallback(node.path);
             closeDirPicker();
