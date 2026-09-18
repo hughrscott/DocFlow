@@ -326,6 +326,17 @@ async function updateHealthStatus() {
 // ---------------------------------------------------------------------------
 // Review queue badge in sidebar
 // ---------------------------------------------------------------------------
+// Show a pending count the caller already has an authoritative answer for. Zero is a
+// real answer and hides the badge: a page that has just emptied the queue must not go
+// on showing the number it loaded with.
+function setReviewBadge(count) {
+    const badge = document.getElementById('nav-review-badge');
+    if (!badge) return;
+    const pending = Number.isFinite(count) && count > 0 ? Math.floor(count) : 0;
+    badge.textContent = pending > 0 ? String(pending) : '';
+    badge.classList.toggle('hidden', pending === 0);
+}
+
 async function updateReviewBadge() {
     try {
         const scopeId = await activeArchiveScopeId();
@@ -333,13 +344,7 @@ async function updateReviewBadge() {
         if (!badge || !scopeId) return;
         const { ok, data } = await docflowApi('GET',
             `/api/v1/review-items?archive_scope_id=${encodeURIComponent(scopeId)}&status=pending`);
-        const count = ok && data && Array.isArray(data.items) ? data.items.length : 0;
-        if (count > 0) {
-            badge.textContent = count;
-            badge.classList.remove('hidden');
-        } else {
-            badge.classList.add('hidden');
-        }
+        setReviewBadge(ok && data && Array.isArray(data.items) ? data.items.length : 0);
     } catch (e) { /* ignore */ }
 }
 

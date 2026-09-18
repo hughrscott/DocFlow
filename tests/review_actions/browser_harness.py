@@ -69,7 +69,10 @@ def browser_binary() -> str:
 class StubServer:
     """Serve the real static pages and scripted JSON; record what the page asked for."""
 
-    def __init__(self, routes: list[dict]) -> None:
+    def __init__(self, routes: list[dict], port: int = 0) -> None:
+        # ``port`` is named only by a test that restarts the server under a page that
+        # is already open: the browser keeps talking to the origin it loaded from, so
+        # the replacement has to come back on the same one.
         self.routes = list(routes)
         self.requests: list[dict] = []
         harness = self
@@ -133,7 +136,7 @@ class StubServer:
             def do_POST(self) -> None:
                 self._handle("POST")
 
-        self.server = ThreadingHTTPServer((LOOPBACK, 0), Handler)
+        self.server = ThreadingHTTPServer((LOOPBACK, port), Handler)
         self.server.daemon_threads = True
         self.port = self.server.server_address[1]
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)

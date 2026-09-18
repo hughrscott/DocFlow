@@ -268,8 +268,6 @@
         // document in this archive. The queue always says which one it is showing.
         let scopeMode = 'all';
         let globalPending = 0;
-        let sessionFiled = 0;
-        let sessionSkipped = 0;
         let aiClassification = false;
 
         // ---- Tab switching ----
@@ -420,6 +418,12 @@
             // switch and the batch-complete state can state it truthfully.
             globalPending = job === null ? queueItems.length
                 : ((await pendingItems(null)) || []).length;
+            // The sidebar badge is on this page too, so it is reconciled from the same
+            // authoritative count every time the queue is reloaded — after a File, a
+            // Skip or an Undo — including when that count is zero. It counts the whole
+            // archive, never the scoped queue, so finishing a batch cannot hide work
+            // that is still waiting in another one.
+            setReviewBadge(globalPending);
             if (sessionTotal === 0 && queueItems.length > 0) sessionTotal = queueItems.length;
             document.getElementById('tab-pending-count').textContent = queueItems.length || '';
 
@@ -485,6 +489,12 @@
 
         // An empty queue means different things in different scopes: a finished batch
         // still has a queue behind it, and says so; an empty archive queue does not.
+        //
+        // The summary states only what the server just answered — that this scope has
+        // nothing pending, and how much the whole archive still has. It deliberately
+        // keeps no running tally of what this session filed or skipped: an in-page
+        // tally is not reconciled by Undo and resets on reload, so it can only ever
+        // agree with the archive by accident.
         function renderEmptyState() {
             const title = document.getElementById('empty-title');
             const sub = document.getElementById('empty-sub');
@@ -497,8 +507,8 @@
             }
             if (scopedToBatch()) {
                 title.textContent = 'Batch complete';
-                sub.textContent = `${sessionFiled} filed · ${sessionSkipped} skipped in `
-                    + `this batch · ${globalPending} pending elsewhere`;
+                sub.textContent = 'No documents from this batch are waiting for review · '
+                    + `${globalPending} pending in All documents`;
                 if (globalPending > 0) {
                     action.textContent =
                         `Review remaining pending documents (${globalPending})`;
@@ -507,7 +517,8 @@
                 return;
             }
             title.textContent = 'All caught up';
-            sub.textContent = 'No documents are waiting for review. Nice work.';
+            sub.textContent = 'No documents are waiting for review in All documents. '
+                + 'Nice work.';
         }
 
         // ---- Queue rail ----
@@ -818,7 +829,6 @@
                     showToast(apiErrorMessage(data, 'Action failed'), 'error', 5000,
                               'review-action');
                 } else {
-                    if (action === 'approve') sessionFiled += 1; else sessionSkipped += 1;
                     dismissToastGroup('review-action');
                     rememberOperation(data.operation, label);
                 }
